@@ -91,9 +91,9 @@
 
 > **References**: `docs/design/orchestrator/strategy.md` — Strategy state table, status lifecycle diagram, signal routes, command actions, execution flow sequence diagram, LLM via directives, tool execution rules, context accumulation. `docs/design/orchestrator/llm-behaviour.md` — opaque conversation, req_options. `docs/design/nodes/context-flow.md` — "Context in Orchestrators". `PLAN.md` Step 10. `prototypes/learnings.md` — "Signal Routing — No Default Fallback", "Instruction action Field Accepts Atoms". `prototypes/test_jido_strategy.exs` — Strategy.State, directives. `prototypes/test_llm_tool_calling.exs` — tool calling round-trip.
 
-- [ ] 11.1 Create `test/support/mock_llm.ex` with MockLLM returning predetermined responses for strategy state machine tests
-- [ ] 11.2 Write tests for Orchestrator.Strategy in `test/jido/composer/orchestrator/strategy_test.exs` (single-turn, tool call round-trip, multi-tool parallel, max iterations, context accumulation, signal_routes/1)
-- [ ] 11.3 Implement `Jido.Composer.Orchestrator.Strategy` in `lib/jido/composer/orchestrator/strategy.ex`
+- [x] 11.1 Create `test/support/mock_llm.ex` with MockLLM returning predetermined responses for strategy state machine tests
+- [x] 11.2 Write tests for Orchestrator.Strategy in `test/jido/composer/orchestrator/strategy_test.exs` (single-turn, tool call round-trip, multi-tool parallel, max iterations, context accumulation, signal_routes/1)
+- [x] 11.3 Implement `Jido.Composer.Orchestrator.Strategy` in `lib/jido/composer/orchestrator/strategy.ex`
 
 ## 12. Orchestrator DSL
 
