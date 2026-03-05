@@ -201,9 +201,9 @@
 
 > **References**: `docs/design/hitl/persistence.md` — Hybrid lifecycle diagram, what gets checkpointed, ParentRef PID handling (strip pid on checkpoint, re-inject on resume), ChildRef struct, top-down resume protocol, idempotent resume (status field + compare-and-swap), schema evolution. `prototypes/learnings.md` — strategy state serialization 422 bytes. `prototypes/test_hitl_assumptions.exs` — serialization, ParentRef, ChildRef, idempotency tests.
 
-- [ ] 24.1 Write tests in `test/integration/hitl_persistence_test.exs` (checkpoint serialization, thaw from checkpoint, idempotent resume, ChildRef)
-- [ ] 24.2 Implement ChildRef struct and checkpoint/thaw logic
-- [ ] 24.3 Fix any issues discovered during persistence testing
+- [x] 24.1 Write tests in `test/integration/hitl_persistence_test.exs` (checkpoint serialization, thaw from checkpoint, idempotent resume, ChildRef)
+- [x] 24.2 Implement ChildRef struct and checkpoint/thaw logic
+- [x] 24.3 Fix any issues discovered during persistence testing
 
 ## 25. Nested HITL Integration
 
