@@ -9,6 +9,7 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
   """
 
   alias Jido.Composer.Node.ActionNode
+  alias Jido.Composer.Node.AgentNode
 
   @doc """
   Converts a Node or action module into a neutral tool description.
@@ -16,9 +17,18 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
   Returns `%{name, description, parameters}` where parameters is a JSON Schema
   map. Delegates schema conversion to `Jido.Action.Tool.build_parameters_schema/1`.
   """
-  @spec to_tool(ActionNode.t() | module()) :: Jido.Composer.Orchestrator.LLM.tool()
+  @spec to_tool(ActionNode.t() | AgentNode.t() | module()) ::
+          Jido.Composer.Orchestrator.LLM.tool()
   def to_tool(%ActionNode{action_module: mod}) do
     to_tool(mod)
+  end
+
+  def to_tool(%AgentNode{agent_module: mod}) do
+    %{
+      name: mod.name(),
+      description: mod.description(),
+      parameters: build_agent_parameters(mod)
+    }
   end
 
   def to_tool(module) when is_atom(module) do
@@ -27,6 +37,17 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
       description: module.description(),
       parameters: Jido.Action.Tool.build_parameters_schema(module.schema())
     }
+  end
+
+  defp build_agent_parameters(mod) do
+    schema = mod.schema()
+
+    if is_list(schema) do
+      Jido.Action.Tool.build_parameters_schema(schema)
+    else
+      # Agent schemas (Zoi) — provide a minimal schema
+      %{"type" => "object", "properties" => %{}, "required" => []}
+    end
   end
 
   @doc """

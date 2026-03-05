@@ -13,6 +13,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   alias Jido.Agent.Directive
   alias Jido.Agent.Strategy.State, as: StratState
   alias Jido.Composer.Node.ActionNode
+  alias Jido.Composer.Node.AgentNode
   alias Jido.Composer.Orchestrator.AgentTool
 
   # -- init/2 --
@@ -135,6 +136,65 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     end
   end
 
+  def cmd(agent, [%Jido.Instruction{action: :orchestrator_child_started} | _], _ctx) do
+    {agent, []}
+  end
+
+  def cmd(agent, [%Jido.Instruction{action: :orchestrator_child_result} = instr | _], _ctx) do
+    params = instr.params
+    tag = params[:tag]
+
+    {call_id, tool_name} =
+      case tag do
+        {:tool_call, id, name} -> {id, name}
+        _ -> {nil, nil}
+      end
+
+    {status, result} =
+      case params[:result] do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> {:error, reason}
+        other -> {:ok, other}
+      end
+
+    tool_result = AgentTool.to_tool_result(call_id, tool_name, {status, result})
+
+    scope_key = String.to_existing_atom(tool_name)
+
+    scoped_result =
+      case status do
+        :ok -> result || %{}
+        :error -> %{error: inspect(result)}
+      end
+
+    agent =
+      StratState.update(agent, fn s ->
+        new_pending = List.delete(s.pending_tool_calls, call_id)
+        new_completed = s.completed_tool_results ++ [tool_result]
+        new_context = deep_merge(s.context, %{scope_key => scoped_result})
+
+        %{
+          s
+          | pending_tool_calls: new_pending,
+            completed_tool_results: new_completed,
+            context: new_context
+        }
+      end)
+
+    state = StratState.get(agent)
+
+    if state.pending_tool_calls == [] do
+      agent = StratState.update(agent, fn s -> %{s | status: :awaiting_llm} end)
+      emit_llm_call(agent)
+    else
+      {agent, []}
+    end
+  end
+
+  def cmd(agent, [%Jido.Instruction{action: :orchestrator_child_exit} | _], _ctx) do
+    {agent, []}
+  end
+
   def cmd(agent, _instructions, _ctx) do
     {agent, []}
   end
@@ -237,6 +297,13 @@ defmodule Jido.Composer.Orchestrator.Strategy do
                 result_action: :orchestrator_tool_result,
                 meta: %{call_id: call.id, tool_name: call.name}
               }
+
+            %AgentNode{agent_module: agent_module, opts: opts} ->
+              %Directive.SpawnAgent{
+                tag: {:tool_call, call.id, call.name},
+                agent: agent_module,
+                opts: Map.new(opts) |> Map.put(:context, context)
+              }
           end
         end)
 
@@ -272,10 +339,26 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   end
 
   defp build_nodes(modules) when is_list(modules) do
-    Map.new(modules, fn mod ->
-      {:ok, node} = ActionNode.new(mod)
-      {ActionNode.name(node), node}
+    Map.new(modules, fn
+      mod when is_atom(mod) ->
+        if agent_module?(mod) do
+          {:ok, node} = AgentNode.new(mod)
+          {AgentNode.name(node), node}
+        else
+          {:ok, node} = ActionNode.new(mod)
+          {ActionNode.name(node), node}
+        end
+
+      %ActionNode{} = node ->
+        {ActionNode.name(node), node}
+
+      %AgentNode{} = node ->
+        {AgentNode.name(node), node}
     end)
+  end
+
+  defp agent_module?(module) do
+    Code.ensure_loaded?(module) && function_exported?(module, :__agent_metadata__, 0)
   end
 
   defp deep_merge(left, right) when is_map(left) and is_map(right) do

@@ -148,9 +148,9 @@
 
 > **References**: `docs/design/composition.md` — Full nesting patterns diagram, all 8 supported compositions, depth/recursion analysis. `docs/design/orchestrator/strategy.md` — "Tool Execution" for ActionNode vs AgentNode tools. `docs/design/foundations.md` — "Nesting as Functorial Embedding". `PLAN.md` Step 12 — nesting example code. `prototypes/learnings.md` — context serialization size (36 KB for 10 nodes). `prototypes/test_agent_server_children.exs` — SpawnAgent lifecycle.
 
-- [ ] 18.1 Write cassette-driven tests in `test/integration/composition_test.exs` (orchestrator invokes workflow-as-tool, workflow result as tool result)
-- [ ] 18.2 Write end-to-end test for three-level nesting (orchestrator -> workflow -> agent)
-- [ ] 18.3 Fix any issues discovered during nesting tests
+- [x] 18.1 Write cassette-driven tests in `test/integration/composition_test.exs` (orchestrator invokes workflow-as-tool, workflow result as tool result)
+- [x] 18.2 Write end-to-end test for three-level nesting (orchestrator -> workflow -> agent)
+- [x] 18.3 Fix any issues discovered during nesting tests
 
 ---
 
