@@ -112,8 +112,12 @@ defmodule Jido.Composer.Orchestrator.DSL do
 
   defp run_orch_directives(module, agent, [directive | rest]) do
     case directive do
-      %Jido.Agent.Directive.RunInstruction{instruction: instr, result_action: result_action} ->
-        payload = execute_orch_instruction(instr)
+      %Jido.Agent.Directive.RunInstruction{
+        instruction: instr,
+        result_action: result_action,
+        meta: meta
+      } ->
+        payload = execute_orch_instruction(instr) |> Map.put(:meta, meta || %{})
         {agent, new_directives} = module.cmd(agent, {result_action, payload})
         run_orch_directives(module, agent, new_directives ++ rest)
 

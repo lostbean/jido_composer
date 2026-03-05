@@ -1,0 +1,450 @@
+defmodule Jido.Composer.E2E.E2ETest do
+  @moduledoc """
+  End-to-end tests exercising full composition paths.
+
+  - Workflow tests use `run_sync/2` (pure action execution, no LLM).
+  - Orchestrator tests use ClaudeLLM with ReqCassette for recorded API responses.
+  """
+  use ExUnit.Case, async: true
+
+  import ReqCassette
+
+  alias Jido.Agent.Directive
+  alias Jido.Agent.Strategy.State, as: StratState
+  alias Jido.Composer.CassetteHelper
+  alias Jido.Composer.HITL.ApprovalRequest
+  alias Jido.Composer.Node.{ActionNode, FanOutNode, HumanNode}
+  alias Jido.Composer.Orchestrator.{ClaudeLLM, Strategy}
+
+  alias Jido.Composer.TestActions.{
+    AddAction,
+    MultiplyAction,
+    EchoAction,
+    ExtractAction,
+    TransformAction,
+    LoadAction,
+    FailAction,
+    ValidateOutcomeAction,
+    NoopAction,
+    AccumulatorAction
+  }
+
+  # ── Workflow definitions ──
+
+  defmodule ETLWorkflow do
+    use Jido.Composer.Workflow,
+      name: "etl_pipeline",
+      nodes: %{
+        extract: ExtractAction,
+        transform: TransformAction,
+        load: LoadAction
+      },
+      transitions: %{
+        {:extract, :ok} => :transform,
+        {:transform, :ok} => :load,
+        {:load, :ok} => :done,
+        {:_, :error} => :failed
+      },
+      initial: :extract
+  end
+
+  defmodule MathWorkflow do
+    use Jido.Composer.Workflow,
+      name: "math_pipeline",
+      nodes: %{
+        add: AddAction,
+        multiply: MultiplyAction
+      },
+      transitions: %{
+        {:add, :ok} => :multiply,
+        {:multiply, :ok} => :done,
+        {:_, :error} => :failed
+      },
+      initial: :add
+  end
+
+  defmodule BranchingWorkflow do
+    use Jido.Composer.Workflow,
+      name: "branching_workflow",
+      nodes: %{
+        validate: ValidateOutcomeAction,
+        process: NoopAction,
+        retry_step: NoopAction,
+        handle_invalid: NoopAction
+      },
+      transitions: %{
+        {:validate, :ok} => :process,
+        {:validate, :invalid} => :handle_invalid,
+        {:validate, :retry} => :retry_step,
+        {:process, :ok} => :done,
+        {:handle_invalid, :ok} => :done,
+        {:retry_step, :ok} => :done,
+        {:_, :error} => :failed
+      },
+      initial: :validate
+  end
+
+  defmodule FanOutWorkflow do
+    {:ok, add_node} = ActionNode.new(AddAction)
+    {:ok, echo_node} = ActionNode.new(EchoAction)
+
+    {:ok, fan_out} =
+      FanOutNode.new(
+        name: "parallel_compute",
+        branches: [math: add_node, echo: echo_node]
+      )
+
+    use Jido.Composer.Workflow,
+      name: "fan_out_workflow",
+      nodes: %{
+        parallel: fan_out,
+        finalize: NoopAction
+      },
+      transitions: %{
+        {:parallel, :ok} => :finalize,
+        {:finalize, :ok} => :done,
+        {:_, :error} => :failed
+      },
+      initial: :parallel
+  end
+
+  defmodule HITLWorkflow do
+    use Jido.Composer.Workflow,
+      name: "hitl_workflow",
+      nodes: %{
+        prepare: AccumulatorAction,
+        approval: %HumanNode{
+          name: "deploy_gate",
+          description: "Gate deployment",
+          prompt: "Approve deployment?",
+          allowed_responses: [:approved, :rejected]
+        },
+        deploy: NoopAction
+      },
+      transitions: %{
+        {:prepare, :ok} => :approval,
+        {:approval, :approved} => :deploy,
+        {:approval, :rejected} => :failed,
+        {:deploy, :ok} => :done,
+        {:_, :error} => :failed
+      },
+      initial: :prepare
+  end
+
+  defmodule FailingWorkflow do
+    use Jido.Composer.Workflow,
+      name: "failing_workflow",
+      nodes: %{
+        step: FailAction
+      },
+      transitions: %{
+        {:step, :ok} => :done,
+        {:_, :error} => :failed
+      },
+      initial: :step
+  end
+
+  # ── Orchestrator agent (bare, for cassette-driven tests) ──
+
+  defmodule CassetteOrchestratorAgent do
+    use Jido.Agent,
+      name: "e2e_cassette_orchestrator",
+      description: "Agent for cassette-driven e2e orchestrator tests",
+      schema: []
+  end
+
+  # ── Orchestrator helpers ──
+
+  defp init_cassette_orchestrator(plug, opts \\ []) do
+    nodes = Keyword.get(opts, :nodes, [AddAction, EchoAction])
+
+    strategy_opts = [
+      nodes: nodes,
+      llm_module: ClaudeLLM,
+      system_prompt:
+        Keyword.get(
+          opts,
+          :system_prompt,
+          "You are a helpful assistant with math and echo tools."
+        ),
+      max_iterations: Keyword.get(opts, :max_iterations, 10),
+      req_options: [plug: plug]
+    ]
+
+    agent = CassetteOrchestratorAgent.new()
+    ctx = %{strategy_opts: strategy_opts}
+    {agent, _directives} = Strategy.init(agent, ctx)
+    agent
+  end
+
+  defp make_instruction(action, params) do
+    %Jido.Instruction{action: action, params: params}
+  end
+
+  # Full ReAct directive loop: LLM calls go through Req -> cassette plug,
+  # tool calls go through Jido.Exec.run for real action execution.
+  defp execute_orchestrator_loop(agent, query) do
+    {agent, directives} =
+      Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: query})], %{})
+
+    run_directives(agent, directives)
+  end
+
+  defp run_directives(agent, []), do: agent
+
+  defp run_directives(agent, [directive | rest]) do
+    case directive do
+      %Directive.RunInstruction{
+        instruction: %Jido.Instruction{action: Jido.Composer.Orchestrator.LLMAction} = instr,
+        result_action: result_action
+      } ->
+        payload = execute_llm_instruction(instr)
+
+        {agent, new_directives} =
+          Strategy.cmd(agent, [make_instruction(result_action, payload)], %{})
+
+        run_directives(agent, new_directives ++ rest)
+
+      %Directive.RunInstruction{
+        instruction: %Jido.Instruction{action: action_module, params: params},
+        result_action: result_action,
+        meta: meta
+      } ->
+        payload = execute_tool_instruction(action_module, params, meta)
+
+        {agent, new_directives} =
+          Strategy.cmd(agent, [make_instruction(result_action, payload)], %{})
+
+        run_directives(agent, new_directives ++ rest)
+
+      _other ->
+        run_directives(agent, rest)
+    end
+  end
+
+  defp execute_llm_instruction(%Jido.Instruction{params: params}) do
+    llm_module = params[:llm_module]
+    conversation = params[:conversation]
+    tool_results = params[:tool_results] || []
+    tools = params[:tools] || []
+    opts = params[:opts] || []
+
+    case llm_module.generate(conversation, tool_results, tools, opts) do
+      {:ok, response, updated_conversation} ->
+        %{
+          status: :ok,
+          result: %{response: response, conversation: updated_conversation},
+          meta: %{}
+        }
+
+      {:error, reason} ->
+        %{status: :error, result: %{error: reason}, meta: %{}}
+    end
+  end
+
+  defp execute_tool_instruction(action_module, params, meta) do
+    case Jido.Exec.run(action_module, params) do
+      {:ok, result} -> %{status: :ok, result: result, meta: meta || %{}}
+      {:error, reason} -> %{status: :error, result: reason, meta: meta || %{}}
+    end
+  end
+
+  # ══════════════════════════════════════════════════════════════════
+  # Workflow e2e (run_sync — pure action execution, no LLM needed)
+  # ══════════════════════════════════════════════════════════════════
+
+  describe "workflow: ETL pipeline via run_sync" do
+    test "three-step pipeline completes end-to-end" do
+      agent = ETLWorkflow.new()
+      assert {:ok, ctx} = ETLWorkflow.run_sync(agent, %{source: "test_db"})
+
+      assert ctx[:extract][:records] != nil
+      assert ctx[:transform][:records] != nil
+      assert ctx[:load][:status] == :complete
+    end
+  end
+
+  describe "workflow: math pipeline via run_sync" do
+    test "chained add then multiply" do
+      agent = MathWorkflow.new()
+      assert {:ok, ctx} = MathWorkflow.run_sync(agent, %{value: 2.0, amount: 3.0})
+
+      assert ctx[:add][:result] == 5.0
+      assert ctx[:multiply][:result] == 6.0
+    end
+  end
+
+  describe "workflow: custom outcome branching via run_sync" do
+    test ":ok outcome routes to process step" do
+      agent = BranchingWorkflow.new()
+      assert {:ok, ctx} = BranchingWorkflow.run_sync(agent, %{data: "valid"})
+
+      assert ctx[:validate][:validated] == true
+      assert Map.has_key?(ctx, :process)
+      refute Map.has_key?(ctx, :handle_invalid)
+      refute Map.has_key?(ctx, :retry_step)
+    end
+
+    test ":invalid outcome routes to handle_invalid step" do
+      agent = BranchingWorkflow.new()
+      assert {:ok, ctx} = BranchingWorkflow.run_sync(agent, %{data: "invalid"})
+
+      assert ctx[:validate][:validated] == false
+      assert Map.has_key?(ctx, :handle_invalid)
+      refute Map.has_key?(ctx, :process)
+    end
+
+    test ":retry outcome routes to retry_step" do
+      agent = BranchingWorkflow.new()
+      assert {:ok, ctx} = BranchingWorkflow.run_sync(agent, %{data: "retry"})
+
+      assert ctx[:validate][:quality] == :unstable
+      assert Map.has_key?(ctx, :retry_step)
+      refute Map.has_key?(ctx, :process)
+    end
+  end
+
+  describe "workflow: fan-out via run_sync" do
+    test "parallel branches merge and feed into next step" do
+      agent = FanOutWorkflow.new()
+
+      assert {:ok, ctx} =
+               FanOutWorkflow.run_sync(agent, %{value: 1.0, amount: 2.0, message: "hello"})
+
+      assert ctx[:parallel][:math][:result] == 3.0
+      assert ctx[:parallel][:echo][:echoed] == "hello"
+      assert Map.has_key?(ctx, :finalize)
+    end
+  end
+
+  describe "workflow: HITL suspend via run_sync" do
+    test "returns suspended with ApprovalRequest" do
+      agent = HITLWorkflow.new()
+
+      assert {:error, {:suspended, %ApprovalRequest{} = request}} =
+               HITLWorkflow.run_sync(agent, %{tag: "v1.0"})
+
+      assert request.prompt == "Approve deployment?"
+      assert request.allowed_responses == [:approved, :rejected]
+    end
+  end
+
+  describe "workflow: error propagation via run_sync" do
+    test "failing action transitions to :failed" do
+      agent = FailingWorkflow.new()
+      assert {:error, :workflow_failed} = FailingWorkflow.run_sync(agent, %{})
+    end
+  end
+
+  # ══════════════════════════════════════════════════════════════════
+  # Orchestrator e2e (cassette-driven with ClaudeLLM)
+  # ══════════════════════════════════════════════════════════════════
+
+  describe "orchestrator: direct final answer (cassette)" do
+    test "LLM answers without calling any tools" do
+      with_cassette(
+        "e2e_orchestrator_final_answer",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          agent = init_cassette_orchestrator(plug)
+          agent = execute_orchestrator_loop(agent, "Say hello, do not use any tools.")
+
+          strat = StratState.get(agent)
+          assert strat.status == :completed
+          assert is_binary(strat.result)
+          assert strat.result != ""
+          assert strat.iteration == 1
+          assert strat.context == %{}
+        end
+      )
+    end
+  end
+
+  describe "orchestrator: single tool call (cassette)" do
+    test "LLM calls add tool and returns final answer" do
+      with_cassette(
+        "e2e_orchestrator_single_tool",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          agent = init_cassette_orchestrator(plug)
+          agent = execute_orchestrator_loop(agent, "What is 5 + 3? Use the add tool.")
+
+          strat = StratState.get(agent)
+          assert strat.status == :completed
+          assert strat.result =~ "8"
+          assert strat.iteration >= 2
+          assert strat.context[:add][:result] in [8, 8.0]
+        end
+      )
+    end
+  end
+
+  describe "orchestrator: multi-tool parallel (cassette)" do
+    test "LLM calls add and echo tools in parallel" do
+      with_cassette(
+        "e2e_orchestrator_multi_tool",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          agent = init_cassette_orchestrator(plug)
+
+          agent =
+            execute_orchestrator_loop(
+              agent,
+              "Use the add tool with value=10 and amount=5, and use the echo tool with message='hello world'. Call both tools now."
+            )
+
+          strat = StratState.get(agent)
+          assert strat.status == :completed
+          assert strat.context[:add][:result] in [15, 15.0]
+          assert strat.context[:echo][:echoed] == "hello world"
+        end
+      )
+    end
+  end
+
+  describe "orchestrator: multi-turn conversation (cassette)" do
+    test "LLM makes sequential tool calls across turns" do
+      with_cassette(
+        "e2e_orchestrator_multi_turn",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          agent = init_cassette_orchestrator(plug)
+
+          agent =
+            execute_orchestrator_loop(
+              agent,
+              "First use the add tool with value=1 and amount=2. Then after you get the result, use the echo tool with message='the sum is 3'. Do these one at a time."
+            )
+
+          strat = StratState.get(agent)
+          assert strat.status == :completed
+          assert strat.iteration >= 3
+          assert is_list(strat.conversation)
+          assert length(strat.conversation) > 2
+        end
+      )
+    end
+  end
+
+  describe "orchestrator: tool error recovery (cassette)" do
+    test "LLM recovers when a tool fails" do
+      with_cassette(
+        "e2e_orchestrator_tool_error",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          agent = init_cassette_orchestrator(plug, nodes: [FailAction, EchoAction])
+
+          agent =
+            execute_orchestrator_loop(
+              agent,
+              "Try the fail tool first. If it fails, use the echo tool with message='recovered' instead."
+            )
+
+          strat = StratState.get(agent)
+          assert strat.status == :completed
+          assert is_binary(strat.result)
+        end
+      )
+    end
+  end
+end

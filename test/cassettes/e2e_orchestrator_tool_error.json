@@ -1,0 +1,468 @@
+{
+  "interactions": [
+    {
+      "recorded_at": "2026-03-05T20:13:27.880453Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "content": "Try the fail tool first. If it fails, use the echo tool with message='recovered' instead.",
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "system": "You are a helpful assistant with math and echo tools.",
+          "tools": [
+            {
+              "description": "Echoes input params as the result",
+              "input_schema": {
+                "properties": {
+                  "message": {
+                    "description": "Message to echo",
+                    "type": "string"
+                  }
+                },
+                "required": ["message"],
+                "type": "object"
+              },
+              "name": "echo"
+            },
+            {
+              "description": "Always fails with an error",
+              "input_schema": {
+                "properties": {
+                  "reason": {
+                    "description": "The failure reason",
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "name": "fail"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept": ["application/json"],
+          "accept-encoding": ["gzip"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "I'll try the fail tool first as requested, and then use the echo tool if it fails.",
+              "type": "text"
+            },
+            {
+              "caller": {
+                "type": "direct"
+              },
+              "id": "toolu_01KJY2qT1vYfWp4jX1NYvvPq",
+              "input": {},
+              "name": "fail",
+              "type": "tool_use"
+            }
+          ],
+          "id": "msg_018uaJ2Vg3SY87nwvyS7hpDD",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 472,
+            "output_tokens": 55,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T20:13:27Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T20:13:27Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T20:13:25Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T20:13:27Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9d7bc7fccc15f245-GRU"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Thu, 05 Mar 2026 20:13:27 GMT"],
+          "request-id": ["req_011CYkYYg2V6C4LJRjjs6fpy"],
+          "server": ["cloudflare"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["1864"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    },
+    {
+      "recorded_at": "2026-03-05T20:13:30.201186Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "content": "Try the fail tool first. If it fails, use the echo tool with message='recovered' instead.",
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "I'll try the fail tool first as requested, and then use the echo tool if it fails.",
+                  "type": "text"
+                },
+                {
+                  "caller": {
+                    "type": "direct"
+                  },
+                  "id": "toolu_01KJY2qT1vYfWp4jX1NYvvPq",
+                  "input": {},
+                  "name": "fail",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"error\":\"intentional failure\"}",
+                  "tool_use_id": "toolu_01KJY2qT1vYfWp4jX1NYvvPq",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "system": "You are a helpful assistant with math and echo tools.",
+          "tools": [
+            {
+              "description": "Echoes input params as the result",
+              "input_schema": {
+                "properties": {
+                  "message": {
+                    "description": "Message to echo",
+                    "type": "string"
+                  }
+                },
+                "required": ["message"],
+                "type": "object"
+              },
+              "name": "echo"
+            },
+            {
+              "description": "Always fails with an error",
+              "input_schema": {
+                "properties": {
+                  "reason": {
+                    "description": "The failure reason",
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "name": "fail"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept": ["application/json"],
+          "accept-encoding": ["gzip"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "The fail tool failed as expected with an \"intentional failure\" error. Now I'll use the echo tool with the message 'recovered':",
+              "type": "text"
+            },
+            {
+              "caller": {
+                "type": "direct"
+              },
+              "id": "toolu_017o3eC7TTPmtip3f6dkcsdU",
+              "input": {
+                "message": "recovered"
+              },
+              "name": "echo",
+              "type": "tool_use"
+            }
+          ],
+          "id": "msg_01EfZWbheCnCU5XCme61XM2d",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 546,
+            "output_tokens": 81,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T20:13:29Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T20:13:30Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T20:13:28Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T20:13:29Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9d7bc80ad8a7f245-GRU"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Thu, 05 Mar 2026 20:13:30 GMT"],
+          "request-id": ["req_011CYkYYqgAHPVYc7MotoKHt"],
+          "server": ["cloudflare"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["1928"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    },
+    {
+      "recorded_at": "2026-03-05T20:13:31.849373Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 1024,
+          "messages": [
+            {
+              "content": "Try the fail tool first. If it fails, use the echo tool with message='recovered' instead.",
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "I'll try the fail tool first as requested, and then use the echo tool if it fails.",
+                  "type": "text"
+                },
+                {
+                  "caller": {
+                    "type": "direct"
+                  },
+                  "id": "toolu_01KJY2qT1vYfWp4jX1NYvvPq",
+                  "input": {},
+                  "name": "fail",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"error\":\"intentional failure\"}",
+                  "tool_use_id": "toolu_01KJY2qT1vYfWp4jX1NYvvPq",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "The fail tool failed as expected with an \"intentional failure\" error. Now I'll use the echo tool with the message 'recovered':",
+                  "type": "text"
+                },
+                {
+                  "caller": {
+                    "type": "direct"
+                  },
+                  "id": "toolu_017o3eC7TTPmtip3f6dkcsdU",
+                  "input": {
+                    "message": "recovered"
+                  },
+                  "name": "echo",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"echoed\":\"recovered\"}",
+                  "tool_use_id": "toolu_017o3eC7TTPmtip3f6dkcsdU",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "system": "You are a helpful assistant with math and echo tools.",
+          "tools": [
+            {
+              "description": "Echoes input params as the result",
+              "input_schema": {
+                "properties": {
+                  "message": {
+                    "description": "Message to echo",
+                    "type": "string"
+                  }
+                },
+                "required": ["message"],
+                "type": "object"
+              },
+              "name": "echo"
+            },
+            {
+              "description": "Always fails with an error",
+              "input_schema": {
+                "properties": {
+                  "reason": {
+                    "description": "The failure reason",
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "name": "fail"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept": ["application/json"],
+          "accept-encoding": ["gzip"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "Perfect! The fail tool failed as intended, and I was able to recover by using the echo tool with the message 'recovered'.",
+              "type": "text"
+            }
+          ],
+          "id": "msg_014izLDh1aEzvY9kq9vYYuwF",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 645,
+            "output_tokens": 30,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T20:13:31Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T20:13:31Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T20:13:30Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T20:13:31Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9d7bc817fe34f245-GRU"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Thu, 05 Mar 2026 20:13:31 GMT"],
+          "request-id": ["req_011CYkYYzdBCdvoKGiauZvAt"],
+          "server": ["cloudflare"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["1483"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    }
+  ],
+  "version": "2.0"
+}
