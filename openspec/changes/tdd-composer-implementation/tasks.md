@@ -185,9 +185,9 @@
 
 > **References**: `docs/design/hitl/strategy-integration.md` — Workflow suspend/resume flow, signal routes for HITL, timeout via Schedule directive. `docs/design/hitl/approval-lifecycle.md` — ApprovalResponse validation, decision as outcome. `prototypes/test_hitl_assumptions.exs` — suspend/resume cycle, timeout tests.
 
-- [ ] 22.1 Write tests in `test/integration/workflow_hitl_test.exs` (suspend/resume cycle, timeout outcome transition)
-- [ ] 22.2 Update Workflow.Strategy to handle `:suspend` outcome and resume signal
-- [ ] 22.3 Fix any issues discovered during HITL workflow testing
+- [x] 22.1 Write tests in `test/integration/workflow_hitl_test.exs` (suspend/resume cycle, timeout outcome transition)
+- [x] 22.2 Update Workflow.Strategy to handle `:suspend` outcome and resume signal
+- [x] 22.3 Fix any issues discovered during HITL workflow testing
 
 ## 23. Orchestrator Approval Gate
 

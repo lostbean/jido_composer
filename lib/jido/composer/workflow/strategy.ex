@@ -10,9 +10,12 @@ defmodule Jido.Composer.Workflow.Strategy do
 
   alias Jido.Agent.Directive
   alias Jido.Agent.Strategy.State, as: StratState
+  alias Jido.Composer.Directive.SuspendForHuman
+  alias Jido.Composer.HITL.{ApprovalRequest, ApprovalResponse}
   alias Jido.Composer.Node.ActionNode
   alias Jido.Composer.Node.AgentNode
   alias Jido.Composer.Node.FanOutNode
+  alias Jido.Composer.Node.HumanNode
   alias Jido.Composer.Workflow.Machine
 
   # -- init/2 --
@@ -36,7 +39,8 @@ defmodule Jido.Composer.Workflow.Strategy do
         status: :idle,
         machine: machine,
         pending_child: nil,
-        child_request_id: nil
+        child_request_id: nil,
+        pending_approval: nil
       })
 
     {agent, []}
@@ -134,6 +138,71 @@ defmodule Jido.Composer.Workflow.Strategy do
     {agent, []}
   end
 
+  def cmd(agent, [%Jido.Instruction{action: :hitl_response} = instr | _rest], _ctx) do
+    strat = StratState.get(agent)
+
+    case strat.pending_approval do
+      nil ->
+        {agent, [%Directive.Error{error: %RuntimeError{message: "No pending HITL request"}}]}
+
+      %ApprovalRequest{} = request ->
+        response_data = instr.params
+
+        {:ok, response} =
+          ApprovalResponse.new(
+            request_id: response_data.request_id,
+            decision: response_data.decision,
+            data: Map.get(response_data, :data),
+            respondent: Map.get(response_data, :respondent),
+            comment: Map.get(response_data, :comment),
+            responded_at: Map.get(response_data, :responded_at, DateTime.utc_now())
+          )
+
+        case ApprovalResponse.validate(response, request) do
+          :ok ->
+            handle_hitl_decision(agent, response)
+
+          {:error, reason} ->
+            {agent,
+             [
+               %Directive.Error{
+                 error: %RuntimeError{message: "HITL validation failed: #{reason}"}
+               }
+             ]}
+        end
+    end
+  end
+
+  def cmd(agent, [%Jido.Instruction{action: :hitl_timeout} = instr | _rest], _ctx) do
+    strat = StratState.get(agent)
+    request_id = instr.params[:request_id]
+
+    case strat.pending_approval do
+      %ApprovalRequest{id: ^request_id} = request ->
+        timeout_outcome = request.timeout_outcome
+
+        agent =
+          StratState.update(agent, fn s -> %{s | status: :running, pending_approval: nil} end)
+
+        strat = StratState.get(agent)
+        machine = strat.machine
+
+        case Machine.transition(machine, timeout_outcome) do
+          {:ok, machine} ->
+            agent = put_machine(agent, machine)
+            handle_after_transition(agent)
+
+          {:error, _reason} ->
+            agent = StratState.set_status(agent, :failure)
+            {agent, []}
+        end
+
+      _ ->
+        # Already resolved or mismatched — ignore
+        {agent, []}
+    end
+  end
+
   def cmd(agent, _instructions, _ctx) do
     {agent, []}
   end
@@ -146,7 +215,9 @@ defmodule Jido.Composer.Workflow.Strategy do
       {"composer.workflow.start", {:strategy_cmd, :workflow_start}},
       {"composer.workflow.child.result", {:strategy_cmd, :workflow_child_result}},
       {"jido.agent.child.started", {:strategy_cmd, :workflow_child_started}},
-      {"jido.agent.child.exit", {:strategy_cmd, :workflow_child_exit}}
+      {"jido.agent.child.exit", {:strategy_cmd, :workflow_child_exit}},
+      {"composer.hitl.response", {:strategy_cmd, :hitl_response}},
+      {"composer.hitl.timeout", {:strategy_cmd, :hitl_timeout}}
     ]
   end
 
@@ -208,6 +279,29 @@ defmodule Jido.Composer.Workflow.Strategy do
 
         {agent, [directive]}
 
+      %HumanNode{} = human_node ->
+        {:ok, updated_context, :suspend} = HumanNode.run(human_node, strat.machine.context)
+
+        # Extract and enrich the ApprovalRequest
+        request = updated_context.__approval_request__
+
+        request = %{
+          request
+          | agent_id: Map.get(strat, :agent_id),
+            agent_module: Map.get(strat, :agent_module),
+            workflow_state: strat.machine.status,
+            node_name: HumanNode.name(human_node)
+        }
+
+        # Store pending approval, set status to :waiting
+        agent =
+          StratState.update(agent, fn s ->
+            %{s | status: :waiting, pending_approval: request}
+          end)
+
+        {:ok, directive} = SuspendForHuman.new(approval_request: request)
+        {agent, [directive]}
+
       %FanOutNode{} = fan_out_node ->
         # FanOutNode encapsulates concurrency internally — execute and process result
         case FanOutNode.run(fan_out_node, strat.machine.context) do
@@ -238,6 +332,48 @@ defmodule Jido.Composer.Workflow.Strategy do
         end
 
       nil ->
+        {agent, []}
+    end
+  end
+
+  defp handle_hitl_decision(agent, %ApprovalResponse{} = response) do
+    # Merge response data into machine context
+    strat = StratState.get(agent)
+
+    hitl_data = %{
+      hitl_response: %{
+        decision: response.decision,
+        data: response.data,
+        respondent: response.respondent,
+        comment: response.comment,
+        responded_at: response.responded_at
+      }
+    }
+
+    machine = %{
+      strat.machine
+      | context: DeepMerge.deep_merge(strat.machine.context, hitl_data)
+    }
+
+    # Use decision as transition outcome
+    case Machine.transition(machine, response.decision) do
+      {:ok, machine} ->
+        agent = put_machine(agent, machine)
+
+        agent =
+          StratState.update(agent, fn s ->
+            %{s | status: :running, pending_approval: nil}
+          end)
+
+        handle_after_transition(agent)
+
+      {:error, _reason} ->
+        agent = put_machine(agent, machine)
+        agent = StratState.set_status(agent, :failure)
+
+        agent =
+          StratState.update(agent, fn s -> %{s | pending_approval: nil} end)
+
         {agent, []}
     end
   end
