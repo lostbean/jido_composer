@@ -21,20 +21,27 @@ We define a category **Ctx** where:
   the result."
 - **Identity (`id`)**: The pass-through node that returns its input unchanged.
 
-## Why Deep Merge is the Right Monoidal Operation
+## Why Scoped Deep Merge is the Right Monoidal Operation
 
 The [context](nodes/context-flow.md) map accumulates results as it flows through
-nodes. Each node reads what it needs from the context and writes its results
-back. Deep merge is the combining operation because:
+nodes. Each node's output is **scoped** under a key derived from its name (the
+workflow state name or orchestrator tool name). This scoping ensures that
+cross-node key collisions cannot occur, which eliminates the primary risk of
+deep merge: silent data loss for non-map values like lists.
+
+Within scoped accumulation, the combining operation reduces to `Map.put` on
+disjoint keys followed by `deep_merge` for the overall context structure:
 
 | Property             | Guarantee                                                                           |
 | -------------------- | ----------------------------------------------------------------------------------- |
 | **Associativity**    | `merge(merge(a, b), c) = merge(a, merge(b, c))` — guaranteed by map merge semantics |
 | **Identity element** | The empty map `%{}` — `merge(%{}, a) = a = merge(a, %{})`                           |
 | **Closure**          | Merging two maps produces a map                                                     |
+| **Disjointness**     | Scoped keys never collide across nodes — merge is lossless                          |
 
 This makes `(Map, deep_merge, %{})` a monoid, and by extension the nodes form
-an **endomorphism monoid** over context maps.
+an **endomorphism monoid** over context maps. The scoping convention strengthens
+this from a theoretical guarantee to a practical one.
 
 ## Kleisli Category: Error-Aware Composition
 
@@ -111,9 +118,10 @@ the LLM can invoke multiple tools simultaneously.
 split(f, g)({a, b}) = {f(a), g(b)}
 ```
 
-Route different subsets of context to different nodes. This maps to key-scoping
-in the context map — node A reads/writes under `:research`, node B under
-`:summary`.
+Route different subsets of context to different nodes. This maps directly to
+the [scoped accumulation model](nodes/context-flow.md#output-scoping): each
+node's output is stored under its own key (`:extract`, `:transform`, etc.),
+providing natural key-level isolation.
 
 ### Choice (case / `|||`)
 
@@ -194,7 +202,7 @@ appears as an atomic operation to the parent.
 | -------------------- | ------------------------------- | -------------------------------------------------------------------- |
 | Node                 | Morphism `A -> A`               | `Node.run(ctx) :: {:ok, ctx}`                                        |
 | Sequential pipe      | Composition `f >>> g`           | FSM transitions: `state_a -> state_b -> state_c`                     |
-| Context accumulation | Monoidal operation              | `DeepMerge.deep_merge(ctx, result)`                                  |
+| Context accumulation | Monoidal operation              | Scoped `deep_merge` — each node writes under its own key             |
 | Error handling       | Kleisli category (Result monad) | `{:error, reason}` short-circuits; `{:_, :error} => :failed`         |
 | Branching            | Coproduct / copairing           | Outcome atoms + FSM transition table                                 |
 | Parallel execution   | Product / fan-out (`&&&`)       | Concurrent node execution, merge results                             |

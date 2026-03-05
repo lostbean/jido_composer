@@ -8,20 +8,20 @@ invocations, tool execution, and result accumulation.
 
 The strategy stores its state under `agent.state.__strategy__`:
 
-| Field                | Type                        | Purpose                                                             |
-| -------------------- | --------------------------- | ------------------------------------------------------------------- |
-| `status`             | atom                        | `:idle`, `:awaiting_llm`, `:awaiting_tools`, `:completed`, `:error` |
-| `nodes`              | `%{String.t() => Node.t()}` | Available nodes indexed by name                                     |
-| `llm_module`         | module                      | Implements [LLM Behaviour](llm-behaviour.md)                        |
-| `system_prompt`      | `String.t()`                | System instructions for the LLM                                     |
-| `messages`           | `[message]`                 | Conversation history                                                |
-| `tools`              | `[tool]`                    | Tool descriptions derived from nodes                                |
-| `pending_tool_calls` | `[tool_call]`               | In-flight tool executions                                           |
-| `context`            | map                         | Accumulated [context](../nodes/context-flow.md)                     |
-| `iteration`          | integer                     | Current loop iteration                                              |
-| `max_iterations`     | integer                     | Safety limit                                                        |
-| `req_options`        | keyword                     | Opaque HTTP options forwarded to [LLM generate/3](llm-behaviour.md) |
-| `result`             | any                         | Final answer when complete                                          |
+| Field                | Type                        | Purpose                                                               |
+| -------------------- | --------------------------- | --------------------------------------------------------------------- |
+| `status`             | atom                        | `:idle`, `:awaiting_llm`, `:awaiting_tools`, `:completed`, `:error`   |
+| `nodes`              | `%{String.t() => Node.t()}` | Available nodes indexed by name                                       |
+| `llm_module`         | module                      | Implements [LLM Behaviour](llm-behaviour.md)                          |
+| `system_prompt`      | `String.t()`                | System instructions for the LLM                                       |
+| `conversation`       | `term()`                    | Opaque conversation state owned by the [LLM module](llm-behaviour.md) |
+| `tools`              | `[tool]`                    | Tool descriptions derived from nodes                                  |
+| `pending_tool_calls` | `[tool_call]`               | In-flight tool executions                                             |
+| `context`            | map                         | Accumulated [context](../nodes/context-flow.md)                       |
+| `iteration`          | integer                     | Current loop iteration                                                |
+| `max_iterations`     | integer                     | Safety limit                                                          |
+| `req_options`        | keyword                     | Opaque HTTP options forwarded to [LLM generate/3](llm-behaviour.md)   |
+| `result`             | any                         | Final answer when complete                                            |
 
 ## Status Lifecycle
 
@@ -71,10 +71,11 @@ sequenceDiagram
     AgentServer->>Strategy: cmd(:orchestrator_start)
 
     loop ReAct Loop
-        Strategy->>Strategy: Build messages + tool descriptions
+        Strategy->>Strategy: Collect tool_results from previous round
         Strategy-->>AgentServer: RunInstruction(llm_generate_action)
+        Note over AgentServer,Runtime: generate(conversation, tool_results, tools, opts)
         AgentServer->>Runtime: execute LLM call
-        Runtime-->>AgentServer: LLM response
+        Runtime-->>AgentServer: {response, updated_conversation}
         AgentServer->>Strategy: cmd(:orchestrator_llm_result)
 
         alt tool_calls
@@ -89,7 +90,7 @@ sequenceDiagram
                     AgentServer->>Strategy: cmd(:orchestrator_child_result)
                 end
             end
-            Strategy->>Strategy: Append results to messages
+            Strategy->>Strategy: Collect tool_results for next generate call
         else final_answer
             Strategy->>Strategy: Set status = completed, store result
             Strategy-->>AgentServer: [] (done)
@@ -105,13 +106,16 @@ sequenceDiagram
 The strategy never calls the LLM module directly. Instead, it wraps the LLM
 call in an internal action and emits a RunInstruction directive. This action:
 
-1. Calls `llm_module.generate(messages, tools, opts)`
-2. Returns the response as an instruction result
+1. Calls `llm_module.generate(conversation, tool_results, tools, opts)`
+2. Returns the `{response, updated_conversation}` as an instruction result
 
 The result is routed back to `cmd/3` as `:orchestrator_llm_result`. This keeps
-the strategy pure and testable.
+the strategy pure and testable. The strategy stores the updated `conversation`
+term in its state for the next LLM call. It never inspects the conversation —
+the LLM module owns the message format. See
+[LLM Behaviour — Conversation State Ownership](llm-behaviour.md#conversation-state-ownership).
 
-The `opts` passed to `generate/3` include any `:req_options` from the
+The `opts` passed to `generate/4` include any `:req_options` from the
 strategy configuration. This enables [cassette-based testing](../testing.md)
 by injecting a plug that intercepts HTTP calls. The strategy treats
 `req_options` as opaque — it passes them through without inspection. See
@@ -130,8 +134,9 @@ When the LLM returns tool calls:
   [Workflow AgentNode execution](../workflow/strategy.md#execution-flow-agentnode).
   Results flow back as `:orchestrator_child_result`.
 
-In both cases, results are converted to tool result messages via AgentTool and
-appended to the conversation history.
+In both cases, results are collected as normalized `tool_result` structs
+(`%{id, name, result}`) and passed to the next `generate/4` call. The LLM
+module converts them to provider-specific message formats internally.
 
 ## Iteration Safety
 
@@ -143,5 +148,10 @@ repeatedly calls tools without converging.
 
 Unlike the Workflow where context flows linearly through the machine, the
 Orchestrator accumulates context across all tool executions within the ReAct
-loop. Each tool result is deep-merged into the strategy's `context` field,
-providing an aggregated view of all work done.
+loop. Each tool result is **scoped under the tool name** (derived from the
+node's name) and deep-merged into the strategy's `context` field. This
+prevents data loss when multiple tools produce similarly-shaped results.
+
+When the LLM calls the same tool multiple times, the second call's result
+overwrites the first under the same scope key. The tool implementation can
+read its previous output from `context[tool_name]` and append if needed.

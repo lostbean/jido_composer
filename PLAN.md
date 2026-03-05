@@ -140,8 +140,9 @@ defmodule Jido.Composer.Node.ActionNode do
   def new(action_module, opts \\ [])
 
   # Delegates to Jido.Exec.run(action_module, context, %{}, opts)
-  # Maps {:ok, result} → {:ok, deep_merge(context, result)}
-  # Maps {:ok, result, extras} → {:ok, deep_merge(context, result), classify_outcome(extras)}
+  # Returns raw result — scoping is applied by the composition layer (Machine/Strategy)
+  # Maps {:ok, result} → {:ok, result}
+  # Maps {:ok, result, extras} → {:ok, result, classify_outcome(extras)}
   # Maps {:error, reason} → {:error, reason}
   def run(context, opts)
   def name(), do: action_module.name()
@@ -150,7 +151,12 @@ defmodule Jido.Composer.Node.ActionNode do
 end
 ```
 
-**Key**: Uses `DeepMerge.deep_merge(context, result)` to accumulate context — this is the monoidal operation.
+**Key**: ActionNode returns raw results. The composition layer (Workflow Machine
+or Orchestrator Strategy) applies scoping by storing the result under the node's
+name key: `%{node_name => result}`. This prevents cross-node key collisions and
+ensures lists are never silently overwritten. Note: `Jido.Exec.Chain` uses
+shallow `Map.merge` — Composer does NOT delegate to Chain for context
+accumulation.
 
 ### Step 4: AgentNode Adapter (`lib/jido/composer/node/agent_node.ex`)
 
@@ -212,7 +218,7 @@ defmodule Jido.Composer.Workflow.Machine do
   def current_node(machine)  # returns the Node bound to current state
   def transition(machine, outcome)  # applies transition, returns {:ok, machine} | {:error, reason}
   def terminal?(machine)  # true if current state is terminal
-  def apply_result(machine, result_context)  # deep merges result into flowing context
+  def apply_result(machine, state_name, result_context)  # scopes result under state_name, deep merges into flowing context
 end
 ```
 
@@ -321,46 +327,64 @@ defmodule Jido.Composer.Orchestrator.LLM do
   @type tool :: %{
     name: String.t(),
     description: String.t(),
-    parameters: map()  # JSON Schema
+    parameters: map()  # JSON Schema (neutral format)
   }
 
   @type tool_call :: %{
     id: String.t(),
     name: String.t(),
-    arguments: map()
+    arguments: map()  # Always a parsed map (LLM module parses JSON strings)
   }
 
-  @type message :: %{role: atom(), content: String.t()}
+  @type tool_result :: %{
+    id: String.t(),
+    name: String.t(),
+    result: map()
+  }
+
+  # Opaque conversation state owned by the LLM module.
+  # The strategy stores this but never inspects it.
+  @type conversation :: term()
 
   @type response ::
     {:final_answer, String.t()}
     | {:tool_calls, [tool_call()]}
+    | {:tool_calls, [tool_call()], String.t()}  # with reasoning text
     | {:error, term()}
 
   @callback generate(
-    messages :: [message()],
+    conversation :: conversation() | nil,
+    tool_results :: [tool_result()],
     tools :: [tool()],
     opts :: keyword()
-  ) :: {:ok, response()} | {:error, term()}
+  ) :: {:ok, response(), conversation()} | {:error, term()}
 end
 ```
 
+The LLM module owns the full conversation history. The strategy passes `nil`
+on the first call, then stores and passes back the opaque `conversation` term
+on subsequent calls. The module handles all provider-specific format conversion
+internally (Claude's content blocks vs OpenAI's message format, JSON argument
+parsing, tool result encoding, etc.).
+
 ### Step 9: AgentTool Adapter (`lib/jido/composer/orchestrator/agent_tool.ex`)
 
-Converts a `Node` into a tool description for the LLM.
+Converts a `Node` into a neutral tool description for the LLM.
 
 ```elixir
 defmodule Jido.Composer.Orchestrator.AgentTool do
-  @moduledoc "Converts Nodes into LLM tool descriptions."
+  @moduledoc "Converts Nodes into neutral LLM tool descriptions."
 
   # Generates tool struct from Node's name/description/schema
+  # Output format: %{name, description, parameters} (JSON Schema)
   def to_tool(node)
 
   # Converts tool_call arguments back to node context
   def to_context(tool_call)
 
-  # Wraps node execution result as tool result message
-  def to_result_message(tool_call_id, node_name, result)
+  # Builds a normalized tool_result from execution output
+  # Output format: %{id, name, result} (passed to generate/4)
+  def to_tool_result(tool_call_id, node_name, result)
 end
 ```
 
@@ -378,26 +402,27 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   #   nodes: %{name => Node.t()},
   #   llm_module: module(),  # implements Jido.Composer.Orchestrator.LLM
   #   system_prompt: String.t(),
-  #   messages: [message()],  # conversation history
-  #   tools: [tool()],        # derived from nodes
+  #   conversation: term(),   # opaque, owned by llm_module
+  #   tools: [tool()],        # derived from nodes (neutral format)
   #   pending_tool_calls: [tool_call()],
-  #   context: map(),         # accumulated context
+  #   completed_tool_results: [tool_result()],  # normalized results for next generate/4
+  #   context: map(),         # accumulated context (scoped per tool name)
   #   iteration: integer(),
   #   max_iterations: integer(),
   #   result: any()
   # }
 
   # Execution loop:
-  # 1. Receive query → build initial messages with system prompt + query
-  # 2. Call LLM with messages + tools
+  # 1. Receive query → call generate(nil, [], tools, opts) with system prompt in opts
+  # 2. LLM returns response + updated conversation
   #    - For action nodes: RunInstruction directive
   #    - For agent nodes: SpawnAgent + signal
   # 3. LLM returns {:tool_calls, calls} → execute each tool (node)
-  # 4. Collect results → append to messages → loop to step 2
+  # 4. Collect normalized tool_results → call generate(conv, tool_results, tools, opts)
   # 5. LLM returns {:final_answer, answer} → done
 
   # For LLM calls: emits RunInstruction with an internal LLM action
-  # that delegates to the configured llm_module.generate/3
+  # that delegates to the configured llm_module.generate/4
 
   # signal_routes/1:
   #   "composer.orchestrator.query" → {:strategy_cmd, :orchestrator_start}
@@ -549,17 +574,17 @@ against real LLM response structures.
 
 ## Key Reuse from Jido Ecosystem
 
-| What                          | From                        | How Used                                       |
-| ----------------------------- | --------------------------- | ---------------------------------------------- |
-| Agent struct + lifecycle      | `Jido.Agent`                | Base for Workflow/Orchestrator agents          |
-| Strategy behaviour            | `Jido.Agent.Strategy`       | Both strategies implement this                 |
-| Directive system              | `Jido.Agent.Directive`      | SpawnAgent, RunInstruction, Emit, etc.         |
-| Strategy state helpers        | `Jido.Agent.Strategy.State` | Store FSM/orchestrator state in `__strategy__` |
-| Action execution              | `Jido.Exec.run/4`           | Execute action nodes                           |
-| Instruction normalization     | `Jido.Instruction`          | Wrap actions for RunInstruction                |
-| Signal creation/routing       | `Jido.Signal`               | Inter-agent communication                      |
-| Schema validation             | `Zoi`                       | Node schemas, config validation                |
-| Error types                   | `Splode`                    | Structured errors                              |
-| Deep merge                    | `DeepMerge`                 | Context accumulation (monoidal operation)      |
-| Plan DAG (reference)          | `Jido.Plan`                 | Architectural reference for graph validation   |
-| Chain composition (reference) | `Jido.Exec.Chain`           | Pattern reference for sequential deep-merge    |
+| What                          | From                        | How Used                                                                                            |
+| ----------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------- |
+| Agent struct + lifecycle      | `Jido.Agent`                | Base for Workflow/Orchestrator agents                                                               |
+| Strategy behaviour            | `Jido.Agent.Strategy`       | Both strategies implement this                                                                      |
+| Directive system              | `Jido.Agent.Directive`      | SpawnAgent, RunInstruction, Emit, etc.                                                              |
+| Strategy state helpers        | `Jido.Agent.Strategy.State` | Store FSM/orchestrator state in `__strategy__`                                                      |
+| Action execution              | `Jido.Exec.run/4`           | Execute action nodes                                                                                |
+| Instruction normalization     | `Jido.Instruction`          | Wrap actions for RunInstruction                                                                     |
+| Signal creation/routing       | `Jido.Signal`               | Inter-agent communication                                                                           |
+| Schema validation             | `Zoi`                       | Node schemas, config validation                                                                     |
+| Error types                   | `Splode`                    | Structured errors                                                                                   |
+| Deep merge                    | `DeepMerge`                 | Context accumulation (scoped per node to prevent key collisions)                                    |
+| Plan DAG (reference)          | `Jido.Plan`                 | Architectural reference for graph validation                                                        |
+| Chain composition (reference) | `Jido.Exec.Chain`           | Pattern reference for sequential composition (uses shallow merge — Composer adds scoped deep merge) |

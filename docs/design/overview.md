@@ -114,12 +114,13 @@ workflow — presents the same `context -> context` interface. This uniformity
 enables recursive nesting: a workflow can contain an orchestrator, which can
 contain another workflow. See [Nodes](nodes/README.md).
 
-### Context as Monoid
+### Scoped Context Accumulation
 
-The flowing context map forms an endomorphism monoid. Deep merge is the
-associative binary operation; the empty map is the identity element. This
-guarantees that composition order is well-defined and results accumulate
-predictably. See [Context Flow](nodes/context-flow.md) and
+The flowing context map forms an endomorphism monoid. Each node's output is
+**scoped** under a key derived from its name (workflow state name or tool name),
+then deep-merged into the accumulated context. This scoping prevents cross-node
+key collisions and eliminates silent data loss for non-map values like lists.
+See [Context Flow](nodes/context-flow.md) and
 [Foundations](foundations.md) for the full categorical treatment.
 
 ## Strategy System
@@ -176,6 +177,11 @@ directives most relevant to Composer are:
 | Schedule        | Schedule a delayed message                                                        | Orchestrator |
 | SuspendForHuman | Pause flow for human input, deliver [ApprovalRequest](hitl/approval-lifecycle.md) | Both         |
 | Error           | Signal an error condition                                                         | Both         |
+
+SuspendForHuman is a custom directive introduced by Composer. The AgentServer's
+directive execution is protocol-based (`Jido.AgentServer.DirectiveExec`), so
+Composer implements this protocol for its custom directive struct. Unknown
+directives fall through to a no-op `Any` implementation.
 
 The RunInstruction directive is central to both patterns. It lets strategies
 remain pure by deferring action execution to the runtime. The runtime executes
@@ -240,7 +246,7 @@ See [Glossary — Error](glossary.md#error) for the term definition.
 Two existing Jido modules informed Composer's design without being direct
 dependencies:
 
-| Module            | Relationship                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Jido.Exec.Chain` | Pattern reference for sequential deep-merge composition — Composer's Workflow generalizes this into an FSM with outcome-driven branching         |
-| `Jido.Plan`       | Architectural reference for DAG-based execution — see [Composition](composition.md#composition-vs-jidoplan) for how Composer's FSM model differs |
+| Module            | Relationship                                                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Jido.Exec.Chain` | Pattern reference for sequential composition — note that Chain uses shallow `Map.merge`, not deep merge. Composer adds scoped deep merge and outcome-driven branching |
+| `Jido.Plan`       | Architectural reference for DAG-based execution — see [Composition](composition.md#composition-vs-jidoplan) for how Composer's FSM model differs                      |

@@ -36,13 +36,24 @@ The entire agent state — including strategy state under `__strategy__` — is
 persisted via `Jido.Persist.hibernate/2`. The checkpoint captures the logical
 state of the computation at the moment of suspension.
 
-| Data                                    | Location                            | Serializable?                 |
-| --------------------------------------- | ----------------------------------- | ----------------------------- |
-| Machine status, context, history        | `__strategy__.machine`              | Yes (atoms, maps, timestamps) |
-| Orchestrator messages, tools, iteration | `__strategy__.*`                    | Yes (plain maps)              |
-| Pending ApprovalRequest                 | `__strategy__.pending_hitl_request` | Yes (no PIDs)                 |
-| Execution thread                        | Stored separately via Thread        | Yes (append-only log)         |
-| Child process PIDs                      | `__parent__`, AgentServer children  | **No** — replaced by ChildRef |
+| Data                                        | Location                            | Serializable?                                                   |
+| ------------------------------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| Machine status, context, history            | `__strategy__.machine`              | Yes (atoms, maps, timestamps)                                   |
+| Orchestrator conversation, tools, iteration | `__strategy__.*`                    | Yes (LLM module must ensure conversation state is serializable) |
+| Pending ApprovalRequest                     | `__strategy__.pending_hitl_request` | Yes (no PIDs)                                                   |
+| Execution thread                            | Stored separately via Thread        | Yes (append-only log)                                           |
+| Child process PIDs                          | `__parent__`, AgentServer children  | **No** — replaced by ChildRef                                   |
+
+## ParentRef PID Handling
+
+The `__parent__` field in child agent state contains a
+`Jido.AgentServer.ParentRef` struct with a `pid` field that is not serializable.
+The `emit_to_parent/3` helper requires this PID to function. During
+checkpointing, the `pid` field must be stripped (set to `nil`). On resume, the
+parent re-spawns the child via `SpawnAgent`, which re-populates `__parent__`
+with a fresh `ParentRef` pointing to the new parent PID. The `id`, `tag`, and
+`meta` fields in `ParentRef` ARE serializable and are preserved across
+checkpoint/restore.
 
 ## ChildRef: Serializable Child References
 
