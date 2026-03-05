@@ -26,36 +26,36 @@
 
 > **References**: `docs/design/nodes/README.md` — Node contract, callbacks table, design decisions. `docs/design/nodes/context-flow.md` — scoped accumulation, deep merge semantics. `docs/design/foundations.md` — monoid laws, Kleisli arrows. `PLAN.md` Step 2. `prototypes/learnings.md` — "Module Type Detection".
 
-- [ ] 3.1 Write tests for Node behaviour contract in `test/jido/composer/node_test.exs` (callback enforcement, return types)
-- [ ] 3.2 Implement `Jido.Composer.Node` behaviour in `lib/jido/composer/node.ex` (callbacks, types)
+- [x] 3.1 Write tests for Node behaviour contract in `test/jido/composer/node_test.exs` (callback enforcement, return types)
+- [x] 3.2 Implement `Jido.Composer.Node` behaviour in `lib/jido/composer/node.ex` (callbacks, types)
 
 ## 4. ActionNode
 
 > **References**: `docs/design/nodes/README.md` — ActionNode section, delegation table. `docs/design/nodes/context-flow.md` — "Output Scoping": scoping is NOT ActionNode's job. `PLAN.md` Step 3. `prototypes/learnings.md` — "Schema Conversion — Already Solved", "Module Type Detection". `prototypes/test_dsl_agent_wiring.exs` — RunInstruction routing.
 
-- [ ] 4.1 Write tests for ActionNode in `test/jido/composer/node/action_node_test.exs` (new/2, run/2, metadata delegation, invalid module rejection)
-- [ ] 4.2 Implement `Jido.Composer.Node.ActionNode` in `lib/jido/composer/node/action_node.ex`
+- [x] 4.1 Write tests for ActionNode in `test/jido/composer/node/action_node_test.exs` (new/2, run/2, metadata delegation, invalid module rejection)
+- [x] 4.2 Implement `Jido.Composer.Node.ActionNode` in `lib/jido/composer/node/action_node.ex`
 
 ## 5. Workflow Machine
 
 > **References**: `docs/design/workflow/state-machine.md` — Machine struct, operations, transition lookup diagram, terminal states. `docs/design/nodes/context-flow.md` — "Context in Workflows", scope key is state name. `docs/design/foundations.md` — monoid laws. `PLAN.md` Step 5. `prototypes/learnings.md` — "Deep Merge Lists Overwrite", performance (617K transitions/sec). `prototypes/test_fsm_deep_merge.exs` — 7 tests for reference.
 
-- [ ] 5.1 Write tests for Machine in `test/jido/composer/workflow/machine_test.exs` (new/1, transition/2 with fallback chain, terminal detection, apply_result/3 scoping, history tracking)
-- [ ] 5.2 Implement `Jido.Composer.Workflow.Machine` in `lib/jido/composer/workflow/machine.ex`
+- [x] 5.1 Write tests for Machine in `test/jido/composer/workflow/machine_test.exs` (new/1, transition/2 with fallback chain, terminal detection, apply_result/3 scoping, history tracking)
+- [x] 5.2 Implement `Jido.Composer.Workflow.Machine` in `lib/jido/composer/workflow/machine.ex`
 
 ## 6. Workflow Strategy
 
 > **References**: `docs/design/workflow/strategy.md` — Full lifecycle diagram, strategy state fields, signal routes, command actions, ActionNode/AgentNode/FanOutNode execution flows, error handling. `docs/design/workflow/README.md` — high-level architecture. `PLAN.md` Step 6. `prototypes/learnings.md` — "Signal Routing — No Default Fallback" (CRITICAL), "Instruction action Field Accepts Atoms", "DirectiveExec Return Types". `prototypes/test_jido_strategy.exs` — Strategy.State, directives. `prototypes/test_dsl_agent_wiring.exs` — strategy opts, RunInstruction routing.
 
-- [ ] 6.1 Write tests for Workflow.Strategy in `test/jido/composer/workflow/strategy_test.exs` (init/2, cmd/3 for workflow_start, workflow_node_result, terminal state handling, signal_routes/1)
-- [ ] 6.2 Implement `Jido.Composer.Workflow.Strategy` in `lib/jido/composer/workflow/strategy.ex`
+- [x] 6.1 Write tests for Workflow.Strategy in `test/jido/composer/workflow/strategy_test.exs` (init/2, cmd/3 for workflow_start, workflow_node_result, terminal state handling, signal_routes/1)
+- [x] 6.2 Implement `Jido.Composer.Workflow.Strategy` in `lib/jido/composer/workflow/strategy.ex`
 
 ## 7. Workflow DSL
 
 > **References**: `docs/design/workflow/README.md` — DSL section: node wrapping, transition validation (errors vs warnings table), agent generation, convenience functions. `PLAN.md` Step 7. `prototypes/learnings.md` — "DSL Strategy Opts Wiring" (`use Jido.Agent, strategy: {Mod, opts}`), "Module Type Detection" (`function_exported?`). `prototypes/test_dsl_agent_wiring.exs` — 5 tests on strategy opts flow.
 
-- [ ] 7.1 Write tests for Workflow DSL in `test/jido/composer/workflow/dsl_test.exs` (module generation, auto-wrapping, compile-time validation)
-- [ ] 7.2 Implement `Jido.Composer.Workflow.DSL` in `lib/jido/composer/workflow/dsl.ex`
+- [x] 7.1 Write tests for Workflow DSL in `test/jido/composer/workflow/dsl_test.exs` (module generation, auto-wrapping, compile-time validation)
+- [x] 7.2 Implement `Jido.Composer.Workflow.DSL` in `lib/jido/composer/workflow/dsl.ex`
 
 ## 8. Workflow Integration Tests
 
