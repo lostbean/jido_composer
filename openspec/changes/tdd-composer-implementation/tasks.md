@@ -99,8 +99,8 @@
 
 > **References**: `docs/design/orchestrator/README.md` — DSL section: config options table, generated functions table (new/1, query/3, query_sync/3). `PLAN.md` Step 11. `prototypes/learnings.md` — "DSL Strategy Opts Wiring", "Module Type Detection".
 
-- [ ] 12.1 Write tests for Orchestrator DSL in `test/jido/composer/orchestrator/dsl_test.exs` (module generation, auto-wrapping, tool generation, defaults)
-- [ ] 12.2 Implement `Jido.Composer.Orchestrator.DSL` in `lib/jido/composer/orchestrator/dsl.ex`
+- [x] 12.1 Write tests for Orchestrator DSL in `test/jido/composer/orchestrator/dsl_test.exs` (module generation, auto-wrapping, tool generation, defaults)
+- [x] 12.2 Implement `Jido.Composer.Orchestrator.DSL` in `lib/jido/composer/orchestrator/dsl.ex`
 
 ## 13. Orchestrator Integration Tests
 
