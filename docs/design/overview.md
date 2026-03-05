@@ -14,6 +14,9 @@ graph TB
         Node["Node Behaviour"]
         AN["ActionNode"]
         AGN["AgentNode"]
+        HN["HumanNode"]
+        HITL["HITL<br/>(ApprovalRequest/Response)"]
+        SFH["SuspendForHuman<br/>(Directive)"]
         WF["Workflow Strategy"]
         Machine["Machine (FSM)"]
         WDSL["Workflow DSL"]
@@ -29,6 +32,9 @@ graph TB
         Composer --> Err
         Node --> AN
         Node --> AGN
+        Node --> HN
+        HN --> HITL
+        HITL --> SFH
         AN --> WF
         AGN --> WF
         AN --> ORC
@@ -74,6 +80,9 @@ All user-facing modules live under this namespace:
 | `Jido.Composer.Node`                   | [Node](nodes/README.md) behaviour definition                     |
 | `Jido.Composer.Node.ActionNode`        | [Action adapter](nodes/README.md#actionnode)                     |
 | `Jido.Composer.Node.AgentNode`         | [Agent adapter](nodes/README.md#agentnode)                       |
+| `Jido.Composer.Node.HumanNode`         | [Human decision gate](hitl/human-node.md)                        |
+| `Jido.Composer.HITL.ApprovalRequest`   | [Pending human decision](hitl/approval-lifecycle.md)             |
+| `Jido.Composer.HITL.ApprovalResponse`  | [Human decision response](hitl/approval-lifecycle.md)            |
 | `Jido.Composer.Workflow`               | [Workflow DSL](workflow/README.md) macro                         |
 | `Jido.Composer.Workflow.Strategy`      | [Workflow strategy](workflow/strategy.md)                        |
 | `Jido.Composer.Workflow.Machine`       | [FSM data structure](workflow/state-machine.md)                  |
@@ -139,26 +148,34 @@ stateDiagram-v2
     [*] --> idle
     idle --> running : cmd received
     running --> waiting : awaiting external result
+    running --> waiting : node returns :suspend (HITL)
     waiting --> running : result received
+    waiting --> running : HITL response received
     running --> success : completed successfully
     running --> failure : error occurred
     success --> [*]
     failure --> [*]
 ```
 
+The `:waiting` status serves double duty: it represents both "awaiting an
+external action result" (e.g., a RunInstruction callback) and "awaiting a human
+decision" (a [HITL suspension](hitl/README.md)). The strategy's internal state
+distinguishes these cases via the `pending_hitl_request` field.
+
 ## Directive System
 
 Strategies communicate with the runtime exclusively through directives. The
 directives most relevant to Composer are:
 
-| Directive      | Purpose                                          | Used By      |
-| -------------- | ------------------------------------------------ | ------------ |
-| RunInstruction | Execute an action and route result back to cmd/3 | Both         |
-| SpawnAgent     | Spawn a child agent with parent-child tracking   | Both         |
-| StopChild      | Stop a tracked child agent                       | Both         |
-| Emit           | Dispatch a signal via configured adapters        | Both         |
-| Schedule       | Schedule a delayed message                       | Orchestrator |
-| Error          | Signal an error condition                        | Both         |
+| Directive       | Purpose                                                                           | Used By      |
+| --------------- | --------------------------------------------------------------------------------- | ------------ |
+| RunInstruction  | Execute an action and route result back to cmd/3                                  | Both         |
+| SpawnAgent      | Spawn a child agent with parent-child tracking                                    | Both         |
+| StopChild       | Stop a tracked child agent                                                        | Both         |
+| Emit            | Dispatch a signal via configured adapters                                         | Both         |
+| Schedule        | Schedule a delayed message                                                        | Orchestrator |
+| SuspendForHuman | Pause flow for human input, deliver [ApprovalRequest](hitl/approval-lifecycle.md) | Both         |
+| Error           | Signal an error condition                                                         | Both         |
 
 The RunInstruction directive is central to both patterns. It lets strategies
 remain pure by deferring action execution to the runtime. The runtime executes
@@ -205,18 +222,18 @@ See [Glossary — Error](glossary.md#error) for the term definition.
 
 ## Dependency Map
 
-| Dependency       | Role in Composer                                                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jido`           | Agent struct + lifecycle, Strategy behaviour, Directive system (SpawnAgent, RunInstruction, Emit, etc.), Strategy.State helpers for `__strategy__` management |
-| `jido_action`    | Action behaviour, `Jido.Exec.run/4` for executing action nodes, `Jido.Instruction` for wrapping actions into RunInstruction directives                        |
-| `jido_signal`    | Signal creation, routing, and dispatch for inter-agent communication                                                                                          |
-| `zoi`            | Schema validation for node schemas and DSL configuration                                                                                                      |
-| `splode`         | Structured [error types](#error-handling) with error classes and consistent formatting                                                                        |
-| `deep_merge`     | [Context accumulation](nodes/context-flow.md) — the monoidal merge operation for composing node results                                                       |
-| `jason`          | JSON serialization for [AgentTool](orchestrator/README.md#agenttool-adapter) parameter schemas                                                                |
-| `nimble_options` | Legacy schema format support for node parameter definitions                                                                                                   |
-| `telemetry`      | Execution metrics and tracing for node execution, strategy transitions, and LLM calls                                                                         |
-| `req_cassette`   | Test-only. Records and replays HTTP interactions as [cassettes](testing.md). Preferred over mocks for LLM response testing                                    |
+| Dependency       | Role in Composer                                                                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jido`           | Agent struct + lifecycle, Strategy behaviour, Directive system (SpawnAgent, RunInstruction, Emit, etc.), Strategy.State helpers for `__strategy__` management, [Persist](hitl/persistence.md) (hibernate/thaw) for HITL checkpointing |
+| `jido_action`    | Action behaviour, `Jido.Exec.run/4` for executing action nodes, `Jido.Instruction` for wrapping actions into RunInstruction directives                                                                                                |
+| `jido_signal`    | Signal creation, routing, and dispatch for inter-agent communication                                                                                                                                                                  |
+| `zoi`            | Schema validation for node schemas and DSL configuration                                                                                                                                                                              |
+| `splode`         | Structured [error types](#error-handling) with error classes and consistent formatting                                                                                                                                                |
+| `deep_merge`     | [Context accumulation](nodes/context-flow.md) — the monoidal merge operation for composing node results                                                                                                                               |
+| `jason`          | JSON serialization for [AgentTool](orchestrator/README.md#agenttool-adapter) parameter schemas                                                                                                                                        |
+| `nimble_options` | Legacy schema format support for node parameter definitions                                                                                                                                                                           |
+| `telemetry`      | Execution metrics and tracing for node execution, strategy transitions, and LLM calls                                                                                                                                                 |
+| `req_cassette`   | Test-only. Records and replays HTTP interactions as [cassettes](testing.md). Preferred over mocks for LLM response testing                                                                                                            |
 
 ### Architectural References
 

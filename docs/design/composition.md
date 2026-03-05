@@ -96,6 +96,22 @@ graph TB
 Each level is a separate agent process. Context flows down as signal payloads
 and results flow back up via `emit_to_parent`.
 
+## HITL Across Composition Boundaries
+
+When a nested agent suspends for [human input](hitl/README.md), the pause
+interacts with the composition model:
+
+| Behaviour                  | Description                                                                                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Parent isolation**       | The parent does not know the child is paused — it was already waiting for the child result. The [isolation property](#communication-across-boundaries) is preserved. |
+| **Concurrent work**        | An Orchestrator can dispatch non-gated tool calls while a gated tool call awaits approval. Work proceeds in parallel where possible.                                 |
+| **Cascading checkpoint**   | If the child hibernates during a long pause, it signals the parent, which may also hibernate. See [Persistence](hitl/persistence.md).                                |
+| **Cascading cancellation** | If the human rejects, the rejection is internalized within the child. The parent sees a normal result or error — not a special "rejected" outcome.                   |
+
+For the complete analysis of HITL across nested agent trees, including race
+conditions and timeout interactions, see
+[Nested Propagation](hitl/nested-propagation.md).
+
 ## Composition vs. Jido.Exec.Chain
 
 Jido already provides `Jido.Exec.Chain` for sequential action execution. The

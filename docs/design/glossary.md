@@ -49,6 +49,28 @@ Compile-time macro layer (`use Jido.Composer.Workflow` or
 `use Jido.Composer.Orchestrator`) that validates configuration and generates a
 Jido Agent wired to the appropriate [Strategy](#strategy).
 
+### Approval Gate
+
+An enforcement mechanism in the [Orchestrator](#orchestrator) that intercepts
+[tool calls](#tool) requiring human approval **before** execution. Configured
+via per-tool metadata or a dynamic policy function. See
+[Strategy Integration — Orchestrator Approval Gate](hitl/strategy-integration.md#orchestrator-approval-gate).
+
+### ApprovalRequest
+
+A serializable struct representing a pending human decision. Constructed by a
+[HumanNode](#humannode) and enriched by the strategy with flow identification.
+Contains the prompt, allowed responses, visible context, and timeout
+configuration. See
+[Approval Lifecycle](hitl/approval-lifecycle.md#approvalrequest).
+
+### ApprovalResponse
+
+The human's response to an [ApprovalRequest](#approvalrequest). Carries the
+decision atom, optional structured data, respondent identity, and timestamp.
+Delivered to the suspended flow as a [Signal](#signal). See
+[Approval Lifecycle](hitl/approval-lifecycle.md#approvalresponse).
+
 ### Error
 
 A structured error type defined via the Splode library in
@@ -56,6 +78,14 @@ A structured error type defined via the Splode library in
 Transition, Execution, Communication, Orchestration) to support pattern matching
 and consistent formatting. See
 [Overview — Error Handling](overview.md#error-handling).
+
+### HumanNode
+
+A [Node](#node) type whose computation is performed by a human. Returns
+`{:ok, context, :suspend}` with an [ApprovalRequest](#approvalrequest) in
+context. The strategy pauses the flow and waits for an
+[ApprovalResponse](#approvalresponse). See
+[HumanNode](hitl/human-node.md).
 
 ### Instruction
 
@@ -106,6 +136,22 @@ strategies via signal routes. Defined in `Jido.Signal`.
 A mapping from a signal type string to a strategy command target. Strategies
 declare signal routes so the AgentServer knows how to route incoming signals
 to the appropriate `cmd/3` invocation.
+
+### Suspend
+
+A reserved [outcome](#outcome) (`:suspend`) returned by a
+[HumanNode](#humannode). The strategy does not look up a transition for
+`:suspend`; instead it pauses the flow, emits a SuspendForHuman
+[directive](#directive), and waits for a resume signal. See
+[Strategy Integration](hitl/strategy-integration.md).
+
+### SuspendForHuman
+
+A [Directive](#directive) emitted when a flow suspends for human input. Carries
+the [ApprovalRequest](#approvalrequest), notification configuration, and
+hibernate flag. The runtime delivers the request to the configured notification
+channel. See
+[Strategy Integration](hitl/strategy-integration.md#suspendforhuman-directive).
 
 ### Snapshot
 

@@ -38,6 +38,16 @@ shared by all participants.
   - [LLM Behaviour](orchestrator/llm-behaviour.md) — Abstract LLM interface
   - [Strategy](orchestrator/strategy.md) — Orchestrator strategy lifecycle and
     ReAct loop
+- [Human-in-the-Loop](hitl/README.md) — Human decision gates, approval
+  workflows, and long-pause persistence
+  - [HumanNode](hitl/human-node.md) — The Node type for human decisions
+  - [Approval Lifecycle](hitl/approval-lifecycle.md) — Request/response protocol
+  - [Strategy Integration](hitl/strategy-integration.md) — Suspend and resume in
+    Workflow and Orchestrator strategies
+  - [Persistence](hitl/persistence.md) — Checkpointing, serialization, and
+    hibernate/thaw across long pauses
+  - [Nested Propagation](hitl/nested-propagation.md) — HITL across recursive
+    composition, concurrent work, and cascading cancellation
 
 ## Testing
 

@@ -54,8 +54,19 @@ classDiagram
         +new(agent_module, opts)
     }
 
+    class HumanNode {
+        name : String
+        prompt : String | function
+        allowed_responses : list(atom)
+        response_schema : keyword | nil
+        timeout : integer | :infinity
+        context_keys : list(atom) | nil
+        +new(opts)
+    }
+
     Node <|.. ActionNode
     Node <|.. AgentNode
+    Node <|.. HumanNode
 ```
 
 ### ActionNode
@@ -120,6 +131,34 @@ composition:
 **All three modes** are relevant for
 [Orchestrator](../orchestrator/README.md) composition, where the LLM may choose
 to fire-and-forget or to stream intermediate results.
+
+### HumanNode
+
+A Node whose computation is performed by a human. When `run/2` is called, a
+HumanNode constructs an
+[ApprovalRequest](../hitl/approval-lifecycle.md#approvalrequest) from the
+flowing context and returns `{:ok, context, :suspend}`. It never blocks — the
+strategy layer handles the actual suspension and resumption.
+
+The `:suspend` outcome is reserved: the strategy does not look up a transition
+for it. Instead, the strategy pauses the [Machine](../workflow/state-machine.md)
+and waits for a resume signal carrying the human's decision. The decision atom
+(e.g., `:approved`, `:rejected`) is then used as the transition outcome.
+
+HumanNode carries per-instance configuration:
+
+| Field               | Type                               | Purpose                                             |
+| ------------------- | ---------------------------------- | --------------------------------------------------- |
+| `name`              | `String.t()`                       | Node identifier                                     |
+| `prompt`            | `String.t()` or `(context -> str)` | The question presented to the human                 |
+| `allowed_responses` | `[atom()]`                         | Outcome atoms the human can choose from             |
+| `response_schema`   | keyword \| nil                     | Schema for structured input beyond the outcome atom |
+| `timeout`           | `pos_integer()` \| `:infinity`     | Maximum wait time in ms                             |
+| `context_keys`      | `[atom()]` \| nil                  | Which context keys to include in the request        |
+| `metadata`          | `map()`                            | Arbitrary metadata for the notification system      |
+
+See [Human-in-the-Loop](../hitl/README.md) for the full design of HITL
+support, including strategy integration, persistence, and nested propagation.
 
 ## Design Decisions
 
