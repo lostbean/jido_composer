@@ -1,0 +1,29 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  ci:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Cache Elixir deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            deps
+            _build
+          key: elixir-v1-${{ runner.os }}-${{ hashFiles('flake.lock', 'mix.lock') }}
+      - name: Setup dependencies
+        run: |
+          nix develop .#ci --command mix deps.get
+          nix develop .#ci --command mix deps.compile
+      - name: Run CI checks
+        run: nix develop .#ci --command mix ci || (echo "::group::Formatter diff" && git diff && echo "::endgroup::" && exit 1)

@@ -1,0 +1,7 @@
+# Lefthook git hooks configuration
+# https://github.com/evilmartians/lefthook
+pre-commit:
+  commands:
+    mix-fmt:
+      run: mix fmt.check
+      fail_text: "Commit aborted: files not formatted. Run `mix fmt`, stage, and commit again."

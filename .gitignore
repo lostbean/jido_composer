@@ -21,3 +21,12 @@ jido_composer-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Direnv
+.direnv
+
+# Environment variables
+.env
+
+# Claude Code local settings
+.claude/settings.local.json

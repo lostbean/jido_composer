@@ -84,6 +84,7 @@ jido_composer/
 ### Step 1: Project Scaffold
 
 Create the new `jido_composer` repo with:
+
 - `mix.exs` with deps listed above
 - Standard project structure (lib/, test/, config/)
 - `Jido.Composer` top-level module with moduledoc
@@ -108,6 +109,7 @@ end
 ```
 
 **Design notes:**
+
 - `{:ok, context}` implies outcome `:ok`
 - `{:ok, context, :some_outcome}` enables conditional FSM transitions
 - `{:error, reason}` implies outcome `:error`
@@ -170,6 +172,7 @@ end
 ```
 
 **For the Workflow strategy** (Step 5), AgentNode in sync mode is the simplest path:
+
 - The workflow strategy emits a `SpawnAgent` directive
 - Sends the context as a signal to the child
 - The child runs its own strategy, produces a result
@@ -240,6 +243,7 @@ end
 ```
 
 **Execution flow for action nodes:**
+
 1. `cmd(agent, [:workflow_start, %{context: initial_context}])` called
 2. Strategy looks up current state's node → it's an ActionNode
 3. Strategy creates `Instruction` from the ActionNode's action module + context
@@ -250,6 +254,7 @@ end
 8. If new state is terminal → done. If not → dispatch next node (step 2)
 
 **Execution flow for agent nodes:**
+
 1. Current state's node is an AgentNode
 2. Strategy emits `SpawnAgent` directive for the agent module
 3. On `child_started`, emits signal to child with current context as payload
@@ -286,6 +291,7 @@ end
 ```
 
 The macro:
+
 1. Validates node/transition definitions at compile time
 2. Detects unreachable states and missing transitions (warnings)
 3. Wraps each node entry into `ActionNode` or `AgentNode` based on type detection
@@ -489,17 +495,17 @@ Steps 1-6 and 9-10 can be developed in parallel tracks.
 
 ## Key Reuse from Jido Ecosystem
 
-| What | From | How Used |
-|------|------|----------|
-| Agent struct + lifecycle | `Jido.Agent` | Base for Workflow/Orchestrator agents |
-| Strategy behaviour | `Jido.Agent.Strategy` | Both strategies implement this |
-| Directive system | `Jido.Agent.Directive` | SpawnAgent, RunInstruction, Emit, etc. |
-| Strategy state helpers | `Jido.Agent.Strategy.State` | Store FSM/orchestrator state in `__strategy__` |
-| Action execution | `Jido.Exec.run/4` | Execute action nodes |
-| Instruction normalization | `Jido.Instruction` | Wrap actions for RunInstruction |
-| Signal creation/routing | `Jido.Signal` | Inter-agent communication |
-| Schema validation | `Zoi` | Node schemas, config validation |
-| Error types | `Splode` | Structured errors |
-| Deep merge | `DeepMerge` | Context accumulation (monoidal operation) |
-| Plan DAG (reference) | `Jido.Plan` | Architectural reference for graph validation |
-| Chain composition (reference) | `Jido.Exec.Chain` | Pattern reference for sequential deep-merge |
+| What                          | From                        | How Used                                       |
+| ----------------------------- | --------------------------- | ---------------------------------------------- |
+| Agent struct + lifecycle      | `Jido.Agent`                | Base for Workflow/Orchestrator agents          |
+| Strategy behaviour            | `Jido.Agent.Strategy`       | Both strategies implement this                 |
+| Directive system              | `Jido.Agent.Directive`      | SpawnAgent, RunInstruction, Emit, etc.         |
+| Strategy state helpers        | `Jido.Agent.Strategy.State` | Store FSM/orchestrator state in `__strategy__` |
+| Action execution              | `Jido.Exec.run/4`           | Execute action nodes                           |
+| Instruction normalization     | `Jido.Instruction`          | Wrap actions for RunInstruction                |
+| Signal creation/routing       | `Jido.Signal`               | Inter-agent communication                      |
+| Schema validation             | `Zoi`                       | Node schemas, config validation                |
+| Error types                   | `Splode`                    | Structured errors                              |
+| Deep merge                    | `DeepMerge`                 | Context accumulation (monoidal operation)      |
+| Plan DAG (reference)          | `Jido.Plan`                 | Architectural reference for graph validation   |
+| Chain composition (reference) | `Jido.Exec.Chain`           | Pattern reference for sequential deep-merge    |
