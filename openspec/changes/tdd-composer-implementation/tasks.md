@@ -84,8 +84,8 @@
 
 > **References**: `docs/design/orchestrator/README.md` — AgentTool adapter section: three operations (to_tool, to_context, to_result_message), schema conversion delegation. `docs/design/orchestrator/llm-behaviour.md` — tool/tool_call/tool_result format tables. `PLAN.md` Step 9. `prototypes/learnings.md` — "Schema Conversion — Already Solved" (`Jido.Action.Tool.to_tool/1`, `Jido.Action.Schema.to_json_schema/2`). `prototypes/test_dsl_agent_wiring.exs` — Test 5 validates to_tool conversion.
 
-- [ ] 10.1 Write tests for AgentTool in `test/jido/composer/orchestrator/agent_tool_test.exs` (to_tool/1, to_context/1, to_tool_result/3)
-- [ ] 10.2 Implement `Jido.Composer.Orchestrator.AgentTool` in `lib/jido/composer/orchestrator/agent_tool.ex`
+- [x] 10.1 Write tests for AgentTool in `test/jido/composer/orchestrator/agent_tool_test.exs` (to_tool/1, to_context/1, to_tool_result/3)
+- [x] 10.2 Implement `Jido.Composer.Orchestrator.AgentTool` in `lib/jido/composer/orchestrator/agent_tool.ex`
 
 ## 11. Orchestrator Strategy
 
