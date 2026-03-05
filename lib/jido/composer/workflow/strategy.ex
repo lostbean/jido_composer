@@ -12,6 +12,7 @@ defmodule Jido.Composer.Workflow.Strategy do
   alias Jido.Agent.Strategy.State, as: StratState
   alias Jido.Composer.Node.ActionNode
   alias Jido.Composer.Node.AgentNode
+  alias Jido.Composer.Node.FanOutNode
   alias Jido.Composer.Workflow.Machine
 
   # -- init/2 --
@@ -206,6 +207,35 @@ defmodule Jido.Composer.Workflow.Strategy do
         }
 
         {agent, [directive]}
+
+      %FanOutNode{} = fan_out_node ->
+        # FanOutNode encapsulates concurrency internally — execute and process result
+        case FanOutNode.run(fan_out_node, strat.machine.context) do
+          {:ok, result} ->
+            machine = Machine.apply_result(strat.machine, result)
+
+            case Machine.transition(machine, :ok) do
+              {:ok, machine} ->
+                agent = put_machine(agent, machine)
+                handle_after_transition(agent)
+
+              {:error, _reason} ->
+                agent = put_machine(agent, machine)
+                agent = StratState.set_status(agent, :failure)
+                {agent, []}
+            end
+
+          {:error, _reason} ->
+            case Machine.transition(strat.machine, :error) do
+              {:ok, machine} ->
+                agent = put_machine(agent, machine)
+                handle_after_transition(agent)
+
+              {:error, _reason} ->
+                agent = StratState.set_status(agent, :failure)
+                {agent, []}
+            end
+        end
 
       nil ->
         {agent, []}

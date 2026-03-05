@@ -141,8 +141,8 @@
 
 > **References**: `docs/design/workflow/strategy.md` — "Execution Flow: FanOutNode" (FanOutNode is no different from ActionNode to the strategy). `docs/design/nodes/README.md` — FanOutNode "When to use" guidance. `prototypes/test_fan_out_execution.exs` — concurrent execution patterns.
 
-- [ ] 17.1 Write tests in `test/integration/workflow_fan_out_test.exs` (FanOutNode in FSM state, merged result feeds transition)
-- [ ] 17.2 Fix any issues discovered during composition testing
+- [x] 17.1 Write tests in `test/integration/workflow_fan_out_test.exs` (FanOutNode in FSM state, merged result feeds transition)
+- [x] 17.2 Fix any issues discovered during composition testing
 
 ## 18. Cross-Pattern Nesting
 
