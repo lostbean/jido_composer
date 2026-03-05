@@ -10,7 +10,7 @@ defmodule Jido.Composer.Orchestrator.DSL do
       defmodule MyCoordinator do
         use Jido.Composer.Orchestrator,
           name: "coordinator",
-          llm: MyApp.ClaudeLLM,
+          model: "anthropic:claude-sonnet-4-20250514",
           nodes: [ResearchAction, WriterAction],
           system_prompt: "You coordinate research and writing.",
           max_iterations: 15
@@ -21,7 +21,8 @@ defmodule Jido.Composer.Orchestrator.DSL do
     name = Keyword.fetch!(opts, :name)
     description = Keyword.get(opts, :description, "Orchestrator: #{name}")
     schema = Keyword.get(opts, :schema, [])
-    llm = Keyword.fetch!(opts, :llm)
+    llm = Keyword.get(opts, :llm, Jido.Composer.Orchestrator.LLM)
+    model = Keyword.get(opts, :model, nil)
     nodes_ast = Keyword.fetch!(opts, :nodes)
     system_prompt = Keyword.get(opts, :system_prompt, nil)
     max_iterations = Keyword.get(opts, :max_iterations, 10)
@@ -42,6 +43,7 @@ defmodule Jido.Composer.Orchestrator.DSL do
       @__orch_strategy_opts__ [
                                 nodes: @__orch_nodes__,
                                 llm_module: unquote(llm),
+                                model: unquote(model),
                                 system_prompt: unquote(system_prompt),
                                 max_iterations: unquote(max_iterations),
                                 req_options: unquote(req_options)

@@ -47,6 +47,9 @@ defmodule JidoComposer.MixProject do
       {:nimble_options, "~> 1.1"},
       {:telemetry, "~> 1.3"},
 
+      # LLM
+      {:req_llm, "~> 1.6"},
+
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false},

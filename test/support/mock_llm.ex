@@ -1,6 +1,5 @@
 defmodule Jido.Composer.TestSupport.MockLLM do
   @moduledoc false
-  @behaviour Jido.Composer.Orchestrator.LLM
 
   @doc """
   A mock LLM for testing the Orchestrator Strategy state machine.
@@ -17,7 +16,7 @@ defmodule Jido.Composer.TestSupport.MockLLM do
       ])
   """
 
-  @spec setup([Jido.Composer.Orchestrator.LLM.response()]) :: :ok
+  @spec setup([term()]) :: :ok
   def setup(responses) when is_list(responses) do
     Process.put(:mock_llm_responses, responses)
     Process.put(:mock_llm_calls, [])
@@ -29,7 +28,8 @@ defmodule Jido.Composer.TestSupport.MockLLM do
     Process.get(:mock_llm_calls, [])
   end
 
-  @impl true
+  @spec generate(term(), list(), list(), keyword()) ::
+          {:ok, term(), term()} | {:error, term()}
   def generate(conversation, tool_results, tools, opts) do
     responses = Process.get(:mock_llm_responses, [])
 

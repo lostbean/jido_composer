@@ -37,6 +37,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         status: :idle,
         nodes: nodes,
         llm_module: opts[:llm_module],
+        model: opts[:model],
         system_prompt: opts[:system_prompt],
         conversation: nil,
         tools: tools,
@@ -435,6 +436,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         tool_results: state.completed_tool_results,
         tools: state.tools,
         opts: [
+          model: state.model,
           query: state.query,
           system_prompt: state.system_prompt,
           req_options: state.req_options

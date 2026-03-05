@@ -33,6 +33,7 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
       [
         nodes: nodes,
         llm_module: MockLLM,
+        model: "mock:test-model",
         system_prompt: "You are a helpful assistant.",
         max_iterations: 10,
         gated_nodes: gated_nodes

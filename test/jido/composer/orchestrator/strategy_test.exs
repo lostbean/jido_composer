@@ -21,6 +21,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
     strategy_opts = [
       nodes: nodes,
       llm_module: MockLLM,
+      model: "mock:test-model",
       system_prompt: system_prompt,
       max_iterations: max_iterations,
       req_options: []
@@ -375,6 +376,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       strategy_opts = [
         nodes: [AddAction, EchoAction],
         llm_module: MockLLM,
+        model: "mock:test-model",
         system_prompt: "test",
         max_iterations: 10,
         req_options: [],
@@ -416,6 +418,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       strategy_opts = [
         nodes: [AddAction, EchoAction],
         llm_module: MockLLM,
+        model: "mock:test-model",
         system_prompt: "test",
         max_iterations: 10,
         req_options: [],
@@ -469,6 +472,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       strategy_opts = [
         nodes: [AddAction, EchoAction],
         llm_module: MockLLM,
+        model: "mock:test-model",
         system_prompt: "test",
         max_iterations: 10,
         req_options: [],

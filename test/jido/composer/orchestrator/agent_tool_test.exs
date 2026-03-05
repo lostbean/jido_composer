@@ -6,22 +6,24 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
   alias Jido.Composer.TestActions.{AddAction, EchoAction}
 
   describe "to_tool/1 with ActionNode" do
-    test "returns neutral tool description with name, description, and parameters" do
+    test "returns ReqLLM.Tool struct with name, description, and parameter_schema" do
       {:ok, node} = ActionNode.new(AddAction)
       tool = AgentTool.to_tool(node)
 
+      assert %ReqLLM.Tool{} = tool
       assert tool.name == "add"
       assert tool.description == "Adds an amount to a value"
-      assert is_map(tool.parameters)
-      assert tool.parameters["type"] == "object"
-      assert is_map(tool.parameters["properties"])
+      assert is_map(tool.parameter_schema) or is_list(tool.parameter_schema)
     end
 
     test "includes JSON Schema properties from action schema" do
       {:ok, node} = ActionNode.new(AddAction)
       tool = AgentTool.to_tool(node)
 
-      props = tool.parameters["properties"]
+      # parameter_schema is a JSON Schema map
+      schema = tool.parameter_schema
+      assert schema["type"] == "object"
+      props = schema["properties"]
       assert Map.has_key?(props, "value")
       assert Map.has_key?(props, "amount")
     end
@@ -30,17 +32,18 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
       {:ok, node} = ActionNode.new(AddAction)
       tool = AgentTool.to_tool(node)
 
-      assert "value" in tool.parameters["required"]
-      assert "amount" in tool.parameters["required"]
+      assert "value" in tool.parameter_schema["required"]
+      assert "amount" in tool.parameter_schema["required"]
     end
 
     test "works with different action modules" do
       {:ok, node} = ActionNode.new(EchoAction)
       tool = AgentTool.to_tool(node)
 
+      assert %ReqLLM.Tool{} = tool
       assert tool.name == "echo"
       assert tool.description == "Echoes input params as the result"
-      assert tool.parameters["properties"]["message"]["type"] == "string"
+      assert tool.parameter_schema["properties"]["message"]["type"] == "string"
     end
   end
 
@@ -48,9 +51,9 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
     test "accepts a raw action module" do
       tool = AgentTool.to_tool(AddAction)
 
+      assert %ReqLLM.Tool{} = tool
       assert tool.name == "add"
       assert tool.description == "Adds an amount to a value"
-      assert is_map(tool.parameters)
     end
   end
 

@@ -101,11 +101,11 @@ The DSL generates a Jido Agent module with:
 An Orchestrator is defined by its available nodes, an LLM module, and a system
 prompt:
 
-| Element           | Shape              | Purpose                                                                     |
-| ----------------- | ------------------ | --------------------------------------------------------------------------- |
-| **Nodes**         | list of node specs | Available tools for the LLM                                                 |
-| **LLM**           | module             | Decision engine (implements [LLM Behaviour](orchestrator/llm-behaviour.md)) |
-| **System prompt** | string             | Instructions for the LLM                                                    |
+| Element           | Shape              | Purpose                                                                |
+| ----------------- | ------------------ | ---------------------------------------------------------------------- |
+| **Nodes**         | list of node specs | Available tools for the LLM                                            |
+| **LLM**           | module             | Decision engine (default: [LLM facade](orchestrator/llm-behaviour.md)) |
+| **System prompt** | string             | Instructions for the LLM                                               |
 
 ### Configuration Surface
 
@@ -113,7 +113,8 @@ prompt:
 use Jido.Composer.Orchestrator,
   name:           string        — agent identity
   description:    string        — what this orchestrator does (used when nested)
-  llm:            module        — LLM behaviour implementation
+  model:          string        — req_llm model spec (e.g. "anthropic:claude-sonnet-4-20250514")
+  llm:            module        — LLM module with generate/4 (default: Jido.Composer.Orchestrator.LLM)
   nodes:          list          — available nodes (actions, agents, other compositions)
   system_prompt:  string        — LLM system instructions
   max_iterations: integer       — ReAct loop safety limit (default: 10)

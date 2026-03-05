@@ -102,12 +102,13 @@ A work order that wraps an [Action](#action) with parameters, context, and
 runtime options. Instructions are the unit of execution passed to
 RunInstruction directives. Defined in `Jido.Instruction`.
 
-### LLM Behaviour
+### LLM Facade
 
-An abstract callback interface for language model integration. Any module
-implementing `Jido.Composer.Orchestrator.LLM` can serve as the decision engine
-for an [Orchestrator](#orchestrator). See
-[LLM Behaviour](orchestrator/llm-behaviour.md).
+A concrete module (`Jido.Composer.Orchestrator.LLM`) that wraps
+[req_llm](https://hexdocs.pm/req_llm) for provider-agnostic LLM calls. Exposes
+`generate/4` for the [Orchestrator](#orchestrator) strategy. Users can supply
+custom modules with the same signature — no `@behaviour` enforcement. See
+[LLM Integration](orchestrator/llm-behaviour.md).
 
 ### Machine
 
@@ -124,7 +125,7 @@ See [Nodes](nodes/README.md).
 
 ### Orchestrator
 
-A composition pattern where an [LLM](#llm-behaviour) dynamically selects and
+A composition pattern where an [LLM](#llm-facade) dynamically selects and
 invokes available [Nodes](#node) at runtime using a ReAct-style loop. See
 [Orchestrator](orchestrator/README.md).
 
@@ -205,10 +206,10 @@ preferred test data source over mocks. See [Testing Strategy](testing.md).
 
 ### Req Options
 
-A keyword list passed through the [LLM Behaviour](#llm-behaviour) `opts`
-under the `:req_options` key. Merged into outgoing `Req.request!/1` calls by
-LLM implementations. Used to inject the [Cassette](#cassette) plug and
-control streaming. See
+A keyword list passed through the [LLM Facade](#llm-facade) `opts`
+under the `:req_options` key. The facade maps this to req_llm's
+`:req_http_options`, which passes options through to the underlying Req HTTP
+calls. Used to inject the [Cassette](#cassette) plug for testing. See
 [Req Options Propagation](testing.md#req-options-propagation).
 
 ### Workflow

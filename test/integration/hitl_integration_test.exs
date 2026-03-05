@@ -284,6 +284,7 @@ defmodule Jido.Composer.Integration.HITLIntegrationTest do
       strategy_opts = [
         nodes: [AddAction, EchoAction],
         llm_module: MockLLM,
+        model: "mock:test-model",
         system_prompt: "Test",
         max_iterations: 10,
         gated_nodes: ["add"]

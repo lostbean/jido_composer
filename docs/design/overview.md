@@ -2,8 +2,8 @@
 
 Jido Composer provides two composition patterns for building higher-order agent
 flows from Jido primitives. It is a standalone Elixir library that depends on
-the core Jido packages (`jido`, `jido_action`, `jido_signal`) but has no
-dependency on `jido_ai`.
+the core Jido packages (`jido`, `jido_action`, `jido_signal`) and uses
+[req_llm](https://hexdocs.pm/req_llm) for provider-agnostic LLM integration.
 
 ## System Boundaries
 
@@ -22,7 +22,7 @@ graph TB
         Machine["Machine (FSM)"]
         WDSL["Workflow DSL"]
         ORC["Orchestrator Strategy"]
-        LLM["LLM Behaviour"]
+        LLM["LLM Facade<br/>(req_llm)"]
         AT["AgentTool"]
         ODSL["Orchestrator DSL"]
         Err["Error"]
@@ -91,7 +91,7 @@ All user-facing modules live under this namespace:
 | `Jido.Composer.Workflow.Machine`       | [FSM data structure](workflow/state-machine.md)                  |
 | `Jido.Composer.Orchestrator`           | [Orchestrator DSL](orchestrator/README.md) macro                 |
 | `Jido.Composer.Orchestrator.Strategy`  | [Orchestrator strategy](orchestrator/strategy.md)                |
-| `Jido.Composer.Orchestrator.LLM`       | [LLM behaviour](orchestrator/llm-behaviour.md)                   |
+| `Jido.Composer.Orchestrator.LLM`       | [LLM facade](orchestrator/llm-behaviour.md) wrapping req_llm     |
 | `Jido.Composer.Orchestrator.AgentTool` | [Node-to-tool adapter](orchestrator/README.md#agenttool-adapter) |
 | `Jido.Composer.Error`                  | [Structured errors](#error-handling)                             |
 
@@ -251,6 +251,7 @@ See [Glossary — Error](glossary.md#error) for the term definition.
 | `jido_signal`    | Signal creation, routing, and dispatch for inter-agent communication                                                                                                                                                                  |
 | `zoi`            | Schema validation for node schemas and DSL configuration                                                                                                                                                                              |
 | `splode`         | Structured [error types](#error-handling) with error classes and consistent formatting                                                                                                                                                |
+| `req_llm`        | Provider-agnostic LLM calls via Req — [LLM facade](orchestrator/llm-behaviour.md) wraps `ReqLLM.generate_text/3`. Provides `ReqLLM.Tool`, `ReqLLM.Context`, and `ReqLLM.Response` types                                               |
 | `deep_merge`     | [Context accumulation](nodes/context-flow.md) — the monoidal merge operation for composing node results                                                                                                                               |
 | `jason`          | JSON serialization for [AgentTool](orchestrator/README.md#agenttool-adapter) parameter schemas                                                                                                                                        |
 | `nimble_options` | Legacy schema format support for node parameter definitions                                                                                                                                                                           |

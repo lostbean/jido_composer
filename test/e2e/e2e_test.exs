@@ -3,7 +3,7 @@ defmodule Jido.Composer.E2E.E2ETest do
   End-to-end tests exercising full composition paths.
 
   - Workflow tests use `run_sync/2` (pure action execution, no LLM).
-  - Orchestrator tests use ClaudeLLM with ReqCassette for recorded API responses.
+  - Orchestrator tests use ReqLLM with ReqCassette for recorded API responses.
   """
   use ExUnit.Case, async: true
 
@@ -14,7 +14,7 @@ defmodule Jido.Composer.E2E.E2ETest do
   alias Jido.Composer.CassetteHelper
   alias Jido.Composer.HITL.ApprovalRequest
   alias Jido.Composer.Node.{ActionNode, FanOutNode, HumanNode}
-  alias Jido.Composer.Orchestrator.{ClaudeLLM, Strategy}
+  alias Jido.Composer.Orchestrator.{LLM, Strategy}
 
   alias Jido.Composer.TestActions.{
     AddAction,
@@ -160,7 +160,8 @@ defmodule Jido.Composer.E2E.E2ETest do
 
     strategy_opts = [
       nodes: nodes,
-      llm_module: ClaudeLLM,
+      llm_module: LLM,
+      model: "anthropic:claude-sonnet-4-20250514",
       system_prompt:
         Keyword.get(
           opts,
@@ -337,7 +338,7 @@ defmodule Jido.Composer.E2E.E2ETest do
   end
 
   # ══════════════════════════════════════════════════════════════════
-  # Orchestrator e2e (cassette-driven with ClaudeLLM)
+  # Orchestrator e2e (cassette-driven with ReqLLM)
   # ══════════════════════════════════════════════════════════════════
 
   describe "orchestrator: direct final answer (cassette)" do
@@ -390,7 +391,7 @@ defmodule Jido.Composer.E2E.E2ETest do
           agent =
             execute_orchestrator_loop(
               agent,
-              "Use the add tool with value=10 and amount=5, and use the echo tool with message='hello world'. Call both tools now."
+              "Use the add tool with value=10.0 and amount=5.0, and use the echo tool with message='hello world'. Call both tools now."
             )
 
           strat = StratState.get(agent)
@@ -419,8 +420,8 @@ defmodule Jido.Composer.E2E.E2ETest do
           strat = StratState.get(agent)
           assert strat.status == :completed
           assert strat.iteration >= 3
-          assert is_list(strat.conversation)
-          assert length(strat.conversation) > 2
+          assert %ReqLLM.Context{} = strat.conversation
+          assert length(strat.conversation.messages) > 2
         end
       )
     end

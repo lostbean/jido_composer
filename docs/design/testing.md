@@ -59,16 +59,16 @@ graph TB
 Each module has a corresponding test file. Where the module processes LLM
 responses, the test uses a cassette to provide real response data:
 
-| Module                  | Test Focus                                                   | Data Source |
-| ----------------------- | ------------------------------------------------------------ | ----------- |
-| `Machine`               | Transition lookup, wildcard fallbacks, terminal detection    | None (pure) |
-| `ActionNode`            | Context accumulation via deep merge                          | None (pure) |
-| `AgentNode`             | Struct construction, mode validation                         | None (pure) |
-| `AgentTool`             | Node-to-tool conversion, argument mapping, result formatting | None (pure) |
-| `LLM` (implementations) | Response parsing, tool call extraction, error handling       | Cassette    |
-| `Orchestrator.Strategy` | Directive emission for LLM results, tool dispatch            | Cassette    |
-| `Workflow.Strategy`     | FSM execution, directive emission                            | None (pure) |
-| `Error`                 | Error class construction, message formatting                 | None (pure) |
+| Module                  | Test Focus                                                          | Data Source |
+| ----------------------- | ------------------------------------------------------------------- | ----------- |
+| `Machine`               | Transition lookup, wildcard fallbacks, terminal detection           | None (pure) |
+| `ActionNode`            | Context accumulation via deep merge                                 | None (pure) |
+| `AgentNode`             | Struct construction, mode validation                                | None (pure) |
+| `AgentTool`             | Node-to-ReqLLM.Tool conversion, argument mapping, result formatting | None (pure) |
+| `LLM` (facade)          | Response parsing, tool call extraction, error handling              | Cassette    |
+| `Orchestrator.Strategy` | Directive emission for LLM results, tool dispatch                   | Cassette    |
+| `Workflow.Strategy`     | FSM execution, directive emission                                   | None (pure) |
+| `Error`                 | Error class construction, message formatting                        | None (pure) |
 
 ### Integration Tests
 
@@ -103,6 +103,8 @@ Full-stack orchestration with real recorded LLM interactions:
 [ReqCassette](https://hexdocs.pm/req_cassette) records HTTP interactions to
 JSON cassette files and replays them in subsequent test runs. It integrates
 with the [Req](https://hexdocs.pm/req) HTTP client via the `plug:` option.
+Since req_llm is built on Req, cassettes intercept all LLM API calls
+transparently.
 
 ### How It Works
 
@@ -110,47 +112,33 @@ with the [Req](https://hexdocs.pm/req) HTTP client via the `plug:` option.
 sequenceDiagram
     participant Test
     participant Cassette as ReqCassette
-    participant LLM as LLM Module
-    participant Req as Req HTTP Client
+    participant Facade as LLM Facade
+    participant ReqLLM as req_llm
+    participant Req as Req HTTP
     participant API as LLM API
 
     Test->>Cassette: with_cassette("test_name", fn plug -> ... end)
 
     alt First run (recording)
-        Test->>LLM: generate(messages, tools, req_options: [plug: plug])
-        LLM->>Req: Req.post!(url, plug: plug, ...)
+        Test->>Facade: generate(ctx, results, tools, req_options: [plug: plug])
+        Facade->>ReqLLM: generate_text(model, context, req_http_options: [plug: plug])
+        ReqLLM->>Req: request(plug: plug, ...)
         Req->>Cassette: intercepted by plug
         Cassette->>API: forward to real API
         API-->>Cassette: real response
         Cassette->>Cassette: save to cassette file
         Cassette-->>Req: return response
-        Req-->>LLM: parsed response
+        Req-->>ReqLLM: parsed response
     else Subsequent runs (replay)
-        Test->>LLM: generate(messages, tools, req_options: [plug: plug])
-        LLM->>Req: Req.post!(url, plug: plug, ...)
+        Test->>Facade: generate(ctx, results, tools, req_options: [plug: plug])
+        Facade->>ReqLLM: generate_text(model, context, req_http_options: [plug: plug])
+        ReqLLM->>Req: request(plug: plug, ...)
         Req->>Cassette: intercepted by plug
         Cassette->>Cassette: match request in cassette
         Cassette-->>Req: return saved response
-        Req-->>LLM: parsed response
+        Req-->>ReqLLM: parsed response
     end
 ```
-
-### Streaming and the Plug Constraint
-
-ReqCassette intercepts requests via Req's `plug:` option. When a plug is
-active, Req routes through the plug instead of the network adapter. Streaming
-responses use the Finch adapter directly, bypassing the plug system entirely.
-
-This creates a hard constraint: **streaming must be disabled when recording or
-replaying cassettes**. The library addresses this through the
-[req_options propagation](#req-options-propagation) mechanism, which allows
-tests to pass `plug:` and control streaming via the same options path.
-
-| Mode           | Streaming | Plug Active | Network |
-| -------------- | --------- | ----------- | ------- |
-| **Production** | Enabled   | No          | Yes     |
-| **Recording**  | Disabled  | Yes         | Yes     |
-| **Replay**     | Disabled  | Yes         | No      |
 
 ### Cassette Modes
 
@@ -185,9 +173,10 @@ so every cassette-based test applies them consistently.
 
 ## Req Options Propagation
 
-For cassette testing to work, the `plug:` option must reach the actual
-`Req.request!/1` call inside the LLM module. This requires a propagation path
-through the entire call stack.
+For cassette testing to work, the `plug:` option must reach the actual Req HTTP
+call inside req_llm. The LLM facade maps the strategy's `:req_options` to
+req_llm's `:req_http_options` key, which passes options through to the
+underlying Req calls.
 
 ### The Propagation Path
 
@@ -195,30 +184,25 @@ through the entire call stack.
 flowchart LR
     Test["Test<br/>(with_cassette)"]
     Strategy["Orchestrator<br/>Strategy"]
-    LLM["LLM Module<br/>(generate/3)"]
-    Req["Req.request!<br/>(plug: ...)"]
+    Facade["LLM Facade<br/>(generate/4)"]
+    ReqLLM["req_llm<br/>(generate_text/3)"]
+    Req["Req HTTP<br/>(plug: ...)"]
 
     Test -->|"req_options in context<br/>or opts"| Strategy
-    Strategy -->|"opts[:req_options]"| LLM
-    LLM -->|"plug: opts[:req_options][:plug]"| Req
+    Strategy -->|"opts[:req_options]"| Facade
+    Facade -->|"req_http_options:"| ReqLLM
+    ReqLLM -->|"plug: ..."| Req
 ```
 
-The [LLM Behaviour](orchestrator/llm-behaviour.md) accepts `req_options` as
-part of its `opts` keyword list. LLM module implementations merge these options
-into their Req calls. This keeps the LLM behaviour HTTP-transport-agnostic
-while allowing tests to inject the cassette plug.
+The [LLM facade](orchestrator/llm-behaviour.md) accepts `req_options` as part
+of its `opts` keyword list and maps it to `req_http_options` for req_llm. This
+keeps the transport concern entirely within the facade and the test setup.
 
 ### What Propagates
 
-| Option   | Purpose                               | Default |
-| -------- | ------------------------------------- | ------- |
-| `plug`   | ReqCassette plug for recording/replay | `nil`   |
-| `stream` | Whether to use streaming responses    | `true`  |
-
-The `stream` option controls whether the LLM module uses Req's streaming
-interface (which goes through Finch) or the standard request-response interface
-(which goes through the plug). When a cassette plug is provided, `stream` is
-typically set to `false`.
+| Option | Purpose                               | Default |
+| ------ | ------------------------------------- | ------- |
+| `plug` | ReqCassette plug for recording/replay | `nil`   |
 
 ### Design Constraints
 
@@ -226,19 +210,18 @@ typically set to `false`.
   HTTP requests directly — it delegates to the LLM module via directives.
 - **req_options are opaque to the strategy.** The strategy passes them through
   to the LLM module without inspecting or modifying them.
-- **The test controls the transport.** By providing `plug:` and `stream: false`
-  through `req_options`, the test intercepts all HTTP traffic without the
-  strategy or LLM module needing special test-mode logic.
+- **The test controls the transport.** By providing `plug:` through
+  `req_options`, the test intercepts all HTTP traffic without the strategy or
+  LLM module needing special test-mode logic.
 
 ## Directory Structure
 
 ```
 test/
 ├── cassettes/                      # ReqCassette cassette files
-│   ├── orchestrator_claude_chat.json
-│   ├── orchestrator_tool_calling.json
-│   ├── orchestrator_multi_turn.json
-│   └── orchestrator_error_handling.json
+│   ├── e2e_orchestrator_*.json
+│   ├── orchestrator_*.json
+│   └── ...
 ├── support/
 │   ├── test_actions.ex             # Stub action modules
 │   ├── test_agents.ex              # Stub agent modules
@@ -254,7 +237,6 @@ test/
 │   │   ├── strategy_test.exs       # Unit: Workflow Strategy
 │   │   └── dsl_test.exs            # Unit: Workflow DSL
 │   └── orchestrator/
-│       ├── llm_test.exs            # Unit: LLM behaviour contract (cassette)
 │       ├── agent_tool_test.exs     # Unit: AgentTool adapter
 │       ├── strategy_test.exs       # Unit: Orchestrator Strategy (cassette)
 │       └── dsl_test.exs            # Unit: Orchestrator DSL
@@ -263,8 +245,7 @@ test/
 │   ├── orchestrator_test.exs       # Integration: orchestrator compositions (cassette)
 │   └── composition_test.exs        # Integration: nesting scenarios (cassette)
 └── e2e/
-    ├── orchestrator_llm_test.exs   # E2E: orchestrator with real LLM cassettes
-    └── nested_llm_test.exs         # E2E: nested compositions with LLM cassettes
+    └── e2e_test.exs                # E2E: full workflow + orchestrator scenarios
 ```
 
 ## TDD Workflow

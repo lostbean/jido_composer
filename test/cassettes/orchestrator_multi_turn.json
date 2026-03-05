@@ -1,10 +1,10 @@
 {
   "interactions": [
     {
-      "recorded_at": "2026-03-05T17:27:08.967153Z",
+      "recorded_at": "2026-03-05T21:33:50.787382Z",
       "request": {
         "body_json": {
-          "max_tokens": 1024,
+          "max_tokens": 64000,
           "messages": [
             {
               "content": "First use the add tool with value=1 and amount=2. Then after you get the result, use the echo tool with message='the sum is 3'. Do these one at a time.",
@@ -12,6 +12,7 @@
             }
           ],
           "model": "claude-sonnet-4-20250514",
+          "stream": false,
           "system": "You are a helpful assistant with math and echo tools.",
           "tools": [
             {
@@ -50,8 +51,8 @@
         },
         "body_type": "json",
         "headers": {
-          "accept": ["application/json"],
           "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
           "anthropic-version": ["2023-06-01"],
           "content-type": ["application/json"],
           "user-agent": ["req/0.5.17"]
@@ -71,7 +72,7 @@
               "caller": {
                 "type": "direct"
               },
-              "id": "toolu_01GJkL7twoykXKfMeqmbpZzt",
+              "id": "toolu_01BbzdKqLCPJdZUwBgoHgdng",
               "input": {
                 "amount": 2,
                 "value": 1
@@ -80,7 +81,7 @@
               "type": "tool_use"
             }
           ],
-          "id": "msg_015GpE2emajtT7PCuyJkFoxS",
+          "id": "msg_01Stkgch4DSF6nsrYs9NcLwG",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "tool_use",
@@ -104,42 +105,42 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T17:27:08Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T21:33:49Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T17:27:08Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T21:33:50Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-05T17:27:07Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T21:33:48Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-05T17:27:08Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T21:33:49Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9d7ad45c9c9b82f7-GIG"],
+          "cf-ray": ["9d7c3dbbad2ff19f-GRU"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Thu, 05 Mar 2026 17:27:08 GMT"],
-          "request-id": ["req_011CYkKs5sgAqEgjYgLJyef6"],
+          "date": ["Thu, 05 Mar 2026 21:33:50 GMT"],
+          "request-id": ["req_011CYkegBqkukgjnHS1GfwhD"],
           "server": ["cloudflare"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["1867"],
+          "x-envoy-upstream-service-time": ["1907"],
           "x-robots-tag": ["none"]
         },
         "status": 200
       }
     },
     {
-      "recorded_at": "2026-03-05T17:27:11.031285Z",
+      "recorded_at": "2026-03-05T21:33:53.934528Z",
       "request": {
         "body_json": {
-          "max_tokens": 1024,
+          "max_tokens": 64000,
           "messages": [
             {
               "content": "First use the add tool with value=1 and amount=2. Then after you get the result, use the echo tool with message='the sum is 3'. Do these one at a time.",
@@ -152,10 +153,7 @@
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_01GJkL7twoykXKfMeqmbpZzt",
+                  "id": "toolu_01BbzdKqLCPJdZUwBgoHgdng",
                   "input": {
                     "amount": 2,
                     "value": 1
@@ -170,7 +168,7 @@
               "content": [
                 {
                   "content": "{\"error\":\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 1\"}",
-                  "tool_use_id": "toolu_01GJkL7twoykXKfMeqmbpZzt",
+                  "tool_use_id": "toolu_01BbzdKqLCPJdZUwBgoHgdng",
                   "type": "tool_result"
                 }
               ],
@@ -178,6 +176,7 @@
             }
           ],
           "model": "claude-sonnet-4-20250514",
+          "stream": false,
           "system": "You are a helpful assistant with math and echo tools.",
           "tools": [
             {
@@ -216,8 +215,8 @@
         },
         "body_type": "json",
         "headers": {
-          "accept": ["application/json"],
           "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
           "anthropic-version": ["2023-06-01"],
           "content-type": ["application/json"],
           "user-agent": ["req/0.5.17"]
@@ -230,14 +229,14 @@
         "body_json": {
           "content": [
             {
-              "text": "Let me try again with the correct parameter type:",
+              "text": "Let me try again with the value as a float:",
               "type": "text"
             },
             {
               "caller": {
                 "type": "direct"
               },
-              "id": "toolu_01RBbkRK2kFmAML6oTYLEDNf",
+              "id": "toolu_018jfFWzE7NVPFUaKJjhJPwu",
               "input": {
                 "amount": 2.0,
                 "value": 1.0
@@ -246,7 +245,7 @@
               "type": "tool_use"
             }
           ],
-          "id": "msg_016wjpF78CsDnALYzpxdkDgP",
+          "id": "msg_01ALWSGxS6353vtqrNpGrzkn",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "tool_use",
@@ -261,7 +260,7 @@
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
             "input_tokens": 657,
-            "output_tokens": 83,
+            "output_tokens": 84,
             "service_tier": "standard"
           }
         },
@@ -270,42 +269,42 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T17:27:10Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T21:33:52Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T17:27:10Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T21:33:53Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-05T17:27:09Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T21:33:50Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-05T17:27:10Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T21:33:52Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9d7ad469295182f7-GIG"],
+          "cf-ray": ["9d7c3dc87858f19f-GRU"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Thu, 05 Mar 2026 17:27:11 GMT"],
-          "request-id": ["req_011CYkKsEUqvjKobFxTLEUzi"],
+          "date": ["Thu, 05 Mar 2026 21:33:53 GMT"],
+          "request-id": ["req_011CYkegLbc5jXMRtxt8NdBv"],
           "server": ["cloudflare"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["1921"],
+          "x-envoy-upstream-service-time": ["3002"],
           "x-robots-tag": ["none"]
         },
         "status": 200
       }
     },
     {
-      "recorded_at": "2026-03-05T17:27:12.737331Z",
+      "recorded_at": "2026-03-05T21:33:55.589665Z",
       "request": {
         "body_json": {
-          "max_tokens": 1024,
+          "max_tokens": 64000,
           "messages": [
             {
               "content": "First use the add tool with value=1 and amount=2. Then after you get the result, use the echo tool with message='the sum is 3'. Do these one at a time.",
@@ -318,10 +317,7 @@
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_01GJkL7twoykXKfMeqmbpZzt",
+                  "id": "toolu_01BbzdKqLCPJdZUwBgoHgdng",
                   "input": {
                     "amount": 2,
                     "value": 1
@@ -336,7 +332,7 @@
               "content": [
                 {
                   "content": "{\"error\":\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 1\"}",
-                  "tool_use_id": "toolu_01GJkL7twoykXKfMeqmbpZzt",
+                  "tool_use_id": "toolu_01BbzdKqLCPJdZUwBgoHgdng",
                   "type": "tool_result"
                 }
               ],
@@ -345,14 +341,11 @@
             {
               "content": [
                 {
-                  "text": "Let me try again with the correct parameter type:",
+                  "text": "Let me try again with the value as a float:",
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_01RBbkRK2kFmAML6oTYLEDNf",
+                  "id": "toolu_018jfFWzE7NVPFUaKJjhJPwu",
                   "input": {
                     "amount": 2.0,
                     "value": 1.0
@@ -367,7 +360,7 @@
               "content": [
                 {
                   "content": "{\"result\":3.0}",
-                  "tool_use_id": "toolu_01RBbkRK2kFmAML6oTYLEDNf",
+                  "tool_use_id": "toolu_018jfFWzE7NVPFUaKJjhJPwu",
                   "type": "tool_result"
                 }
               ],
@@ -375,6 +368,7 @@
             }
           ],
           "model": "claude-sonnet-4-20250514",
+          "stream": false,
           "system": "You are a helpful assistant with math and echo tools.",
           "tools": [
             {
@@ -413,8 +407,8 @@
         },
         "body_type": "json",
         "headers": {
-          "accept": ["application/json"],
           "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
           "anthropic-version": ["2023-06-01"],
           "content-type": ["application/json"],
           "user-agent": ["req/0.5.17"]
@@ -427,14 +421,14 @@
         "body_json": {
           "content": [
             {
-              "text": "Great! Now I'll use the echo tool with the message 'the sum is 3':",
+              "text": "Great! Now I'll use the echo tool with the exact message you specified:",
               "type": "text"
             },
             {
               "caller": {
                 "type": "direct"
               },
-              "id": "toolu_013JX8vNd3xG88nKBZfC6VY5",
+              "id": "toolu_01RnyT399MHwCGmztYp8fkHR",
               "input": {
                 "message": "the sum is 3"
               },
@@ -442,7 +436,7 @@
               "type": "tool_use"
             }
           ],
-          "id": "msg_01T4zCwk3x6tAmL42399rpue",
+          "id": "msg_01Ee8uUDyNg8WKjD4XfL5fR6",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "tool_use",
@@ -456,8 +450,8 @@
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
-            "input_tokens": 758,
-            "output_tokens": 76,
+            "input_tokens": 759,
+            "output_tokens": 72,
             "service_tier": "standard"
           }
         },
@@ -466,42 +460,42 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T17:27:11Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T21:33:54Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T17:27:12Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T21:33:55Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-05T17:27:11Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T21:33:54Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-05T17:27:11Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T21:33:54Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9d7ad4761f3582f7-GIG"],
+          "cf-ray": ["9d7c3ddc1e72f19f-GRU"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Thu, 05 Mar 2026 17:27:12 GMT"],
-          "request-id": ["req_011CYkKsPLuLgE7Dx1bK3Ht8"],
+          "date": ["Thu, 05 Mar 2026 21:33:55 GMT"],
+          "request-id": ["req_011CYkega4yj77oiqgms4rLm"],
           "server": ["cloudflare"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["1553"],
+          "x-envoy-upstream-service-time": ["1515"],
           "x-robots-tag": ["none"]
         },
         "status": 200
       }
     },
     {
-      "recorded_at": "2026-03-05T17:27:14.727538Z",
+      "recorded_at": "2026-03-05T21:33:57.689657Z",
       "request": {
         "body_json": {
-          "max_tokens": 1024,
+          "max_tokens": 64000,
           "messages": [
             {
               "content": "First use the add tool with value=1 and amount=2. Then after you get the result, use the echo tool with message='the sum is 3'. Do these one at a time.",
@@ -514,10 +508,7 @@
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_01GJkL7twoykXKfMeqmbpZzt",
+                  "id": "toolu_01BbzdKqLCPJdZUwBgoHgdng",
                   "input": {
                     "amount": 2,
                     "value": 1
@@ -532,7 +523,7 @@
               "content": [
                 {
                   "content": "{\"error\":\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 1\"}",
-                  "tool_use_id": "toolu_01GJkL7twoykXKfMeqmbpZzt",
+                  "tool_use_id": "toolu_01BbzdKqLCPJdZUwBgoHgdng",
                   "type": "tool_result"
                 }
               ],
@@ -541,14 +532,11 @@
             {
               "content": [
                 {
-                  "text": "Let me try again with the correct parameter type:",
+                  "text": "Let me try again with the value as a float:",
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_01RBbkRK2kFmAML6oTYLEDNf",
+                  "id": "toolu_018jfFWzE7NVPFUaKJjhJPwu",
                   "input": {
                     "amount": 2.0,
                     "value": 1.0
@@ -563,7 +551,7 @@
               "content": [
                 {
                   "content": "{\"result\":3.0}",
-                  "tool_use_id": "toolu_01RBbkRK2kFmAML6oTYLEDNf",
+                  "tool_use_id": "toolu_018jfFWzE7NVPFUaKJjhJPwu",
                   "type": "tool_result"
                 }
               ],
@@ -572,14 +560,11 @@
             {
               "content": [
                 {
-                  "text": "Great! Now I'll use the echo tool with the message 'the sum is 3':",
+                  "text": "Great! Now I'll use the echo tool with the exact message you specified:",
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_013JX8vNd3xG88nKBZfC6VY5",
+                  "id": "toolu_01RnyT399MHwCGmztYp8fkHR",
                   "input": {
                     "message": "the sum is 3"
                   },
@@ -593,7 +578,7 @@
               "content": [
                 {
                   "content": "{\"echoed\":\"the sum is 3\"}",
-                  "tool_use_id": "toolu_013JX8vNd3xG88nKBZfC6VY5",
+                  "tool_use_id": "toolu_01RnyT399MHwCGmztYp8fkHR",
                   "type": "tool_result"
                 }
               ],
@@ -601,6 +586,7 @@
             }
           ],
           "model": "claude-sonnet-4-20250514",
+          "stream": false,
           "system": "You are a helpful assistant with math and echo tools.",
           "tools": [
             {
@@ -639,8 +625,8 @@
         },
         "body_type": "json",
         "headers": {
-          "accept": ["application/json"],
           "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
           "anthropic-version": ["2023-06-01"],
           "content-type": ["application/json"],
           "user-agent": ["req/0.5.17"]
@@ -653,11 +639,11 @@
         "body_json": {
           "content": [
             {
-              "text": "Perfect! I've completed both steps:\n1. Used the add tool with value=1 and amount=2, which returned 3.0\n2. Used the echo tool with message='the sum is 3', which echoed back \"the sum is 3\"",
+              "text": "Perfect! I've completed both tasks:\n1. Used the add tool with value=1 and amount=2, which returned 3.0\n2. Used the echo tool with the message \"the sum is 3\", which echoed back exactly as requested.",
               "type": "text"
             }
           ],
-          "id": "msg_01XBdtnnH43yLaUb26jL9pJa",
+          "id": "msg_01RK5b8mbdPCHdNRk7n8Dz5q",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "end_turn",
@@ -671,8 +657,8 @@
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
-            "input_tokens": 856,
-            "output_tokens": 61,
+            "input_tokens": 853,
+            "output_tokens": 59,
             "service_tier": "standard"
           }
         },
@@ -681,32 +667,32 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T17:27:13Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T21:33:56Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T17:27:14Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T21:33:57Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-05T17:27:12Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T21:33:55Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-05T17:27:13Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T21:33:56Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9d7ad480ba9d82f7-GIG"],
+          "cf-ray": ["9d7c3de67b06f19f-GRU"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Thu, 05 Mar 2026 17:27:14 GMT"],
-          "request-id": ["req_011CYkKsWbTkrSWvDgvhDrZa"],
+          "date": ["Thu, 05 Mar 2026 21:33:57 GMT"],
+          "request-id": ["req_011CYkegh9883ygTtGYdAjNo"],
           "server": ["cloudflare"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["1843"],
+          "x-envoy-upstream-service-time": ["1955"],
           "x-robots-tag": ["none"]
         },
         "status": 200

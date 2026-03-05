@@ -15,9 +15,9 @@ graph TB
         DSL -->|configures| OS
     end
 
-    subgraph "LLM Integration"
-        LLM["LLM Behaviour<br/>(abstract)"]
-        AT["AgentTool<br/>(Node → Tool adapter)"]
+    subgraph "LLM Integration (req_llm)"
+        LLM["LLM Facade<br/>(default: Jido.Composer.Orchestrator.LLM)"]
+        AT["AgentTool<br/>(Node → ReqLLM.Tool adapter)"]
     end
 
     subgraph "Available Nodes"
@@ -60,8 +60,8 @@ flowchart TB
 1. A query signal triggers the orchestrator
 2. The strategy builds a conversation with the system prompt, query, and any
    prior history
-3. The strategy calls the [LLM](llm-behaviour.md) with the conversation and
-   tool descriptions derived from available nodes
+3. The strategy calls the [LLM facade](llm-behaviour.md) with the conversation
+   and tool descriptions derived from available nodes
 4. If the LLM returns tool calls, the strategy executes each one (as node
    invocations) and appends results to the conversation
 5. If the LLM returns a final answer, the orchestrator is complete
@@ -69,45 +69,43 @@ flowchart TB
 
 ## Components
 
-| Component                         | Responsibility                    | Details                                         |
-| --------------------------------- | --------------------------------- | ----------------------------------------------- |
-| [LLM Behaviour](llm-behaviour.md) | Abstract LLM interface            | Callback for `generate/3`                       |
-| [AgentTool](../glossary.md#tool)  | Node-to-tool adapter              | Converts Node metadata to LLM tool format       |
-| [Strategy](strategy.md)           | Strategy behaviour implementation | ReAct loop, directive emission, result handling |
-| DSL                               | Compile-time macro                | Agent generation with orchestrator strategy     |
+| Component                           | Responsibility                    | Details                                         |
+| ----------------------------------- | --------------------------------- | ----------------------------------------------- |
+| [LLM Integration](llm-behaviour.md) | LLM facade wrapping req_llm       | `generate/4` via `ReqLLM.generate_text/3`       |
+| [AgentTool](../glossary.md#tool)    | Node-to-tool adapter              | Converts Node metadata to `ReqLLM.Tool` structs |
+| [Strategy](strategy.md)             | Strategy behaviour implementation | ReAct loop, directive emission, result handling |
+| DSL                                 | Compile-time macro                | Agent generation with orchestrator strategy     |
 
 ## AgentTool Adapter
 
 The AgentTool adapter (`Jido.Composer.Orchestrator.AgentTool`) bridges
-[Nodes](../nodes/README.md) and [LLM tool descriptions](../glossary.md#tool)
-through three operations:
+[Nodes](../nodes/README.md) and `ReqLLM.Tool` structs through three operations:
 
-| Operation                                  | Direction             | Description                                                                                                                    |
-| ------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `to_tool(node)`                            | Node → Tool           | Extracts `name()`, `description()`, and `schema()` from the node and formats them as a tool struct with JSON Schema parameters |
-| `to_context(tool_call)`                    | Tool Call → Context   | Converts the LLM's `tool_call.arguments` map into a context map suitable for node execution                                    |
-| `to_result_message(call_id, name, result)` | Node Result → Message | Wraps the node's execution result (or error) as a tool result message for the LLM conversation, correlated by `call_id`        |
+| Operation                                  | Direction             | Description                                                                                                                              |
+| ------------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `to_tool(node)`                            | Node → Tool           | Extracts `name()`, `description()`, and `schema()` from the node and produces a `ReqLLM.Tool` struct with JSON Schema `parameter_schema` |
+| `to_context(tool_call)`                    | Tool Call → Context   | Converts the LLM's `tool_call.arguments` map into a context map suitable for node execution                                              |
+| `to_result_message(call_id, name, result)` | Node Result → Message | Wraps the node's execution result (or error) as a tool result message for the LLM conversation, correlated by `call_id`                  |
 
 The `to_tool/1` operation reads the node's schema (NimbleOptions or Zoi format)
-and converts it to JSON Schema for the LLM's `parameters` field. The `to_context/1`
-operation performs the reverse mapping, converting the LLM's JSON arguments back
-to the map format nodes expect. The `to_result_message/3` operation formats the
-result with the tool call's correlation ID so the LLM can associate results with
-the calls that produced them.
+and converts it to JSON Schema for the `ReqLLM.Tool` struct's `parameter_schema`
+field. The tool includes a no-op callback since the orchestrator executes tools
+externally rather than through req_llm's callback mechanism.
 
 ## DSL
 
 The Orchestrator DSL (`use Jido.Composer.Orchestrator`) configures:
 
-| Option           | Purpose                                                                                                         |
-| ---------------- | --------------------------------------------------------------------------------------------------------------- |
-| `name`           | Agent name (used as tool name when nested)                                                                      |
-| `description`    | What this orchestrator does (used as tool description when nested)                                              |
-| `llm`            | Module implementing the [LLM Behaviour](llm-behaviour.md)                                                       |
-| `nodes`          | List of available nodes (actions and agents)                                                                    |
-| `system_prompt`  | Instructions for the LLM's decision-making                                                                      |
-| `max_iterations` | Safety limit on the ReAct loop (default: 10)                                                                    |
-| `req_options`    | Opaque Req HTTP options forwarded to [LLM generate/3](llm-behaviour.md#req-options-propagation) (default: `[]`) |
+| Option           | Purpose                                                                                             |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `name`           | Agent name (used as tool name when nested)                                                          |
+| `description`    | What this orchestrator does (used as tool description when nested)                                  |
+| `model`          | req_llm model spec string (e.g. `"anthropic:claude-sonnet-4-20250514"`)                             |
+| `llm`            | Module with `generate/4` (default: `Jido.Composer.Orchestrator.LLM`)                                |
+| `nodes`          | List of available nodes (actions and agents)                                                        |
+| `system_prompt`  | Instructions for the LLM's decision-making                                                          |
+| `max_iterations` | Safety limit on the ReAct loop (default: 10)                                                        |
+| `req_options`    | Opaque Req HTTP options forwarded to [LLM generate/4](llm-behaviour.md#req-options) (default: `[]`) |
 
 The DSL auto-wraps plain action modules as ActionNodes and agent modules as
 AgentNodes, then generates a Jido Agent wired to the Orchestrator Strategy.
@@ -122,18 +120,19 @@ AgentNodes, then generates a Jido Agent wired to the Orchestrator Strategy.
 
 ## Design Decisions
 
-**Why no jido_ai dependency?**
+**Why req_llm instead of an abstract behaviour?**
 
-The Orchestrator includes its own abstract [LLM Behaviour](llm-behaviour.md)
-rather than depending on jido_ai. This keeps the library dependency-light and
-allows any LLM integration (OpenAI, Anthropic, local models, mock
-implementations) to plug in by implementing a single callback. The jido_ai
-package can provide a production LLM implementation separately.
+req_llm IS the abstraction. It provides provider-agnostic LLM calls (Anthropic,
+OpenAI, Google, etc.) through a single `generate_text/3` API built on Req. The
+default facade wraps req_llm, and users who need custom behaviour supply a
+module with the same `generate/4` signature — no formal `@behaviour` needed.
+This keeps the library dependency-light while leveraging req_llm's
+provider-specific encoding/decoding.
 
 **Why ReAct over other patterns?**
 
 The Reason + Act pattern is simple, well-understood, and maps naturally to the
-tool-calling interface of modern LLMs. It requires only one LLM callback
-(`generate/3`) and composes cleanly with the Node abstraction. More sophisticated
+tool-calling interface of modern LLMs. It requires only one LLM function
+(`generate/4`) and composes cleanly with the Node abstraction. More sophisticated
 patterns (tree-of-thought, multi-agent debate) can be built as custom strategies
 on top of the same Node and Tool primitives.

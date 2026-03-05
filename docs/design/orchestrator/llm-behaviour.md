@@ -1,23 +1,56 @@
-# LLM Behaviour
+# LLM Integration
 
-The LLM Behaviour is an abstract interface for language model integration. Any
-module implementing this behaviour can serve as the decision engine for an
-[Orchestrator](README.md). This keeps Jido Composer decoupled from any specific
-LLM provider.
+The LLM integration layer connects the [Orchestrator](README.md) to language
+models via [req_llm](https://hexdocs.pm/req_llm) — a provider-agnostic LLM
+library built on Req. The default facade module
+(`Jido.Composer.Orchestrator.LLM`) wraps `ReqLLM.generate_text/3` and handles
+conversation management, tool description formatting, and response
+classification.
+
+## Architecture
+
+The default LLM module is a concrete facade, not an abstract behaviour. Users
+can supply custom modules with the same `generate/4` signature — there is no
+`@behaviour` or `@callback` enforcement.
+
+```mermaid
+graph TB
+    subgraph "Orchestrator"
+        Strategy["Orchestrator Strategy"]
+        AT["AgentTool"]
+    end
+
+    subgraph "LLM Module (default facade)"
+        Facade["Jido.Composer.Orchestrator.LLM"]
+    end
+
+    subgraph "req_llm"
+        Gen["ReqLLM.generate_text/3"]
+        Ctx["ReqLLM.Context"]
+        Resp["ReqLLM.Response"]
+        Tool["ReqLLM.Tool"]
+    end
+
+    Strategy -->|"generate/4"| Facade
+    AT -->|"to_tool/1"| Tool
+    Facade --> Gen
+    Facade --> Ctx
+    Facade --> Resp
+```
 
 ## Contract
 
-The behaviour defines a single callback:
+The LLM module exposes a single function:
 
-| Callback     | Input                                   | Output                                                |
+| Function     | Input                                   | Output                                                |
 | ------------ | --------------------------------------- | ----------------------------------------------------- |
 | `generate/4` | conversation, tool_results, tools, opts | `{:ok, response, conversation}` or `{:error, reason}` |
 
 ### Parameters
 
-**conversation** (`term()`) — Opaque conversation state owned by the LLM
-module. The strategy stores this between calls but never inspects it. Pass
-`nil` on the first call.
+**conversation** (`ReqLLM.Context.t() | nil`) — Conversation history managed by
+req_llm. The strategy stores this between calls but never inspects its internal
+structure. Pass `nil` on the first call; the facade creates a fresh context.
 
 **tool_results** (`[tool_result()]`) — Normalized results from the previous
 round of tool executions. Empty list on the first call.
@@ -28,30 +61,25 @@ round of tool executions. Empty list on the first call.
 | `name`   | `String.t()` | Tool/node name                          |
 | `result` | map          | Result map from node execution          |
 
-**tools** (`[tool()]`) — Available tool descriptions in a neutral format
+**tools** (`[ReqLLM.Tool.t()]`) — Tool descriptions as `ReqLLM.Tool` structs,
 derived from [Nodes](../nodes/README.md) via
-[AgentTool](README.md#agenttool-adapter):
+[AgentTool](README.md#agenttool-adapter).
 
-| Field         | Type         | Description                        |
-| ------------- | ------------ | ---------------------------------- |
-| `name`        | `String.t()` | Node name                          |
-| `description` | `String.t()` | What the node does                 |
-| `parameters`  | map          | JSON Schema for accepted arguments |
+**opts** (`keyword()`) — Options for the LLM call:
 
-**opts** (`keyword()`) — LLM-specific options (model, temperature, max_tokens)
-and transport options. The reserved key `:req_options` passes through to the
-underlying HTTP client — see [Req Options Propagation](#req-options-propagation).
+| Key              | Type         | Required | Description                                                               |
+| ---------------- | ------------ | -------- | ------------------------------------------------------------------------- |
+| `:model`         | `String.t()` | Yes      | req_llm model spec (e.g. `"anthropic:claude-sonnet-4-20250514"`)          |
+| `:system_prompt` | `String.t()` | No       | System instructions for the LLM                                           |
+| `:max_tokens`    | integer      | No       | Maximum tokens in response                                                |
+| `:req_options`   | keyword      | No       | Passed as `req_http_options` to req_llm — see [Req Options](#req-options) |
 
 ### Response Types
 
 The callback returns `{:ok, response, conversation}` or `{:error, reason}`.
 
-The `conversation` term is the updated conversation state that the strategy
-stores and passes back on the next call. The LLM module manages the full
-provider-specific message history internally — building the correct message
-arrays, handling argument JSON parsing, encoding tool results in the provider's
-format (Claude's `tool_result` content blocks vs OpenAI's `tool` role messages),
-and preserving mixed content (text + tool calls).
+The `conversation` is the updated `ReqLLM.Context` struct that the strategy
+stores and passes back on the next call.
 
 The `response` is one of:
 
@@ -90,136 +118,152 @@ affect execution flow.
 | `name`      | `String.t()` | Which tool/node to invoke                       |
 | `arguments` | map          | Parameters for the node (always a parsed map)   |
 
-Arguments are always a parsed map. The LLM module is responsible for parsing
-JSON strings (OpenAI returns `arguments` as a JSON string) and passing through
-parsed maps (Claude returns `input` as a map).
+## How the Facade Works
 
-## Integration Points
+The default facade (`Jido.Composer.Orchestrator.LLM`) performs three steps:
+
+1. **Build context** — Creates or extends a `ReqLLM.Context` from the
+   conversation state and incoming tool results. On the first call (`nil`
+   conversation), it creates a fresh context with the user query. On subsequent
+   calls, it appends tool result messages via `ReqLLM.Context.tool_result/3`.
+
+2. **Call req_llm** — Invokes `ReqLLM.generate_text/3` with the model spec,
+   context, and options (system prompt, tools, max tokens, HTTP options).
+
+3. **Classify response** — Uses `ReqLLM.Response.classify/1` to determine
+   whether the response contains tool calls or a final answer, then returns the
+   standard response tuple.
 
 ```mermaid
 sequenceDiagram
     participant Strategy as Orchestrator Strategy
-    participant LLM as LLM Module
+    participant Facade as LLM Facade
+    participant ReqLLM as req_llm
     participant Tool as AgentTool
     participant Node as Node
 
     Strategy->>Tool: to_tool(node) for each available node
-    Tool-->>Strategy: [tool descriptions]
-    Strategy->>LLM: generate(nil, [], tools, opts)
-    LLM-->>Strategy: {:ok, {:tool_calls, calls}, conv_v1}
+    Tool-->>Strategy: [ReqLLM.Tool structs]
+    Strategy->>Facade: generate(nil, [], tools, opts)
+    Facade->>ReqLLM: generate_text(model, context, req_llm_opts)
+    ReqLLM-->>Facade: {:ok, %ReqLLM.Response{}}
+    Facade->>Facade: classify response
+    Facade-->>Strategy: {:ok, {:tool_calls, calls}, context}
     Strategy->>Tool: to_context(call)
     Tool-->>Strategy: node context
     Strategy->>Node: run(context, opts)
     Node-->>Strategy: {:ok, result_context}
     Strategy->>Strategy: collect tool_results
-    Strategy->>LLM: generate(conv_v1, tool_results, tools, opts)
-    LLM-->>Strategy: {:ok, {:final_answer, text}, conv_v2}
+    Strategy->>Facade: generate(context, tool_results, tools, opts)
+    Facade->>Facade: append tool_result messages to context
+    Facade->>ReqLLM: generate_text(model, updated_context, req_llm_opts)
+    ReqLLM-->>Facade: {:ok, %ReqLLM.Response{}}
+    Facade-->>Strategy: {:ok, {:final_answer, text}, context}
     Strategy->>Strategy: done
 ```
 
-The strategy never constructs provider-specific messages. It passes normalized
-tool results to the LLM module, which builds the correct message format
-internally (Claude `tool_result` content blocks, OpenAI `tool` role messages,
-etc.).
+## Conversation State
 
-## Conversation State Ownership
-
-The LLM module owns the conversation state. The strategy treats it as opaque:
+The conversation state is a `ReqLLM.Context` struct containing the full message
+history. req_llm manages provider-specific message formatting internally —
+building the correct message arrays, handling argument JSON parsing, encoding
+tool results in the provider's format (Claude's `tool_result` content blocks
+vs OpenAI's `tool` role messages), and preserving mixed content (text + tool
+calls).
 
 | Concern                       | Responsibility                                 |
 | ----------------------------- | ---------------------------------------------- |
-| Message format (per provider) | LLM module                                     |
-| Tool result encoding          | LLM module                                     |
-| Assistant message echo-back   | LLM module                                     |
+| Message format (per provider) | req_llm (via ReqLLM.Context)                   |
+| Tool result encoding          | req_llm (via ReqLLM.Context.tool_result/3)     |
+| Assistant message echo-back   | req_llm (automatic in ReqLLM.Response.context) |
 | Storing conversation state    | Strategy                                       |
 | Passing state between calls   | Strategy                                       |
-| Serializing for persistence   | LLM module (via checkpoint callback if needed) |
+| Serializing for persistence   | Natively serializable (struct of lists/maps)   |
 
-This design ensures the behaviour works with any provider without leaking
-format details into the strategy. A `req_llm` or `jido_ai` package implements
-the behaviour and handles all provider-specific encoding/decoding.
-
-### Persistence Consideration
+### Persistence
 
 When an orchestrator hibernates (see [Persistence](../hitl/persistence.md)),
-the conversation state is checkpointed as part of `__strategy__`. The LLM
-module should ensure its conversation state is serializable via
-`:erlang.term_to_binary/2`. In practice, conversation state is typically a list
-of maps (the provider-specific message array), which serializes natively.
+the conversation state is checkpointed as part of `__strategy__`. The
+`ReqLLM.Context` struct is a plain data structure (messages as a list of maps)
+that serializes natively via `:erlang.term_to_binary/2`.
 
-## Req Options Propagation
+## Req Options
 
-The `opts` keyword list accepted by `generate/4` supports a `:req_options` key
-that LLM implementations merge into their Req HTTP calls. This enables
+The `opts` keyword list accepted by `generate/4` supports a `:req_options` key.
+The facade maps this to req_llm's `:req_http_options` key, which passes options
+through to the underlying Req HTTP calls. This enables
 [cassette-based testing](../testing.md#reqcassette-integration) without any
-special test-mode logic in the LLM module or strategy.
+special test-mode logic.
 
-| Reserved Key   | Type    | Purpose                                                        |
-| -------------- | ------- | -------------------------------------------------------------- |
-| `:req_options` | keyword | Merged into `Req.request!/1` options by the LLM implementation |
+| Strategy Key   | req_llm Key         | Purpose                               |
+| -------------- | ------------------- | ------------------------------------- |
+| `:req_options` | `:req_http_options` | Merged into Req HTTP calls by req_llm |
 
-Within `:req_options`, two keys are particularly relevant:
+Within `:req_options`, the key relevant for testing:
 
-| Key       | Purpose                                              | Default |
-| --------- | ---------------------------------------------------- | ------- |
-| `:plug`   | ReqCassette plug for intercepting HTTP calls         | `nil`   |
-| `:stream` | Enable/disable streaming (must be `false` for plugs) | `true`  |
+| Key     | Purpose                                      | Default |
+| ------- | -------------------------------------------- | ------- |
+| `:plug` | ReqCassette plug for intercepting HTTP calls | `nil`   |
 
 ```mermaid
 flowchart LR
     Strategy["Orchestrator Strategy"]
-    LLM["LLM Module<br/>(generate/4)"]
-    Req["Req.request!"]
+    Facade["LLM Facade"]
+    ReqLLM["req_llm"]
+    Req["Req HTTP"]
 
-    Strategy -->|"opts[:req_options]"| LLM
-    LLM -->|"merge into Req call"| Req
+    Strategy -->|"opts[:req_options]"| Facade
+    Facade -->|"req_http_options:"| ReqLLM
+    ReqLLM -->|"plug: ..."| Req
 ```
 
 The strategy passes `req_options` through opaquely — it never inspects or
-modifies them. This keeps the transport concern entirely within the LLM module
-and the test setup.
+modifies them. The facade performs the key mapping from `:req_options` to
+`:req_http_options`.
 
-Streaming uses the Finch adapter directly, bypassing the Req plug system.
-When `:req_options` includes a `:plug`, the LLM implementation must disable
-streaming for that request. This is typically expressed as: if `plug` is set
-in req_options, override `stream` to `false`.
+## Custom LLM Modules
 
-## Implementation Requirements
+Users can provide a custom module with the same `generate/4` signature:
 
-An LLM module needs to:
+| Parameter      | Type                        | Description                     |
+| -------------- | --------------------------- | ------------------------------- |
+| `conversation` | `ReqLLM.Context.t() \| nil` | Conversation state              |
+| `tool_results` | `[tool_result()]`           | Previous tool execution results |
+| `tools`        | `[ReqLLM.Tool.t()]`         | Available tool descriptions     |
+| `opts`         | `keyword()`                 | Options including `:model`      |
 
-1. Manage the full conversation history internally (build provider-specific
-   message arrays from the conversation state and incoming tool results)
-2. Map neutral tool descriptions to the provider's format (Claude's
-   `input_schema` vs OpenAI's `function.parameters`)
-3. Parse the provider's response into the standard response types (including
-   JSON-string argument parsing for OpenAI)
-4. Handle provider-specific concerns (API keys, rate limits, retries)
-   internally
-5. Merge `opts[:req_options]` into outgoing Req calls when present
-6. Disable streaming when `opts[:req_options][:plug]` is set
-7. Return serializable conversation state (for persistence)
+Custom modules typically wrap req_llm internally (with different model
+configuration, middleware, or post-processing) while maintaining the standard
+response tuple format. There is no `@behaviour` enforcement — the module
+simply needs to export `generate/4` with the expected signature.
 
-The Orchestrator strategy does not concern itself with provider details. All
-provider-specific logic lives inside the LLM module implementation.
+The custom module is specified via the `llm:` option in the
+[Orchestrator DSL](README.md#dsl):
+
+```
+use Jido.Composer.Orchestrator,
+  llm: MyApp.CustomLLM,
+  model: "anthropic:claude-sonnet-4-20250514",
+  ...
+```
 
 ## Testing
 
-LLM modules are tested primarily through
+The default facade is tested through
 [ReqCassette](../testing.md#reqcassette-integration) cassettes that capture
-real LLM API responses. This validates parsing, tool call extraction, and error
-handling against actual provider response formats.
-
-Cassettes are recorded once against the real API, then replayed in all
-subsequent test runs. The `plug:` and `stream: false` options are passed via
-`:req_options` to intercept HTTP calls during replay.
+real LLM API responses via req_llm's Req integration. This validates the full
+round-trip: context construction, req_llm invocation, response classification,
+and tool call extraction against actual provider response formats.
 
 For pure strategy logic that does not depend on response shape (e.g., verifying
 that the strategy emits the correct directive type), a minimal mock LLM module
-returns predetermined responses:
+returns predetermined responses from a process-dictionary queue:
 
 - Return `{:ok, {:tool_calls, [...]}, conv}` to simulate the LLM choosing tools
 - Return `{:ok, {:final_answer, "..."}, conv}` to simulate completion
 - Return `{:error, reason}` to simulate failures
+
+The mock has no `@behaviour` — it exports the same `generate/4` signature and
+short-circuits without calling req_llm.
 
 See [Testing Strategy](../testing.md) for the full testing approach.

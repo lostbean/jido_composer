@@ -89,7 +89,7 @@ graph TB
 use Jido.Composer.Orchestrator,
   name: "research_coordinator",
   description: "Research any topic using available tools",
-  llm: MyApp.ClaudeLLM,
+  model: "anthropic:claude-sonnet-4-20250514",
   nodes: [
     WebSearchAction,
     DatabaseQueryAction,
@@ -160,7 +160,7 @@ use Jido.Composer.Workflow,
 use Jido.Composer.Orchestrator,
   name: "project_manager",
   description: "Project management assistant",
-  llm: MyApp.ClaudeLLM,
+  model: "anthropic:claude-sonnet-4-20250514",
   nodes: [
     {OnboardingWorkflow, description: "Onboard a new team member", mode: :sync},
     {DeployWorkflow, description: "Deploy a release", mode: :sync},
@@ -210,7 +210,7 @@ stateDiagram-v2
 use Jido.Composer.Orchestrator,
   name: "editorial_review",
   description: "Review content for quality, accuracy, and style",
-  llm: MyApp.ClaudeLLM,
+  model: "anthropic:claude-sonnet-4-20250514",
   nodes: [
     CheckFactsAction,
     CheckStyleAction,

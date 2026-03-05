@@ -1,42 +1,42 @@
 defmodule Jido.Composer.Orchestrator.AgentTool do
   @moduledoc """
-  Converts Nodes into neutral LLM tool descriptions.
+  Converts Nodes into ReqLLM Tool structs for LLM function calling.
 
-  Bridges the gap between Node metadata and the tool format expected by the
-  `Jido.Composer.Orchestrator.LLM` behaviour. Three operations handle the
-  full round-trip: Node → tool description, tool call → context, and
-  execution result → tool result message.
+  Bridges the gap between Node metadata and `ReqLLM.Tool` structs.
+  Three operations handle the full round-trip: Node → tool description,
+  tool call → context, and execution result → tool result message.
   """
 
   alias Jido.Composer.Node.ActionNode
   alias Jido.Composer.Node.AgentNode
 
   @doc """
-  Converts a Node or action module into a neutral tool description.
+  Converts a Node or action module into a `ReqLLM.Tool` struct.
 
-  Returns `%{name, description, parameters}` where parameters is a JSON Schema
-  map. Delegates schema conversion to `Jido.Action.Tool.build_parameters_schema/1`.
+  Returns `%ReqLLM.Tool{}` with name, description, parameter_schema (JSON Schema map),
+  and a no-op callback (the orchestrator executes tools externally).
   """
-  @spec to_tool(ActionNode.t() | AgentNode.t() | module()) ::
-          Jido.Composer.Orchestrator.LLM.tool()
+  @spec to_tool(ActionNode.t() | AgentNode.t() | module()) :: ReqLLM.Tool.t()
   def to_tool(%ActionNode{action_module: mod}) do
     to_tool(mod)
   end
 
   def to_tool(%AgentNode{agent_module: mod}) do
-    %{
+    ReqLLM.Tool.new!(
       name: mod.name(),
       description: mod.description(),
-      parameters: build_agent_parameters(mod)
-    }
+      parameter_schema: build_agent_parameters(mod),
+      callback: fn _args -> {:ok, :noop} end
+    )
   end
 
   def to_tool(module) when is_atom(module) do
-    %{
+    ReqLLM.Tool.new!(
       name: module.name(),
       description: module.description(),
-      parameters: Jido.Action.Tool.build_parameters_schema(module.schema())
-    }
+      parameter_schema: Jido.Action.Tool.build_parameters_schema(module.schema()),
+      callback: fn _args -> {:ok, :noop} end
+    )
   end
 
   defp build_agent_parameters(mod) do
@@ -45,7 +45,6 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
     if is_list(schema) do
       Jido.Action.Tool.build_parameters_schema(schema)
     else
-      # Agent schemas (Zoi) — provide a minimal schema
       %{"type" => "object", "properties" => %{}, "required" => []}
     end
   end
@@ -56,7 +55,7 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
   Atomizes string keys so that the resulting map matches the keyword-style
   keys nodes expect.
   """
-  @spec to_context(Jido.Composer.Orchestrator.LLM.tool_call()) :: map()
+  @spec to_context(map()) :: map()
   def to_context(%{arguments: arguments}) do
     Map.new(arguments, fn
       {k, v} when is_binary(k) ->
@@ -81,11 +80,9 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
   @doc """
   Builds a normalized tool result from node execution output.
 
-  Returns `%{id, name, result}` matching the `tool_result` type expected by
-  `LLM.generate/4`.
+  Returns `%{id, name, result}` for feeding back into the LLM conversation.
   """
-  @spec to_tool_result(String.t(), String.t(), {:ok, map()} | {:error, term()}) ::
-          Jido.Composer.Orchestrator.LLM.tool_result()
+  @spec to_tool_result(String.t(), String.t(), {:ok, map()} | {:error, term()}) :: map()
   def to_tool_result(call_id, node_name, {:ok, result}) do
     %{id: call_id, name: node_name, result: result}
   end

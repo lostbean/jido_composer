@@ -1,10 +1,10 @@
 {
   "interactions": [
     {
-      "recorded_at": "2026-03-05T17:27:03.619935Z",
+      "recorded_at": "2026-03-05T21:33:45.359872Z",
       "request": {
         "body_json": {
-          "max_tokens": 1024,
+          "max_tokens": 64000,
           "messages": [
             {
               "content": "What is 5 + 3?",
@@ -12,6 +12,7 @@
             }
           ],
           "model": "claude-sonnet-4-20250514",
+          "stream": false,
           "system": "You are a helpful assistant with math and echo tools.",
           "tools": [
             {
@@ -50,8 +51,8 @@
         },
         "body_type": "json",
         "headers": {
-          "accept": ["application/json"],
           "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
           "anthropic-version": ["2023-06-01"],
           "content-type": ["application/json"],
           "user-agent": ["req/0.5.17"]
@@ -64,14 +65,14 @@
         "body_json": {
           "content": [
             {
-              "text": "I can help you calculate 5 + 3 using the add function.",
+              "text": "I'll help you calculate 5 + 3 using the add function.",
               "type": "text"
             },
             {
               "caller": {
                 "type": "direct"
               },
-              "id": "toolu_01TBJ9Jcetrp9xpABMCL6jgN",
+              "id": "toolu_01TXDAkMGrL6smidyzwwuAKQ",
               "input": {
                 "amount": 3,
                 "value": 5
@@ -80,7 +81,7 @@
               "type": "tool_use"
             }
           ],
-          "id": "msg_01ByXExR31g16wK64Mom8Key",
+          "id": "msg_01KATs8NZw2DScgYyFCg4TTX",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "tool_use",
@@ -104,42 +105,42 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T17:27:02Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T21:33:44Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T17:27:03Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T21:33:45Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-05T17:27:01Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T21:33:43Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-05T17:27:02Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T21:33:44Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9d7ad43c6bea82f7-GIG"],
+          "cf-ray": ["9d7c3d9b1fbaf19f-GRU"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Thu, 05 Mar 2026 17:27:03 GMT"],
-          "request-id": ["req_011CYkKrhu5irPWvjSQCWxyV"],
+          "date": ["Thu, 05 Mar 2026 21:33:45 GMT"],
+          "request-id": ["req_011CYkefoZofEzrVcU3BDoeZ"],
           "server": ["cloudflare"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["1664"],
+          "x-envoy-upstream-service-time": ["1690"],
           "x-robots-tag": ["none"]
         },
         "status": 200
       }
     },
     {
-      "recorded_at": "2026-03-05T17:27:05.422142Z",
+      "recorded_at": "2026-03-05T21:33:47.368859Z",
       "request": {
         "body_json": {
-          "max_tokens": 1024,
+          "max_tokens": 64000,
           "messages": [
             {
               "content": "What is 5 + 3?",
@@ -148,14 +149,11 @@
             {
               "content": [
                 {
-                  "text": "I can help you calculate 5 + 3 using the add function.",
+                  "text": "I'll help you calculate 5 + 3 using the add function.",
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_01TBJ9Jcetrp9xpABMCL6jgN",
+                  "id": "toolu_01TXDAkMGrL6smidyzwwuAKQ",
                   "input": {
                     "amount": 3,
                     "value": 5
@@ -170,7 +168,7 @@
               "content": [
                 {
                   "content": "{\"error\":\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 5\"}",
-                  "tool_use_id": "toolu_01TBJ9Jcetrp9xpABMCL6jgN",
+                  "tool_use_id": "toolu_01TXDAkMGrL6smidyzwwuAKQ",
                   "type": "tool_result"
                 }
               ],
@@ -178,6 +176,7 @@
             }
           ],
           "model": "claude-sonnet-4-20250514",
+          "stream": false,
           "system": "You are a helpful assistant with math and echo tools.",
           "tools": [
             {
@@ -216,8 +215,8 @@
         },
         "body_type": "json",
         "headers": {
-          "accept": ["application/json"],
           "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
           "anthropic-version": ["2023-06-01"],
           "content-type": ["application/json"],
           "user-agent": ["req/0.5.17"]
@@ -230,14 +229,14 @@
         "body_json": {
           "content": [
             {
-              "text": "Let me try again with floating point numbers:",
+              "text": "Let me try again with the correct parameter format:",
               "type": "text"
             },
             {
               "caller": {
                 "type": "direct"
               },
-              "id": "toolu_01XFdJmRgngNj3qWj1ojCBrR",
+              "id": "toolu_01U39fPoBF8zSdnAYFTED7Xw",
               "input": {
                 "amount": 3.0,
                 "value": 5.0
@@ -246,7 +245,7 @@
               "type": "tool_use"
             }
           ],
-          "id": "msg_01VVTF3gp9NnjCKq64VKZj5u",
+          "id": "msg_01AoaSfwcwLWCLXjs3Gzo28X",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "tool_use",
@@ -261,7 +260,7 @@
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
             "input_tokens": 625,
-            "output_tokens": 82,
+            "output_tokens": 83,
             "service_tier": "standard"
           }
         },
@@ -270,42 +269,42 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T17:27:04Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T21:33:46Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T17:27:05Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T21:33:47Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-05T17:27:03Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T21:33:45Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-05T17:27:04Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T21:33:46Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9d7ad447bf4682f7-GIG"],
+          "cf-ray": ["9d7c3da6bd4bf19f-GRU"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Thu, 05 Mar 2026 17:27:05 GMT"],
-          "request-id": ["req_011CYkKrqdB8o2JnZNA6duKm"],
+          "date": ["Thu, 05 Mar 2026 21:33:47 GMT"],
+          "request-id": ["req_011CYkefwXHkt2wibBQQ43jv"],
           "server": ["cloudflare"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["1658"],
+          "x-envoy-upstream-service-time": ["1839"],
           "x-robots-tag": ["none"]
         },
         "status": 200
       }
     },
     {
-      "recorded_at": "2026-03-05T17:27:06.926190Z",
+      "recorded_at": "2026-03-05T21:33:48.730500Z",
       "request": {
         "body_json": {
-          "max_tokens": 1024,
+          "max_tokens": 64000,
           "messages": [
             {
               "content": "What is 5 + 3?",
@@ -314,14 +313,11 @@
             {
               "content": [
                 {
-                  "text": "I can help you calculate 5 + 3 using the add function.",
+                  "text": "I'll help you calculate 5 + 3 using the add function.",
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_01TBJ9Jcetrp9xpABMCL6jgN",
+                  "id": "toolu_01TXDAkMGrL6smidyzwwuAKQ",
                   "input": {
                     "amount": 3,
                     "value": 5
@@ -336,7 +332,7 @@
               "content": [
                 {
                   "content": "{\"error\":\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 5\"}",
-                  "tool_use_id": "toolu_01TBJ9Jcetrp9xpABMCL6jgN",
+                  "tool_use_id": "toolu_01TXDAkMGrL6smidyzwwuAKQ",
                   "type": "tool_result"
                 }
               ],
@@ -345,14 +341,11 @@
             {
               "content": [
                 {
-                  "text": "Let me try again with floating point numbers:",
+                  "text": "Let me try again with the correct parameter format:",
                   "type": "text"
                 },
                 {
-                  "caller": {
-                    "type": "direct"
-                  },
-                  "id": "toolu_01XFdJmRgngNj3qWj1ojCBrR",
+                  "id": "toolu_01U39fPoBF8zSdnAYFTED7Xw",
                   "input": {
                     "amount": 3.0,
                     "value": 5.0
@@ -367,7 +360,7 @@
               "content": [
                 {
                   "content": "{\"result\":8.0}",
-                  "tool_use_id": "toolu_01XFdJmRgngNj3qWj1ojCBrR",
+                  "tool_use_id": "toolu_01U39fPoBF8zSdnAYFTED7Xw",
                   "type": "tool_result"
                 }
               ],
@@ -375,6 +368,7 @@
             }
           ],
           "model": "claude-sonnet-4-20250514",
+          "stream": false,
           "system": "You are a helpful assistant with math and echo tools.",
           "tools": [
             {
@@ -413,8 +407,8 @@
         },
         "body_type": "json",
         "headers": {
-          "accept": ["application/json"],
           "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
           "anthropic-version": ["2023-06-01"],
           "content-type": ["application/json"],
           "user-agent": ["req/0.5.17"]
@@ -427,11 +421,11 @@
         "body_json": {
           "content": [
             {
-              "text": "The answer is 8. So 5 + 3 = 8.",
+              "text": "5 + 3 = 8",
               "type": "text"
             }
           ],
-          "id": "msg_01Jpx1UMSCz3VAiyJ4UaUmB5",
+          "id": "msg_01Kn6ryUqg4zrRuFwRAL2eKD",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "end_turn",
@@ -445,8 +439,8 @@
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
-            "input_tokens": 725,
-            "output_tokens": 21,
+            "input_tokens": 726,
+            "output_tokens": 12,
             "service_tier": "standard"
           }
         },
@@ -455,32 +449,32 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T17:27:06Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T21:33:48Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T17:27:06Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T21:33:48Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-05T17:27:05Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T21:33:47Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-05T17:27:06Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T21:33:48Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9d7ad4530af482f7-GIG"],
+          "cf-ray": ["9d7c3db31c56f19f-GRU"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Thu, 05 Mar 2026 17:27:06 GMT"],
-          "request-id": ["req_011CYkKryKXf3E2SAGRRY1S5"],
+          "date": ["Thu, 05 Mar 2026 21:33:48 GMT"],
+          "request-id": ["req_011CYkeg61m8cAAMVrAvGAbw"],
           "server": ["cloudflare"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["1362"],
+          "x-envoy-upstream-service-time": ["1212"],
           "x-robots-tag": ["none"]
         },
         "status": 200

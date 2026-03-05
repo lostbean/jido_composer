@@ -6,7 +6,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
   alias Jido.Agent.Directive
   alias Jido.Agent.Strategy.State, as: StratState
   alias Jido.Composer.CassetteHelper
-  alias Jido.Composer.Orchestrator.ClaudeLLM
+  alias Jido.Composer.Orchestrator.LLM
   alias Jido.Composer.TestSupport.MockLLM
 
   # -- Orchestrator definitions --
@@ -260,7 +260,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
     end
   end
 
-  # -- Cassette-driven tests using ClaudeLLM --
+  # -- Cassette-driven tests using LLM --
 
   # A bare agent for cassette tests (strategy initialized manually with req_options)
   defmodule CassetteAgent do
@@ -275,7 +275,8 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
   defp init_cassette_agent(plug) do
     strategy_opts = [
       nodes: [Jido.Composer.TestActions.AddAction, Jido.Composer.TestActions.EchoAction],
-      llm_module: ClaudeLLM,
+      llm_module: LLM,
+      model: "anthropic:claude-sonnet-4-20250514",
       system_prompt: "You are a helpful assistant with math and echo tools.",
       max_iterations: 10,
       req_options: [plug: plug]
@@ -291,7 +292,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
     %Jido.Instruction{action: action, params: params}
   end
 
-  # Executes the full ReAct loop using ClaudeLLM with cassette plug.
+  # Executes the full ReAct loop using LLM with cassette plug.
   # LLM calls go through Req -> cassette plug -> canned response.
   # Tool calls go through Jido.Exec.run -> real action execution.
   defp execute_cassette_loop(agent, query, strategy_opts) do
@@ -309,7 +310,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
         instruction: %Jido.Instruction{action: Jido.Composer.Orchestrator.LLMAction} = instr,
         result_action: result_action
       } ->
-        # Execute ClaudeLLM via the LLMAction — this makes a real Req call
+        # Execute LLM via the LLMAction — this makes a real Req call
         # which the cassette plug intercepts
         params = instr.params
         llm_module = params[:llm_module]
@@ -361,7 +362,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
   end
 
   describe "cassette-driven: single tool call round-trip" do
-    test "ClaudeLLM calls add tool and returns final answer" do
+    test "LLM calls add tool and returns final answer" do
       with_cassette("orchestrator_single_tool", CassetteHelper.default_cassette_opts(), fn plug ->
         {agent, strategy_opts} = init_cassette_agent(plug)
         agent = execute_cassette_loop(agent, "What is 5 + 3?", strategy_opts)
@@ -378,14 +379,14 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
   end
 
   describe "cassette-driven: multi-tool parallel" do
-    test "ClaudeLLM calls add and echo tools in parallel" do
+    test "LLM calls add and echo tools in parallel" do
       with_cassette("orchestrator_multi_tool", CassetteHelper.default_cassette_opts(), fn plug ->
         {agent, strategy_opts} = init_cassette_agent(plug)
 
         agent =
           execute_cassette_loop(
             agent,
-            "Use the add tool with value=10 and amount=5, and use the echo tool with message='hello world'. Call both tools now.",
+            "Use the add tool with value=10.0 and amount=5.0, and use the echo tool with message='hello world'. Call both tools now.",
             strategy_opts
           )
 
@@ -398,7 +399,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
   end
 
   describe "cassette-driven: multi-turn conversation" do
-    test "ClaudeLLM makes two rounds of tool calls then final answer" do
+    test "LLM makes two rounds of tool calls then final answer" do
       with_cassette("orchestrator_multi_turn", CassetteHelper.default_cassette_opts(), fn plug ->
         {agent, strategy_opts} = init_cassette_agent(plug)
 
@@ -414,14 +415,14 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
         assert strat.iteration >= 3
 
         # Conversation built up across turns
-        assert is_list(strat.conversation)
-        assert length(strat.conversation) > 2
+        assert %ReqLLM.Context{} = strat.conversation
+        assert length(strat.conversation.messages) > 2
       end)
     end
   end
 
   describe "cassette-driven: direct final answer" do
-    test "ClaudeLLM answers without tool calls" do
+    test "LLM answers without tool calls" do
       with_cassette(
         "orchestrator_final_answer_only",
         CassetteHelper.default_cassette_opts(),

@@ -1,10 +1,10 @@
 {
   "interactions": [
     {
-      "recorded_at": "2026-03-05T20:13:02.363753Z",
+      "recorded_at": "2026-03-05T21:34:09.407760Z",
       "request": {
         "body_json": {
-          "max_tokens": 1024,
+          "max_tokens": 64000,
           "messages": [
             {
               "content": "Say hello, do not use any tools.",
@@ -12,6 +12,7 @@
             }
           ],
           "model": "claude-sonnet-4-20250514",
+          "stream": false,
           "system": "You are a helpful assistant with math and echo tools.",
           "tools": [
             {
@@ -50,8 +51,8 @@
         },
         "body_type": "json",
         "headers": {
-          "accept": ["application/json"],
           "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
           "anthropic-version": ["2023-06-01"],
           "content-type": ["application/json"],
           "user-agent": ["req/0.5.17"]
@@ -64,11 +65,11 @@
         "body_json": {
           "content": [
             {
-              "text": "Hello! It's nice to meet you. I'm here to help you with math calculations using my add function or echo messages back to you when you need those tools. How can I assist you today?",
+              "text": "Hello! How can I help you today?",
               "type": "text"
             }
           ],
-          "id": "msg_01Ensvatk37mALQYiaaZarUf",
+          "id": "msg_01BLo4dxXBDsQxwPSAruUb1g",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "end_turn",
@@ -83,7 +84,7 @@
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
             "input_tokens": 486,
-            "output_tokens": 44,
+            "output_tokens": 12,
             "service_tier": "standard"
           }
         },
@@ -92,32 +93,32 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T20:13:01Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-05T21:34:09Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T20:13:02Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-05T21:34:09Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-05T20:13:00Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-05T21:34:08Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-05T20:13:01Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-05T21:34:09Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9d7bc75a8ec1f245-GRU"],
+          "cf-ray": ["9d7c3e336eaff19f-GRU"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Thu, 05 Mar 2026 20:13:02 GMT"],
-          "request-id": ["req_011CYkYWm4YSqECAyENq3gKi"],
+          "date": ["Thu, 05 Mar 2026 21:34:09 GMT"],
+          "request-id": ["req_011CYkehbmTBpzesbVHeeYL1"],
           "server": ["cloudflare"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["2301"],
+          "x-envoy-upstream-service-time": ["1363"],
           "x-robots-tag": ["none"]
         },
         "status": 200
