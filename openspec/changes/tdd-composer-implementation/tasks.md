@@ -178,8 +178,8 @@
 
 > **References**: `docs/design/hitl/strategy-integration.md` — SuspendForHuman directive fields table (approval_request, notification, hibernate), runtime interpretation (3 steps). `prototypes/learnings.md` — "DirectiveExec Return Types": SuspendForHuman MUST return `{:ok, state}` (NOT `{:stop, ...}` which hard-stops agent).
 
-- [ ] 21.1 Write tests for SuspendForHuman directive in `test/jido/composer/directive/suspend_for_human_test.exs`
-- [ ] 21.2 Implement `Jido.Composer.Directive.SuspendForHuman` in `lib/jido/composer/directive/suspend_for_human.ex`
+- [x] 21.1 Write tests for SuspendForHuman directive in `test/jido/composer/directive/suspend_for_human_test.exs`
+- [x] 21.2 Implement `Jido.Composer.Directive.SuspendForHuman` in `lib/jido/composer/directive/suspend_for_human.ex`
 
 ## 22. Workflow + HumanNode Integration
 
