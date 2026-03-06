@@ -114,7 +114,7 @@ defmodule Jido.Composer.Orchestrator.DSL do
     strat = Jido.Agent.Strategy.State.get(agent)
 
     case strat.status do
-      :completed -> {:ok, strat.result}
+      :completed -> {:ok, unwrap_result(strat.result)}
       :error -> {:error, strat.result}
       _ -> {:error, :unexpected_state}
     end
@@ -143,6 +143,9 @@ defmodule Jido.Composer.Orchestrator.DSL do
         run_orch_directives(module, agent, rest)
     end
   end
+
+  defp unwrap_result(%Jido.Composer.NodeIO{} = io), do: Jido.Composer.NodeIO.unwrap(io)
+  defp unwrap_result(result), do: result
 
   defp execute_child_sync(child_module, spawn_opts) do
     context = Map.get(spawn_opts, :context, %{})

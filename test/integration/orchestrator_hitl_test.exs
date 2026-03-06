@@ -161,7 +161,7 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.result == "5 + 3 = 8.0"
+      assert strat.result.value == "5 + 3 = 8.0"
       assert strat.context[:add][:result] == 8.0
     end
 
@@ -199,7 +199,7 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.result =~ "rejected"
+      assert strat.result.value =~ "rejected"
     end
   end
 
@@ -346,6 +346,7 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
 
       strat = StratState.get(agent)
       assert strat.status == :error
+      # abort_iteration sets result as a plain string (error path)
       assert strat.result =~ "abort"
     end
   end

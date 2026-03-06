@@ -2,6 +2,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
   use ExUnit.Case, async: true
 
   alias Jido.Agent.Strategy.State, as: StratState
+  alias Jido.Composer.NodeIO
   alias Jido.Composer.Orchestrator.Strategy
   alias Jido.Composer.TestActions.{AddAction, EchoAction}
   alias Jido.Composer.TestSupport.LLMStub
@@ -97,7 +98,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
 
       state = get_state(agent)
       assert state.status == :completed
-      assert state.result == "Hello world!"
+      assert %NodeIO{type: :text, value: "Hello world!"} = state.result
       assert directives == []
     end
 
@@ -509,6 +510,25 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
 
       state = get_state(agent)
       assert state.status == :error
+    end
+  end
+
+  describe "NodeIO wrapping" do
+    test "final answer wraps as NodeIO.text" do
+      LLMStub.setup([{:final_answer, "The answer is 42"}])
+      agent = init_agent()
+
+      {agent, [llm_directive]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "What?"})], ctx())
+
+      llm_result = execute_llm_directive(llm_directive)
+
+      {agent, _} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :completed
+      assert %NodeIO{type: :text, value: "The answer is 42"} = state.result
     end
   end
 

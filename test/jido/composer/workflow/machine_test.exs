@@ -3,6 +3,7 @@ defmodule Jido.Composer.Workflow.MachineTest do
 
   alias Jido.Composer.Workflow.Machine
   alias Jido.Composer.Node.ActionNode
+  alias Jido.Composer.NodeIO
   alias Jido.Composer.TestActions.{AddAction, MultiplyAction, FailAction}
 
   defp build_nodes do
@@ -206,6 +207,30 @@ defmodule Jido.Composer.Workflow.MachineTest do
       machine = Machine.apply_result(machine, %{a: %{y: 2}})
 
       assert machine.context.extract.a == %{x: 1, y: 2}
+    end
+
+    test "resolves NodeIO.text to map" do
+      machine = linear_machine()
+      machine = Machine.apply_result(machine, NodeIO.text("answer"))
+      assert machine.context == %{extract: %{text: "answer"}}
+    end
+
+    test "resolves NodeIO.object to map" do
+      machine = linear_machine()
+      machine = Machine.apply_result(machine, NodeIO.object(%{score: 0.9}))
+      assert machine.context == %{extract: %{object: %{score: 0.9}}}
+    end
+
+    test "passes through bare maps unchanged" do
+      machine = linear_machine()
+      machine = Machine.apply_result(machine, %{key: "value"})
+      assert machine.context == %{extract: %{key: "value"}}
+    end
+
+    test "resolves NodeIO.map to map" do
+      machine = linear_machine()
+      machine = Machine.apply_result(machine, NodeIO.map(%{key: "value"}))
+      assert machine.context == %{extract: %{key: "value"}}
     end
   end
 end

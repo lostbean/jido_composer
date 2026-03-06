@@ -18,6 +18,8 @@ defmodule Jido.Composer.Node.FanOutNode do
   - `:collect_partial` — collects all results, including `{:error, reason}` entries
   """
 
+  alias Jido.Composer.NodeIO
+
   @behaviour Jido.Composer.Node
 
   @default_timeout 30_000
@@ -141,6 +143,9 @@ defmodule Jido.Composer.Node.FanOutNode do
 
   defp merge_results(branch_results, :deep_merge) do
     Enum.reduce(branch_results, %{}, fn
+      {name, %NodeIO{} = io}, acc ->
+        DeepMerge.deep_merge(acc, %{name => NodeIO.to_map(io)})
+
       {name, result}, acc when is_map(result) ->
         DeepMerge.deep_merge(acc, %{name => result})
 

@@ -100,7 +100,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.result == "Hello! I'm here to help."
+      assert strat.result.value == "Hello! I'm here to help."
       assert strat.iteration == 1
     end
   end
@@ -120,7 +120,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.result == "5 + 3 = 8.0"
+      assert strat.result.value == "5 + 3 = 8.0"
       assert strat.iteration == 2
 
       # Context should have the tool result scoped under the tool name
@@ -190,7 +190,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.result == "The tool failed, but I can still answer."
+      assert strat.result.value == "The tool failed, but I can still answer."
     end
   end
 
@@ -349,7 +349,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
 
         strat = StratState.get(agent)
         assert strat.status == :completed
-        assert strat.result =~ "8"
+        assert strat.result.value =~ "8"
         assert strat.iteration >= 2
 
         # Tool result scoped under tool name
@@ -412,8 +412,8 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
 
           strat = StratState.get(agent)
           assert strat.status == :completed
-          assert is_binary(strat.result)
-          assert String.length(strat.result) > 0
+          assert is_binary(strat.result.value)
+          assert String.length(strat.result.value) > 0
           assert strat.iteration == 1
           assert strat.context == %{}
         end
@@ -445,6 +445,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
       assert snap.status == :completed
       assert snap.done?
       assert snap.result == "Done"
+      # Raw strat.result is NodeIO, but snapshot unwraps it
     end
 
     test "reports error after failure" do

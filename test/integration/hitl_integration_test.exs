@@ -329,7 +329,7 @@ defmodule Jido.Composer.Integration.HITLIntegrationTest do
 
       final_strat = StratState.get(final_agent)
       assert final_strat.status == :completed
-      assert final_strat.result == "8.0"
+      assert final_strat.result.value == "8.0"
     end
   end
 

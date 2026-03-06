@@ -8,6 +8,7 @@ defmodule Jido.Composer.Workflow.Machine do
   """
 
   alias Jido.Composer.Error
+  alias Jido.Composer.NodeIO
 
   @default_terminal_states MapSet.new([:done, :failed])
 
@@ -72,12 +73,15 @@ defmodule Jido.Composer.Workflow.Machine do
     end
   end
 
-  @spec apply_result(t(), map()) :: t()
-  def apply_result(%__MODULE__{status: status, context: context} = machine, result)
-      when is_map(result) do
-    scoped = %{status => result}
+  @spec apply_result(t(), map() | NodeIO.t()) :: t()
+  def apply_result(%__MODULE__{status: status, context: context} = machine, result) do
+    resolved = resolve_result(result)
+    scoped = %{status => resolved}
     %{machine | context: DeepMerge.deep_merge(context, scoped)}
   end
+
+  defp resolve_result(%NodeIO{} = io), do: NodeIO.to_map(io)
+  defp resolve_result(result) when is_map(result), do: result
 
   # Transition lookup with fallback chain:
   # 1. {state, outcome} — exact match

@@ -19,20 +19,20 @@
 
 > **References**: `IMPLEMENTATION_PLAN.md` Phase 2. `native-agent-composition.md` §3. `docs/design/nodes/typed-io.md`. `prototypes/test_node_io_envelope.exs` (7 tests). `prototypes/learnings.md` §Round 3 finding 4 (`@derive Jason.Encoder` needed).
 
-- [ ] 2.1 Write unit tests in `test/jido/composer/node_io_test.exs` (NEW) — `map/1` wraps map value, `text/1` wraps string, `object/2` wraps with schema, `to_map/1` passes through map type, `to_map/1` wraps text as `%{text: value}`, `to_map/1` wraps object as `%{object: value}`, `unwrap/1` returns raw value, `mergeable?/1` true only for `:map`, Jason encoding works
-- [ ] 2.2 Write Machine unit tests in `test/jido/composer/workflow/machine_test.exs` — `apply_result` resolves `NodeIO.text` to map, resolves `NodeIO.object` to map, passes through bare maps unchanged
-- [ ] 2.3 Write Orchestrator strategy tests in `test/jido/composer/orchestrator/strategy_test.exs` — final answer wraps as `NodeIO.text` (LLMStub direct mode)
-- [ ] 2.4 Write AgentTool tests in `test/jido/composer/orchestrator/agent_tool_test.exs` — `to_tool_result` unwraps `NodeIO.text` for LLM, unwraps `NodeIO.map` for LLM
-- [ ] 2.5 Write FanOutNode tests in `test/jido/composer/node/fan_out_node_test.exs` — `merge_results` handles mixed `NodeIO` and bare map branches
-- [ ] 2.6 Write e2e test — `test/e2e/e2e_test.exs`: nested orchestrator returns text, adapted to map in parent workflow (LLMStub plug mode)
-- [ ] 2.7 Implement `Jido.Composer.NodeIO` in `lib/jido/composer/node_io.ex` (NEW) — struct with `type`, `value`, `schema`, `meta`; constructors `map/1`, `text/1`, `object/2`; `to_map/1`, `unwrap/1`, `mergeable?/1`; `@derive Jason.Encoder`
-- [ ] 2.8 Add `resolve_result/1` in `lib/jido/composer/workflow/machine.ex` `apply_result/2` — unwrap `NodeIO` via `to_map/1`, pass through bare maps
-- [ ] 2.9 Wrap final answers in `lib/jido/composer/orchestrator/strategy.ex` — `{:final_answer, text}` → `NodeIO.text(text)` in `handle_llm_response`
-- [ ] 2.10 Unwrap NodeIO in `lib/jido/composer/orchestrator/agent_tool.ex` `to_tool_result/3` — text stays string, map stays map
-- [ ] 2.11 Add NodeIO-aware merge in `lib/jido/composer/node/fan_out_node.ex` `merge_results/2`
-- [ ] 2.12 Add optional `input_type/1` and `output_type/1` callbacks in `lib/jido/composer/node.ex`
-- [ ] 2.13 Record e2e cassette `e2e_nodeio_text_adaptation` — delete stub, record, verify replay
-- [ ] 2.14 PHASE GATE: `mix precommit`
+- [x] 2.1 Write unit tests in `test/jido/composer/node_io_test.exs` (NEW) — `map/1` wraps map value, `text/1` wraps string, `object/2` wraps with schema, `to_map/1` passes through map type, `to_map/1` wraps text as `%{text: value}`, `to_map/1` wraps object as `%{object: value}`, `unwrap/1` returns raw value, `mergeable?/1` true only for `:map`, Jason encoding works
+- [x] 2.2 Write Machine unit tests in `test/jido/composer/workflow/machine_test.exs` — `apply_result` resolves `NodeIO.text` to map, resolves `NodeIO.object` to map, passes through bare maps unchanged
+- [x] 2.3 Write Orchestrator strategy tests in `test/jido/composer/orchestrator/strategy_test.exs` — final answer wraps as `NodeIO.text` (LLMStub direct mode)
+- [x] 2.4 Write AgentTool tests in `test/jido/composer/orchestrator/agent_tool_test.exs` — `to_tool_result` unwraps `NodeIO.text` for LLM, unwraps `NodeIO.map` for LLM
+- [x] 2.5 Write FanOutNode tests in `test/jido/composer/node/fan_out_node_test.exs` — `merge_results` handles mixed `NodeIO` and bare map branches
+- [x] 2.6 Write e2e test — `test/e2e/e2e_test.exs`: nested orchestrator returns text, adapted to map in parent workflow (LLMStub plug mode)
+- [x] 2.7 Implement `Jido.Composer.NodeIO` in `lib/jido/composer/node_io.ex` (NEW) — struct with `type`, `value`, `schema`, `meta`; constructors `map/1`, `text/1`, `object/2`; `to_map/1`, `unwrap/1`, `mergeable?/1`; `@derive Jason.Encoder`
+- [x] 2.8 Add `resolve_result/1` in `lib/jido/composer/workflow/machine.ex` `apply_result/2` — unwrap `NodeIO` via `to_map/1`, pass through bare maps
+- [x] 2.9 Wrap final answers in `lib/jido/composer/orchestrator/strategy.ex` — `{:final_answer, text}` → `NodeIO.text(text)` in `handle_llm_response`
+- [x] 2.10 Unwrap NodeIO in `lib/jido/composer/orchestrator/agent_tool.ex` `to_tool_result/3` — text stays string, map stays map
+- [x] 2.11 Add NodeIO-aware merge in `lib/jido/composer/node/fan_out_node.ex` `merge_results/2`
+- [x] 2.12 Add optional `input_type/1` and `output_type/1` callbacks in `lib/jido/composer/node.ex`
+- [x] 2.13 Record e2e cassette `e2e_nodeio_text_adaptation` — delete stub, record, verify replay
+- [x] 2.14 PHASE GATE: `mix precommit`
 
 ---
 

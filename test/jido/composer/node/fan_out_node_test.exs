@@ -3,6 +3,7 @@ defmodule Jido.Composer.Node.FanOutNodeTest do
 
   alias Jido.Composer.Node.FanOutNode
   alias Jido.Composer.Node.ActionNode
+  alias Jido.Composer.NodeIO
   alias Jido.Composer.TestActions.{AddAction, EchoAction, FailAction}
 
   describe "new/1" do
@@ -264,6 +265,27 @@ defmodule Jido.Composer.Node.FanOutNodeTest do
         )
 
       assert {:ok, %{total: 60}} = FanOutNode.run(fan_out, %{})
+    end
+  end
+
+  describe "run/2 merge with NodeIO" do
+    test "merge_results handles mixed NodeIO and bare map branches" do
+      {:ok, fan_out} =
+        FanOutNode.new(
+          name: "mixed_nodeio",
+          branches: [
+            text_branch: fn _ctx -> {:ok, NodeIO.text("hello")} end,
+            map_branch: fn _ctx -> {:ok, %{count: 5}} end,
+            obj_branch: fn _ctx -> {:ok, NodeIO.object(%{score: 0.9})} end,
+            nodeio_map_branch: fn _ctx -> {:ok, NodeIO.map(%{items: [1, 2]})} end
+          ]
+        )
+
+      assert {:ok, result} = FanOutNode.run(fan_out, %{})
+      assert result.text_branch == %{text: "hello"}
+      assert result.map_branch == %{count: 5}
+      assert result.obj_branch == %{object: %{score: 0.9}}
+      assert result.nodeio_map_branch == %{items: [1, 2]}
     end
   end
 

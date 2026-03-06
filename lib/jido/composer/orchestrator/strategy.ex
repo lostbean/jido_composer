@@ -16,6 +16,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   alias Jido.Composer.HITL.{ApprovalRequest, ApprovalResponse}
   alias Jido.Composer.Node.ActionNode
   alias Jido.Composer.Node.AgentNode
+  alias Jido.Composer.NodeIO
   alias Jido.Composer.Orchestrator.AgentTool
 
   # -- init/2 --
@@ -299,10 +300,18 @@ defmodule Jido.Composer.Orchestrator.Strategy do
           details
       end
 
+    raw_result = Map.get(strat, :result)
+
+    snapshot_result =
+      case raw_result do
+        %NodeIO{} -> NodeIO.unwrap(raw_result)
+        other -> other
+      end
+
     %Jido.Agent.Strategy.Snapshot{
       status: status,
       done?: status in [:completed, :error],
-      result: Map.get(strat, :result),
+      result: snapshot_result,
       details: details
     }
   end
@@ -321,7 +330,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       {:final_answer, text} ->
         agent =
           StratState.update(agent, fn s ->
-            %{s | status: :completed, result: text}
+            %{s | status: :completed, result: NodeIO.text(text)}
           end)
 
         {agent, []}

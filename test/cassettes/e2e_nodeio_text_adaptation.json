@@ -1,0 +1,111 @@
+{
+  "interactions": [
+    {
+      "recorded_at": "2026-03-06T14:19:11.771986Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 64000,
+          "messages": [
+            {
+              "content": "Summarize the extracted data.",
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "stream": false,
+          "system": "You have an echo tool. Use it to respond to queries.",
+          "tools": [
+            {
+              "description": "Echoes input params as the result",
+              "input_schema": {
+                "properties": {
+                  "message": {
+                    "description": "Message to echo",
+                    "type": "string"
+                  }
+                },
+                "required": ["message"],
+                "type": "object"
+              },
+              "name": "echo"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "I don't see any extracted data provided in your message that I could summarize. To help you summarize extracted data, I would need you to share the actual data you'd like me to work with.\n\nCould you please provide the extracted data that you want summarized? Once you share it, I can use the echo tool to help process and summarize the information for you.",
+              "type": "text"
+            }
+          ],
+          "id": "msg_01KTKST7SxP1c8Don5ELdbX2",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 403,
+            "output_tokens": 81,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-06T14:19:10Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-06T14:19:11Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-06T14:19:08Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-06T14:19:10Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9d81fe644d7582dd-GIG"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Fri, 06 Mar 2026 14:19:11 GMT"],
+          "request-id": ["req_011CYmyLe9Cjww6Cg4F6xe74"],
+          "server": ["cloudflare"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["2801"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    }
+  ],
+  "version": "2.0"
+}

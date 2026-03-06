@@ -3,6 +3,7 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
 
   alias Jido.Composer.Orchestrator.AgentTool
   alias Jido.Composer.Node.ActionNode
+  alias Jido.Composer.NodeIO
   alias Jido.Composer.TestActions.{AddAction, EchoAction}
 
   describe "to_tool/1 with ActionNode" do
@@ -113,6 +114,34 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
       assert result.id == "call_456"
       assert result.name == "fail"
       assert result.result == %{error: "something broke"}
+    end
+
+    test "unwraps NodeIO.text for LLM" do
+      result =
+        AgentTool.to_tool_result("call_text", "research", {:ok, NodeIO.text("Found 5 papers")})
+
+      assert result.id == "call_text"
+      assert result.name == "research"
+      assert result.result == "Found 5 papers"
+      assert is_binary(result.result)
+    end
+
+    test "unwraps NodeIO.map for LLM" do
+      result = AgentTool.to_tool_result("call_map", "extract", {:ok, NodeIO.map(%{count: 5})})
+
+      assert result.id == "call_map"
+      assert result.name == "extract"
+      assert result.result == %{count: 5}
+      assert is_map(result.result)
+    end
+
+    test "unwraps NodeIO.object for LLM" do
+      result =
+        AgentTool.to_tool_result("call_obj", "analyze", {:ok, NodeIO.object(%{score: 0.9})})
+
+      assert result.id == "call_obj"
+      assert result.name == "analyze"
+      assert result.result == %{score: 0.9}
     end
 
     test "handles error tuple with map reason by stringifying" do

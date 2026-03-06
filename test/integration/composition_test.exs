@@ -198,7 +198,7 @@ defmodule Jido.Composer.Integration.CompositionTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.result =~ "ETL complete"
+      assert strat.result.value =~ "ETL complete"
 
       # Workflow result should be scoped in context
       assert strat.context[:etl_workflow] != nil

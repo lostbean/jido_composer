@@ -21,6 +21,8 @@ defmodule Jido.Composer.Node do
   @callback name(node :: struct()) :: String.t()
   @callback description(node :: struct()) :: String.t()
   @callback schema(node :: struct()) :: keyword() | nil
+  @callback input_type(node :: struct()) :: :map | :text | :object | :any
+  @callback output_type(node :: struct()) :: :map | :text | :object | :any
 
-  @optional_callbacks [schema: 1]
+  @optional_callbacks [schema: 1, input_type: 1, output_type: 1]
 end

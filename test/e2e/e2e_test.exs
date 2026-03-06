@@ -373,8 +373,8 @@ defmodule Jido.Composer.E2E.E2ETest do
 
           strat = StratState.get(agent)
           assert strat.status == :completed
-          assert is_binary(strat.result)
-          assert strat.result != ""
+          assert is_binary(strat.result.value)
+          assert strat.result.value != ""
           assert strat.iteration == 1
           assert strat.context == %{}
         end
@@ -393,7 +393,7 @@ defmodule Jido.Composer.E2E.E2ETest do
 
           strat = StratState.get(agent)
           assert strat.status == :completed
-          assert strat.result =~ "8"
+          assert strat.result.value =~ "8"
           assert strat.iteration >= 2
           assert strat.context[:add][:result] in [8, 8.0]
         end
@@ -526,8 +526,213 @@ defmodule Jido.Composer.E2E.E2ETest do
       strat = StratState.get(orch_agent)
 
       case strat.status do
-        :completed -> {:ok, %{result: strat.result, context: strat.context}}
-        _ -> {:error, strat.result}
+        :completed ->
+          result =
+            case strat.result do
+              %Jido.Composer.NodeIO{} = io -> Jido.Composer.NodeIO.unwrap(io)
+              other -> other
+            end
+
+          {:ok, %{result: result, context: strat.context}}
+
+        _ ->
+          {:error, strat.result}
+      end
+    end
+  end
+
+  describe "orchestrator: NodeIO text adaptation in nested composition (LLMStub)" do
+    defmodule NodeIOAdaptWorkflow do
+      use Jido.Composer.Workflow,
+        name: "nodeio_adapt_workflow",
+        nodes: %{
+          extract: ExtractAction,
+          analyze: {Jido.Composer.TestAgents.TestOrchestratorAgent, []}
+        },
+        transitions: %{
+          {:extract, :ok} => :analyze,
+          {:analyze, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :extract
+    end
+
+    test "nested orchestrator text result adapted to map in parent workflow" do
+      alias Jido.Composer.TestSupport.LLMStub
+
+      plug =
+        LLMStub.setup_req_stub(:nodeio_adapt_test, [
+          {:final_answer, "Analysis complete: data is valid."}
+        ])
+
+      wf_agent = NodeIOAdaptWorkflow.new()
+      {wf_agent, directives} = NodeIOAdaptWorkflow.run(wf_agent, %{source: "nodeio_db"})
+
+      # Drive the outer workflow
+      wf_agent = run_nodeio_workflow(NodeIOAdaptWorkflow, wf_agent, directives, plug)
+
+      strat = StratState.get(wf_agent)
+      assert strat.machine.status == :done
+      assert StratState.status(wf_agent) == :success
+
+      # Extract step produced records
+      assert strat.machine.context[:extract][:records] != nil
+
+      # Analyze step result should be present — orchestrator text output as a string (via query_sync unwrap)
+      assert Map.has_key?(strat.machine.context, :analyze)
+    end
+
+    defp run_nodeio_workflow(_module, agent, [], _plug), do: agent
+
+    defp run_nodeio_workflow(module, agent, [directive | rest], plug) do
+      case directive do
+        %Directive.RunInstruction{instruction: instr, result_action: result_action} ->
+          payload = execute_tool_instruction(instr.action, instr.params, %{})
+          {agent, new_directives} = module.cmd(agent, {result_action, payload})
+          run_nodeio_workflow(module, agent, new_directives ++ rest, plug)
+
+        %Directive.SpawnAgent{agent: child_module, tag: tag, opts: spawn_opts} ->
+          context = Map.get(spawn_opts, :context, %{})
+          result = run_child_orch_with_stub(child_module, context, plug)
+
+          {agent, new_directives} =
+            module.cmd(agent, {:workflow_child_result, %{tag: tag, result: result}})
+
+          run_nodeio_workflow(module, agent, new_directives ++ rest, plug)
+
+        _other ->
+          run_nodeio_workflow(module, agent, rest, plug)
+      end
+    end
+
+    defp run_child_orch_with_stub(child_module, context, plug) do
+      query = Map.get(context, :query, "Analyze the data.")
+
+      strategy_opts = [
+        nodes: child_module.strategy_opts()[:nodes] || [EchoAction],
+        model: "anthropic:claude-sonnet-4-20250514",
+        system_prompt:
+          child_module.strategy_opts()[:system_prompt] || "You are a helpful assistant.",
+        max_iterations: 10,
+        req_options: [plug: plug]
+      ]
+
+      orch_agent = Jido.Composer.E2E.E2ETest.CassetteOrchestratorAgent.new()
+      ctx = %{strategy_opts: strategy_opts}
+      {orch_agent, _} = Strategy.init(orch_agent, ctx)
+
+      {orch_agent, directives} =
+        Strategy.cmd(orch_agent, [make_instruction(:orchestrator_start, %{query: query})], %{})
+
+      orch_agent = run_orch_stub_directives(orch_agent, directives)
+      strat = StratState.get(orch_agent)
+
+      case strat.status do
+        :completed ->
+          result =
+            case strat.result do
+              %Jido.Composer.NodeIO{} = io -> Jido.Composer.NodeIO.unwrap(io)
+              other -> other
+            end
+
+          {:ok, %{result: result, context: strat.context}}
+
+        _ ->
+          {:error, strat.result}
+      end
+    end
+
+    defp run_orch_stub_directives(agent, []), do: agent
+
+    defp run_orch_stub_directives(agent, [directive | rest]) do
+      case directive do
+        %Directive.RunInstruction{
+          instruction: %Jido.Instruction{action: Jido.Composer.Orchestrator.LLMAction} = instr,
+          result_action: result_action
+        } ->
+          payload = execute_llm_instruction(instr)
+
+          {agent, new_directives} =
+            Strategy.cmd(agent, [make_instruction(result_action, payload)], %{})
+
+          run_orch_stub_directives(agent, new_directives ++ rest)
+
+        %Directive.RunInstruction{
+          instruction: %Jido.Instruction{action: action_module, params: params},
+          result_action: result_action,
+          meta: meta
+        } ->
+          payload = execute_tool_instruction(action_module, params, meta)
+
+          {agent, new_directives} =
+            Strategy.cmd(agent, [make_instruction(result_action, payload)], %{})
+
+          run_orch_stub_directives(agent, new_directives ++ rest)
+
+        _other ->
+          run_orch_stub_directives(agent, rest)
+      end
+    end
+  end
+
+  describe "orchestrator: NodeIO text adaptation (cassette)" do
+    defmodule NodeIOCassetteWorkflow do
+      use Jido.Composer.Workflow,
+        name: "nodeio_cassette_workflow",
+        nodes: %{
+          extract: ExtractAction,
+          analyze: {Jido.Composer.TestAgents.TestOrchestratorAgent, []}
+        },
+        transitions: %{
+          {:extract, :ok} => :analyze,
+          {:analyze, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :extract
+    end
+
+    test "nested orchestrator returns text, adapted to map in parent workflow" do
+      with_cassette(
+        "e2e_nodeio_text_adaptation",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          wf_agent = NodeIOCassetteWorkflow.new()
+
+          {wf_agent, directives} =
+            NodeIOCassetteWorkflow.run(wf_agent, %{source: "nodeio_cassette_db"})
+
+          wf_agent =
+            run_nodeio_cassette_workflow(NodeIOCassetteWorkflow, wf_agent, directives, plug)
+
+          strat = StratState.get(wf_agent)
+          assert strat.machine.status == :done
+          assert StratState.status(wf_agent) == :success
+          assert strat.machine.context[:extract][:records] != nil
+          assert Map.has_key?(strat.machine.context, :analyze)
+        end
+      )
+    end
+
+    defp run_nodeio_cassette_workflow(_module, agent, [], _plug), do: agent
+
+    defp run_nodeio_cassette_workflow(module, agent, [directive | rest], plug) do
+      case directive do
+        %Directive.RunInstruction{instruction: instr, result_action: result_action} ->
+          payload = execute_tool_instruction(instr.action, instr.params, %{})
+          {agent, new_directives} = module.cmd(agent, {result_action, payload})
+          run_nodeio_cassette_workflow(module, agent, new_directives ++ rest, plug)
+
+        %Directive.SpawnAgent{agent: child_module, tag: tag, opts: spawn_opts} ->
+          context = Map.get(spawn_opts, :context, %{})
+          result = run_child_orchestrator_with_cassette(child_module, context, plug)
+
+          {agent, new_directives} =
+            module.cmd(agent, {:workflow_child_result, %{tag: tag, result: result}})
+
+          run_nodeio_cassette_workflow(module, agent, new_directives ++ rest, plug)
+
+        _other ->
+          run_nodeio_cassette_workflow(module, agent, rest, plug)
       end
     end
   end
@@ -548,7 +753,7 @@ defmodule Jido.Composer.E2E.E2ETest do
 
           strat = StratState.get(agent)
           assert strat.status == :completed
-          assert is_binary(strat.result)
+          assert is_binary(strat.result.value)
         end
       )
     end

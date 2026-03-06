@@ -9,6 +9,7 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
 
   alias Jido.Composer.Node.ActionNode
   alias Jido.Composer.Node.AgentNode
+  alias Jido.Composer.NodeIO
 
   @doc """
   Converts a Node or action module into a `ReqLLM.Tool` struct.
@@ -82,7 +83,16 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
 
   Returns `%{id, name, result}` for feeding back into the LLM conversation.
   """
-  @spec to_tool_result(String.t(), String.t(), {:ok, map()} | {:error, term()}) :: map()
+  @spec to_tool_result(String.t(), String.t(), {:ok, map() | NodeIO.t()} | {:error, term()}) ::
+          map()
+  def to_tool_result(call_id, node_name, {:ok, %NodeIO{type: :text, value: text}}) do
+    %{id: call_id, name: node_name, result: text}
+  end
+
+  def to_tool_result(call_id, node_name, {:ok, %NodeIO{} = io}) do
+    %{id: call_id, name: node_name, result: NodeIO.unwrap(io)}
+  end
+
   def to_tool_result(call_id, node_name, {:ok, result}) do
     %{id: call_id, name: node_name, result: result}
   end
