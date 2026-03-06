@@ -372,6 +372,140 @@ defmodule Jido.Composer.Integration.HITLPersistenceTest do
       assert restored.pending_fan_out.completed_results == %{a: %{data: 1}, b: %{data: 2}}
       assert MapSet.member?(restored.pending_fan_out.pending_branches, :c)
     end
+
+    test "fan-out with queued branches survives checkpoint" do
+      fan_out_state = %{
+        id: "fo-456",
+        node: %{branches: %{a: :action_a, b: :action_b, c: :action_c}, max_concurrency: 2},
+        pending_branches: MapSet.new([:a, :b]),
+        completed_results: %{},
+        queued_branches: [{:c, %{instruction: %{action: :noop, params: %{}}}}],
+        merge: :deep_merge,
+        on_error: :collect_partial
+      }
+
+      strat = %{
+        module: Jido.Composer.Workflow.Strategy,
+        status: :running,
+        machine: %{status: :parallel, context: %{}},
+        pending_fan_out: fan_out_state,
+        pending_suspension: nil
+      }
+
+      cleaned = Checkpoint.prepare_for_checkpoint(strat)
+      binary = :erlang.term_to_binary(cleaned, [:compressed])
+      restored = :erlang.binary_to_term(binary)
+
+      assert length(restored.pending_fan_out.queued_branches) == 1
+      assert restored.pending_fan_out.on_error == :collect_partial
+      assert MapSet.size(restored.pending_fan_out.pending_branches) == 2
+    end
+  end
+
+  describe "checkpoint prepare + reattach round-trip" do
+    test "closures are stripped and restored via strategy_opts" do
+      my_policy = fn _request -> :approve end
+      my_callback = fn _agent -> :ok end
+
+      strat = %{
+        module: Jido.Composer.Workflow.Strategy,
+        status: :waiting,
+        machine: %{status: :approval, context: %{data: "test"}},
+        pending_suspension: %{id: "s1", reason: :human_input},
+        approval_policy: my_policy,
+        on_complete: my_callback,
+        children: %{}
+      }
+
+      # Prepare strips closures
+      checkpoint = Checkpoint.prepare_for_checkpoint(strat)
+      assert checkpoint.approval_policy == nil
+      assert checkpoint.on_complete == nil
+      # Non-closure fields are preserved
+      assert checkpoint.status == :waiting
+      assert checkpoint.children == %{}
+
+      # Serialize and deserialize
+      binary = :erlang.term_to_binary(checkpoint, [:compressed])
+      restored = :erlang.binary_to_term(binary)
+
+      # Reattach from strategy opts
+      strategy_opts = [
+        approval_policy: my_policy,
+        on_complete: my_callback
+      ]
+
+      reattached = Checkpoint.reattach_runtime_config(restored, strategy_opts)
+      assert is_function(reattached.approval_policy)
+      assert is_function(reattached.on_complete)
+      assert reattached.approval_policy.(:any) == :approve
+    end
+
+    test "reattach does not overwrite non-nil values" do
+      existing_fn = fn -> :existing end
+      new_fn = fn -> :new end
+
+      strat = %{
+        module: Jido.Composer.Workflow.Strategy,
+        status: :running,
+        some_callback: existing_fn,
+        other_callback: nil
+      }
+
+      # Checkpoint preserves the existing function since it's in the state
+      # (prepare_for_checkpoint strips it)
+      checkpoint = Checkpoint.prepare_for_checkpoint(strat)
+      assert checkpoint.some_callback == nil
+      assert checkpoint.other_callback == nil
+
+      # Reattach: both nil fields should be restored from opts
+      opts = [some_callback: new_fn, other_callback: new_fn]
+      reattached = Checkpoint.reattach_runtime_config(checkpoint, opts)
+      assert reattached.some_callback.() == :new
+      assert reattached.other_callback.() == :new
+    end
+
+    test "full checkpoint/thaw/resume cycle with real workflow" do
+      agent = PersistWorkflow.new()
+      {agent, _remaining} = run_to_suspend(agent)
+
+      strat = StratState.get(agent)
+      assert strat.status == :waiting
+      suspension_id = strat.pending_suspension.id
+
+      # Checkpoint
+      checkpoint = Checkpoint.prepare_for_checkpoint(strat)
+      binary = :erlang.term_to_binary(checkpoint, [:compressed])
+
+      # Simulate process death
+      fresh_agent = PersistWorkflow.new()
+
+      # Thaw
+      restored_strat = :erlang.binary_to_term(binary)
+      restored_agent = StratState.put(fresh_agent, restored_strat)
+
+      # Resume via generalized suspend_resume
+      {resumed_agent, directives} =
+        PersistWorkflow.cmd(
+          restored_agent,
+          {:suspend_resume,
+           %{
+             suspension_id: suspension_id,
+             response_data: %{
+               request_id: strat.pending_suspension.approval_request.id,
+               decision: :approved,
+               respondent: "thaw-test"
+             }
+           }}
+        )
+
+      # Execute remaining directives
+      {final_agent, _} = execute_until_suspend(PersistWorkflow, resumed_agent, directives)
+      final_strat = StratState.get(final_agent)
+
+      assert final_strat.machine.status == :done
+      assert StratState.status(final_agent) == :success
+    end
   end
 
   describe "schema migration v1 → v2" do

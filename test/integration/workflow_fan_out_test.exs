@@ -485,4 +485,89 @@ defmodule Jido.Composer.Integration.WorkflowFanOutTest do
                })
     end
   end
+
+  describe "FanOut context propagation" do
+    test "FanOut AgentNode branches receive forked context" do
+      alias Jido.Composer.Workflow.Strategy
+      alias Jido.Composer.Context
+      alias Jido.Composer.Node.AgentNode
+
+      defmodule ForkDepthModule do
+        def bump(ambient, _working) do
+          Map.update(ambient, :depth, 1, &(&1 + 1))
+        end
+      end
+
+      {:ok, action_node} = ActionNode.new(EchoAction)
+      {:ok, agent_node} = AgentNode.new(Jido.Composer.TestAgents.TestWorkflowAgent)
+
+      {:ok, fan_out} =
+        FanOutNode.new(
+          name: "ctx_fan_out",
+          branches: [echo_branch: action_node, agent_branch: agent_node]
+        )
+
+      ctx = %{
+        agent_module: Jido.Composer.Integration.WorkflowFanOutTest.SingleFanOutWorkflow,
+        strategy_opts: [
+          nodes: %{compute: fan_out},
+          transitions: %{
+            {:compute, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :compute,
+          ambient: [:org_id],
+          fork_fns: %{depth: {ForkDepthModule, :bump, []}}
+        ]
+      }
+
+      agent = SingleFanOutWorkflow.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      # Set context with ambient data and fork functions
+      strat = StratState.get(agent)
+
+      machine = %{
+        strat.machine
+        | context:
+            Context.new(
+              ambient: %{org_id: "acme", depth: 0},
+              working: %{},
+              fork_fns: %{depth: {ForkDepthModule, :bump, []}}
+            )
+      }
+
+      agent = StratState.update(agent, fn s -> %{s | machine: machine} end)
+
+      # Start workflow — dispatches FanOut
+      {_agent, directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_start,
+              params: %{message: "hi", source: "test"}
+            }
+          ],
+          ctx
+        )
+
+      assert length(directives) == 2
+      assert Enum.all?(directives, &match?(%FanOutBranch{}, &1))
+
+      # Find the action branch and agent branch
+      action_branch = Enum.find(directives, &(&1.branch_name == :echo_branch))
+      agent_branch = Enum.find(directives, &(&1.branch_name == :agent_branch))
+
+      # Action branch gets flat context (no fork applied)
+      assert action_branch.instruction != nil
+      assert action_branch.instruction.params[:__ambient__][:depth] == 0
+
+      # Agent branch gets forked context (fork applied, depth incremented)
+      assert agent_branch.spawn_agent != nil
+      agent_ctx = agent_branch.spawn_agent.opts[:context]
+      assert agent_ctx[:__ambient__][:depth] == 1
+      assert agent_ctx[:__ambient__][:org_id] == "acme"
+    end
+  end
 end

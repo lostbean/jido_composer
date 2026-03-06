@@ -458,6 +458,153 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       assert result[:load][:status] == :complete
     end
 
+    test "ambient context is present as __ambient__ in every action's params" do
+      # Use the directive loop to verify __ambient__ is included at every step
+      alias Jido.Composer.Context
+
+      agent = ETLWorkflow.new()
+      {agent, directives} = ETLWorkflow.run(agent, %{source: "ambient_verify"})
+
+      # Run the workflow step-by-step, checking __ambient__ in each instruction
+      assert [%Directive.RunInstruction{instruction: instr}] = directives
+      # First instruction params should contain __ambient__
+      assert Map.has_key?(instr.params, :__ambient__)
+      assert instr.params[:__ambient__] == %{}
+
+      # Execute step 1 (extract)
+      payload = execute_instruction(instr)
+      {agent, directives} = ETLWorkflow.cmd(agent, {:workflow_node_result, payload})
+      assert [%Directive.RunInstruction{instruction: instr}] = directives
+      # Second instruction params should also contain __ambient__
+      assert Map.has_key?(instr.params, :__ambient__)
+      assert instr.params[:source] == "ambient_verify"
+
+      # Execute step 2 (transform)
+      payload = execute_instruction(instr)
+      {agent, directives} = ETLWorkflow.cmd(agent, {:workflow_node_result, payload})
+      assert [%Directive.RunInstruction{instruction: instr}] = directives
+      # Third instruction params should also contain __ambient__
+      assert Map.has_key?(instr.params, :__ambient__)
+
+      # Execute step 3 (load) -> done
+      payload = execute_instruction(instr)
+      {agent, _directives} = ETLWorkflow.cmd(agent, {:workflow_node_result, payload})
+
+      strat = StratState.get(agent)
+      assert strat.machine.status == :done
+    end
+
+    test "ambient context with DSL ambient: option extracts keys from params" do
+      alias Jido.Composer.Workflow.Strategy
+      alias Jido.Composer.Context
+
+      ctx = %{
+        agent_module: ETLWorkflow,
+        strategy_opts: [
+          nodes: %{
+            step: {:action, Jido.Composer.TestActions.NoopAction}
+          },
+          transitions: %{
+            {:step, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :step,
+          ambient: [:org_id, :region],
+          fork_fns: %{}
+        ]
+      }
+
+      agent = ETLWorkflow.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      # Start workflow with params that include ambient keys
+      {_agent, directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_start,
+              params: %{org_id: "acme", region: "us-east", data: "payload"}
+            }
+          ],
+          ctx
+        )
+
+      assert [%Directive.RunInstruction{instruction: instr}] = directives
+
+      # Ambient keys should be in __ambient__, not in the working context params
+      assert instr.params[:__ambient__][:org_id] == "acme"
+      assert instr.params[:__ambient__][:region] == "us-east"
+      # Working data should be there too
+      assert instr.params[:data] == "payload"
+      # Ambient keys should NOT be in working (they go to ambient layer)
+      refute Map.has_key?(Map.delete(instr.params, :__ambient__), :org_id)
+    end
+
+    test "fork functions are NOT applied for ActionNode dispatch" do
+      alias Jido.Composer.Workflow.Strategy
+      alias Jido.Composer.Context
+
+      defmodule TestForkCounter do
+        def increment(ambient, _working) do
+          Map.update(ambient, :fork_count, 1, &(&1 + 1))
+        end
+      end
+
+      ctx = %{
+        agent_module: ETLWorkflow,
+        strategy_opts: [
+          nodes: %{
+            step_a: {:action, Jido.Composer.TestActions.AddAction},
+            step_b: {:action, Jido.Composer.TestActions.MultiplyAction}
+          },
+          transitions: %{
+            {:step_a, :ok} => :step_b,
+            {:step_b, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :step_a,
+          ambient: [],
+          fork_fns: %{counter: {TestForkCounter, :increment, []}}
+        ]
+      }
+
+      agent = ETLWorkflow.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      # Manually set ambient with fork_count: 0
+      strat = StratState.get(agent)
+
+      machine = %{
+        strat.machine
+        | context:
+            Context.new(
+              ambient: %{fork_count: 0},
+              working: %{},
+              fork_fns: %{counter: {TestForkCounter, :increment, []}}
+            )
+      }
+
+      agent = StratState.update(agent, fn s -> %{s | machine: machine} end)
+
+      # Start workflow
+      {_agent, directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_start,
+              params: %{value: 1.0, amount: 2.0}
+            }
+          ],
+          ctx
+        )
+
+      # ActionNode should get flat map — fork should NOT have been applied
+      assert [%Directive.RunInstruction{instruction: instr}] = directives
+      assert instr.params[:__ambient__][:fork_count] == 0
+    end
+
     test "fork functions run at agent boundaries" do
       alias Jido.Agent.Strategy.State, as: StratState
       alias Jido.Composer.Context
@@ -539,6 +686,94 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       child_ctx = spawn.opts[:context]
       assert child_ctx[:__ambient__][:depth] == 1
       assert child_ctx[:__ambient__][:org_id] == "acme"
+    end
+
+    test "multiple fork functions are applied in sequence" do
+      alias Jido.Composer.Workflow.Strategy
+      alias Jido.Composer.Context
+
+      defmodule MultiForks do
+        def add_trace(ambient, _working) do
+          Map.update(ambient, :trace, ["fork"], fn t -> ["fork" | t] end)
+        end
+
+        def bump_depth(ambient, _working) do
+          Map.update(ambient, :depth, 1, &(&1 + 1))
+        end
+      end
+
+      ctx = %{
+        agent_module: ETLWorkflow,
+        strategy_opts: [
+          nodes: %{
+            prepare: {:action, Jido.Composer.TestActions.AddAction},
+            delegate: {:agent, Jido.Composer.TestAgents.EchoAgent, []}
+          },
+          transitions: %{
+            {:prepare, :ok} => :delegate,
+            {:delegate, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :prepare
+        ]
+      }
+
+      agent = ETLWorkflow.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      # Set context with multiple fork functions
+      strat = StratState.get(agent)
+
+      machine = %{
+        strat.machine
+        | context:
+            Context.new(
+              ambient: %{depth: 0, trace: ["init"]},
+              working: %{},
+              fork_fns: %{
+                trace: {MultiForks, :add_trace, []},
+                depth: {MultiForks, :bump_depth, []}
+              }
+            )
+      }
+
+      agent = StratState.update(agent, fn s -> %{s | machine: machine} end)
+
+      # Start and advance to AgentNode
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_start, params: %{value: 1.0, amount: 2.0}}],
+          ctx
+        )
+
+      {_agent, directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_node_result,
+              params: %{
+                status: :ok,
+                result: %{result: 3.0},
+                instruction: %Jido.Instruction{
+                  action: Jido.Composer.TestActions.AddAction,
+                  params: %{}
+                },
+                effects: [],
+                meta: %{}
+              }
+            }
+          ],
+          ctx
+        )
+
+      assert [%Jido.Agent.Directive.SpawnAgent{} = spawn] = directives
+      child_ctx = spawn.opts[:context]
+
+      # Both fork functions should have been applied
+      assert child_ctx[:__ambient__][:depth] == 1
+      assert "fork" in child_ctx[:__ambient__][:trace]
     end
   end
 

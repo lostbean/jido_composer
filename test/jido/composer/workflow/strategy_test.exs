@@ -1282,4 +1282,136 @@ defmodule Jido.Composer.Workflow.StrategyTest do
       assert strat.machine.context.working[:hitl_response][:decision] == :approved
     end
   end
+
+  describe "FanOut + suspension interaction" do
+    test "collect_partial preserves error results in completed_results map" do
+      alias Jido.Composer.Node.{ActionNode, FanOutNode}
+      alias Jido.Composer.Directive.FanOutBranch
+
+      {:ok, ok_node} = ActionNode.new(Jido.Composer.TestActions.AddAction)
+      {:ok, fail_node} = ActionNode.new(Jido.Composer.TestActions.FailAction)
+      {:ok, echo_node} = ActionNode.new(Jido.Composer.TestActions.EchoAction)
+
+      {:ok, fan_out} =
+        FanOutNode.new(
+          name: "three_branch",
+          branches: [ok: ok_node, fail: fail_node, echo: echo_node],
+          on_error: :collect_partial
+        )
+
+      ctx = %{
+        agent_module: TestWorkflowAgent,
+        strategy_opts: [
+          nodes: %{compute: fan_out},
+          transitions: %{
+            {:compute, :ok} => :done,
+            {:compute, :error} => :failed,
+            {:_, :error} => :failed
+          },
+          initial: :compute
+        ]
+      }
+
+      agent = TestWorkflowAgent.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      {agent, _directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_start,
+              params: %{value: 1.0, amount: 2.0, message: "hi"}
+            }
+          ],
+          ctx
+        )
+
+      # Feed: first branch OK
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :fan_out_branch_result,
+              params: %{branch_name: :ok, result: {:ok, %{result: 3.0}}}
+            }
+          ],
+          ctx
+        )
+
+      # Feed: second branch ERROR
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :fan_out_branch_result,
+              params: %{branch_name: :fail, result: {:error, "intentional failure"}}
+            }
+          ],
+          ctx
+        )
+
+      # Still pending — waiting for third branch
+      strat = StratState.get(agent)
+      assert strat.pending_fan_out != nil
+      assert strat.pending_fan_out.completed_results[:ok] == %{result: 3.0}
+      assert strat.pending_fan_out.completed_results[:fail] == {:error, "intentional failure"}
+
+      # Feed: third branch OK — should complete
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :fan_out_branch_result,
+              params: %{branch_name: :echo, result: {:ok, %{echoed: "hi"}}}
+            }
+          ],
+          ctx
+        )
+
+      strat = StratState.get(agent)
+      assert strat.machine.status == :done
+      assert strat.pending_fan_out == nil
+
+      # Error branch result preserved in merged context
+      ctx_working = strat.machine.context.working
+      assert ctx_working[:compute][:ok][:result] == 3.0
+      assert ctx_working[:compute][:echo][:echoed] == "hi"
+      # Error branches are stored as {:error, reason} tuples in collect_partial mode
+      assert ctx_working[:compute][:fail] == {:error, "intentional failure"}
+    end
+  end
+
+  describe "checkpoint readiness" do
+    test "prepare_for_checkpoint strips closures from live strategy state" do
+      alias Jido.Composer.Checkpoint
+
+      {agent, ctx} = init_agent()
+
+      # Start workflow
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_start, params: %{value: 1.0, amount: 2.0}}],
+          ctx
+        )
+
+      strat = StratState.get(agent)
+      checkpoint = Checkpoint.prepare_for_checkpoint(strat)
+
+      # Verify no closures remain
+      for {_key, value} <- checkpoint do
+        refute is_function(value),
+               "Checkpoint should not contain closures, found function in strategy state"
+      end
+
+      # Verify core state is preserved
+      assert checkpoint.machine.status == :extract
+      assert checkpoint.status == :running
+      assert checkpoint.module == Strategy
+    end
+  end
 end
