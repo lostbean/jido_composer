@@ -116,11 +116,36 @@ defmodule Jido.Composer.Workflow.DSL do
         {agent, new_directives} = module.cmd(agent, {result_action, payload})
         run_directives(module, agent, new_directives ++ rest)
 
+      %Jido.Agent.Directive.SpawnAgent{agent: child_module, tag: tag, opts: spawn_opts} ->
+        payload = execute_child_sync(child_module, spawn_opts)
+
+        {agent, new_directives} =
+          module.cmd(agent, {:workflow_child_result, %{tag: tag, result: payload}})
+
+        run_directives(module, agent, new_directives ++ rest)
+
       %Jido.Composer.Directive.SuspendForHuman{} = suspend ->
         {:suspend, agent, suspend}
 
       _other ->
         run_directives(module, agent, rest)
+    end
+  end
+
+  defp execute_child_sync(child_module, spawn_opts) do
+    context = Map.get(spawn_opts, :context, %{})
+    child_agent = child_module.new()
+
+    cond do
+      function_exported?(child_module, :run_sync, 2) ->
+        child_module.run_sync(child_agent, context)
+
+      function_exported?(child_module, :query_sync, 3) ->
+        query = Map.get(context, :query, "")
+        child_module.query_sync(child_agent, query, context)
+
+      true ->
+        {:error, :agent_not_sync_runnable}
     end
   end
 

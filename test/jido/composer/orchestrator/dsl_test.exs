@@ -133,6 +133,43 @@ defmodule Jido.Composer.Orchestrator.DSLTest do
     end
   end
 
+  describe "SpawnAgent directive handling" do
+    defmodule OrchestratorWithWorkflowTool do
+      use Jido.Composer.Orchestrator,
+        name: "orch_with_workflow_tool",
+        model: "anthropic:claude-sonnet-4-20250514",
+        nodes: [
+          Jido.Composer.TestAgents.TestWorkflowAgent,
+          Jido.Composer.TestActions.EchoAction
+        ],
+        system_prompt: "You can run workflows."
+    end
+
+    test "query_sync handles SpawnAgent directives for nested agents" do
+      plug =
+        LLMStub.setup_req_stub(:dsl_orch_spawn, [
+          {:tool_calls,
+           [
+             %{
+               id: "call_1",
+               name: "test_workflow_agent",
+               arguments: %{
+                 "source" => "test_db",
+                 "extract" => %{"records" => [%{"id" => 1, "source" => "test"}], "count" => 1}
+               }
+             }
+           ]},
+          {:final_answer, "Workflow ran successfully."}
+        ])
+
+      agent = OrchestratorWithWorkflowTool.new()
+      agent = put_in(agent.state.__strategy__.req_options, plug: plug)
+
+      assert {:ok, "Workflow ran successfully."} =
+               OrchestratorWithWorkflowTool.query_sync(agent, "Run the workflow")
+    end
+  end
+
   describe "node options preservation" do
     defmodule OptionsOrchestrator do
       use Jido.Composer.Orchestrator,

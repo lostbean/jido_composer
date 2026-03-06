@@ -145,6 +145,32 @@ defmodule Jido.Composer.Integration.WorkflowAgentNodeTest do
     end
   end
 
+  # -- DSL run_sync tests --
+
+  describe "AgentNode via run_sync" do
+    test "workflow with nested workflow agent completes via run_sync" do
+      defmodule NestedWorkflowViaSyncWorkflow do
+        use Jido.Composer.Workflow,
+          name: "nested_sync_workflow",
+          nodes: %{
+            extract: Jido.Composer.TestActions.ExtractAction,
+            nested: {Jido.Composer.TestAgents.TestWorkflowAgent, []}
+          },
+          transitions: %{
+            {:extract, :ok} => :nested,
+            {:nested, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :extract
+      end
+
+      agent = NestedWorkflowViaSyncWorkflow.new()
+      assert {:ok, result} = NestedWorkflowViaSyncWorkflow.run_sync(agent, %{source: "test_db"})
+      assert Map.has_key?(result, :nested)
+      assert result[:nested][:load][:status] == :complete
+    end
+  end
+
   # -- Tests --
 
   describe "AgentNode in workflow" do

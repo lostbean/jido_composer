@@ -232,6 +232,35 @@ defmodule Jido.Composer.Integration.CompositionTest do
     end
   end
 
+  describe "AgentNode in FanOut" do
+    test "FanOut branch with AgentNode executes successfully" do
+      alias Jido.Composer.Node.{ActionNode, FanOutNode}
+      alias Jido.Composer.TestAgents.TestWorkflowAgent
+
+      {:ok, action_node} = ActionNode.new(Jido.Composer.TestActions.EchoAction)
+      {:ok, agent_node} = Jido.Composer.Node.AgentNode.new(TestWorkflowAgent)
+
+      {:ok, fan_out} =
+        FanOutNode.new(
+          name: "mixed_fanout",
+          branches: [
+            echo_branch: action_node,
+            workflow_branch: agent_node
+          ]
+        )
+
+      context = %{
+        message: "hello",
+        source: "test_db",
+        extract: %{records: [%{id: 1, source: "test"}], count: 1}
+      }
+
+      assert {:ok, result} = FanOutNode.run(fan_out, context)
+      assert Map.has_key?(result, :echo_branch)
+      assert Map.has_key?(result, :workflow_branch)
+    end
+  end
+
   describe "three-level nesting (orchestrator -> workflow -> action)" do
     test "full three-level nesting with workflow results flowing back" do
       LLMStub.setup([

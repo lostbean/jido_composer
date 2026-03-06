@@ -2,16 +2,16 @@
 
 > **References**: `IMPLEMENTATION_PLAN.md` Phase 1. `native-agent-composition.md` §2. `docs/design/nodes/README.md` (AgentNode). `prototypes/test_agent_node_run.exs` (7 tests). `prototypes/learnings.md` §Round 3 findings 1-3.
 
-- [ ] 1.1 Write unit tests in `test/jido/composer/node/agent_node_test.exs` — update existing test expecting `{:error, :not_directly_runnable}` to test sync delegation: `run/3` delegates to `run_sync/2` for workflow agents, `run/3` delegates to `query_sync/3` for orchestrator agents, `run/3` returns `{:error, {:not_directly_runnable, :async}}` for async/streaming, `run/3` returns error for agents without sync entry point
-- [ ] 1.2 Write DSL unit tests — `test/jido/composer/workflow/dsl_test.exs`: `run_sync` handles `SpawnAgent` directives for workflow agents. `test/jido/composer/orchestrator/dsl_test.exs`: `query_sync` handles `SpawnAgent` directives for nested agents (LLMStub plug mode)
-- [ ] 1.3 Write integration tests — `test/integration/workflow_agent_node_test.exs`: workflow with nested workflow agent completes, workflow with nested orchestrator agent completes (LLMStub). `test/integration/composition_test.exs`: AgentNode in FanOut branch executes successfully
-- [ ] 1.4 Write e2e test with LLMStub — `test/e2e/e2e_test.exs`: workflow with nested orchestrator via AgentNode.run/3 (LLMStub plug mode)
-- [ ] 1.5 Add test support agents in `test/support/test_agents.exs` — `TestWorkflowAgent` (2-state: action → done), `TestOrchestratorAgent` (single-tool, for nesting tests)
-- [ ] 1.6 Implement `AgentNode.run/3` in `lib/jido/composer/node/agent_node.ex` — sync mode delegates to `run_sync/2` or `query_sync/3` via cond chain (`native-agent-composition.md` §2.1)
-- [ ] 1.7 Add SpawnAgent handler in `lib/jido/composer/workflow/dsl.ex` `run_directives/3` — same pattern as RunInstruction but calls `run_sync` (`native-agent-composition.md` §2.3)
-- [ ] 1.8 Add SpawnAgent handler in `lib/jido/composer/orchestrator/dsl.ex` `run_orch_directives/3` — same pattern for orchestrator sync loop
-- [ ] 1.9 Record e2e cassette `e2e_workflow_nested_orchestrator` — delete stub, run `RECORD_CASSETTES=true mix test`, verify replay
-- [ ] 1.10 PHASE GATE: `mix precommit` — all tests pass, formatting clean, credo clean, docs build
+- [x] 1.1 Write unit tests in `test/jido/composer/node/agent_node_test.exs` — update existing test expecting `{:error, :not_directly_runnable}` to test sync delegation: `run/3` delegates to `run_sync/2` for workflow agents, `run/3` delegates to `query_sync/3` for orchestrator agents, `run/3` returns `{:error, {:not_directly_runnable, :async}}` for async/streaming, `run/3` returns error for agents without sync entry point
+- [x] 1.2 Write DSL unit tests — `test/jido/composer/workflow/dsl_test.exs`: `run_sync` handles `SpawnAgent` directives for workflow agents. `test/jido/composer/orchestrator/dsl_test.exs`: `query_sync` handles `SpawnAgent` directives for nested agents (LLMStub plug mode)
+- [x] 1.3 Write integration tests — `test/integration/workflow_agent_node_test.exs`: workflow with nested workflow agent completes, workflow with nested orchestrator agent completes (LLMStub). `test/integration/composition_test.exs`: AgentNode in FanOut branch executes successfully
+- [x] 1.4 Write e2e test with LLMStub — `test/e2e/e2e_test.exs`: workflow with nested orchestrator via AgentNode.run/3 (LLMStub plug mode)
+- [x] 1.5 Add test support agents in `test/support/test_agents.exs` — `TestWorkflowAgent` (2-state: action → done), `TestOrchestratorAgent` (single-tool, for nesting tests)
+- [x] 1.6 Implement `AgentNode.run/3` in `lib/jido/composer/node/agent_node.ex` — sync mode delegates to `run_sync/2` or `query_sync/3` via cond chain (`native-agent-composition.md` §2.1)
+- [x] 1.7 Add SpawnAgent handler in `lib/jido/composer/workflow/dsl.ex` `run_directives/3` — same pattern as RunInstruction but calls `run_sync` (`native-agent-composition.md` §2.3)
+- [x] 1.8 Add SpawnAgent handler in `lib/jido/composer/orchestrator/dsl.ex` `run_orch_directives/3` — same pattern for orchestrator sync loop
+- [x] 1.9 Record e2e cassette `e2e_workflow_nested_orchestrator` — delete stub, run `RECORD_CASSETTES=true mix test`, verify replay
+- [x] 1.10 PHASE GATE: `mix precommit` — all tests pass, formatting clean, credo clean, docs build
 
 ---
 

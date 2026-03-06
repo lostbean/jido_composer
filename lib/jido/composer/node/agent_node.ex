@@ -57,8 +57,33 @@ defmodule Jido.Composer.Node.AgentNode do
 
   @impl true
   @spec run(t(), map(), keyword()) :: Jido.Composer.Node.result()
-  def run(%__MODULE__{}, _context, _opts \\ []) do
-    {:error, :not_directly_runnable}
+  def run(node, context, opts \\ [])
+
+  def run(%__MODULE__{mode: :sync} = node, context, _opts) do
+    agent = node.agent_module.new()
+
+    cond do
+      function_exported?(node.agent_module, :run_sync, 2) ->
+        case node.agent_module.run_sync(agent, context) do
+          {:ok, result} when is_map(result) -> {:ok, result}
+          {:error, reason} -> {:error, reason}
+        end
+
+      function_exported?(node.agent_module, :query_sync, 3) ->
+        query = Map.get(context, :query, Map.get(context, "query", ""))
+
+        case node.agent_module.query_sync(agent, query, context) do
+          {:ok, result} -> {:ok, %{result: result}}
+          {:error, reason} -> {:error, reason}
+        end
+
+      true ->
+        {:error, :agent_not_sync_runnable}
+    end
+  end
+
+  def run(%__MODULE__{mode: mode}, _context, _opts) when mode in [:async, :streaming] do
+    {:error, {:not_directly_runnable, mode}}
   end
 
   @impl true

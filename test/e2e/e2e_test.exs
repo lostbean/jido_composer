@@ -330,6 +330,34 @@ defmodule Jido.Composer.E2E.E2ETest do
     end
   end
 
+  describe "workflow: nested workflow agent via run_sync" do
+    defmodule NestedWorkflowE2E do
+      use Jido.Composer.Workflow,
+        name: "nested_workflow_e2e",
+        nodes: %{
+          extract: ExtractAction,
+          inner: {Jido.Composer.TestAgents.TestWorkflowAgent, []}
+        },
+        transitions: %{
+          {:extract, :ok} => :inner,
+          {:inner, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :extract
+    end
+
+    test "workflow with nested workflow agent via AgentNode.run/3" do
+      agent = NestedWorkflowE2E.new()
+      assert {:ok, ctx} = NestedWorkflowE2E.run_sync(agent, %{source: "e2e_db"})
+
+      # Extract produced records
+      assert ctx[:extract][:records] != nil
+      # Inner workflow ran transform + load
+      assert ctx[:inner][:transform][:records] != nil
+      assert ctx[:inner][:load][:status] == :complete
+    end
+  end
+
   # ══════════════════════════════════════════════════════════════════
   # Orchestrator e2e (cassette-driven with ReqLLM)
   # ══════════════════════════════════════════════════════════════════
@@ -417,6 +445,90 @@ defmodule Jido.Composer.E2E.E2ETest do
           assert length(strat.conversation.messages) > 2
         end
       )
+    end
+  end
+
+  describe "workflow: nested orchestrator (cassette)" do
+    defmodule NestedOrchWorkflow do
+      use Jido.Composer.Workflow,
+        name: "nested_orch_workflow",
+        nodes: %{
+          extract: ExtractAction,
+          analyze: {Jido.Composer.TestAgents.TestOrchestratorAgent, []}
+        },
+        transitions: %{
+          {:extract, :ok} => :analyze,
+          {:analyze, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :extract
+    end
+
+    test "workflow with nested orchestrator completes via cassette" do
+      with_cassette(
+        "e2e_workflow_nested_orchestrator",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          wf_agent = NestedOrchWorkflow.new()
+          {wf_agent, directives} = NestedOrchWorkflow.run(wf_agent, %{source: "cassette_db"})
+
+          # Drive the outer workflow directive loop
+          wf_agent = run_workflow_with_cassette(NestedOrchWorkflow, wf_agent, directives, plug)
+
+          strat = StratState.get(wf_agent)
+          assert strat.machine.status == :done
+          assert StratState.status(wf_agent) == :success
+
+          # Extract step produced records
+          assert strat.machine.context[:extract][:records] != nil
+          # Analyze step (orchestrator) produced a result
+          assert Map.has_key?(strat.machine.context, :analyze)
+        end
+      )
+    end
+
+    defp run_workflow_with_cassette(_module, agent, [], _plug), do: agent
+
+    defp run_workflow_with_cassette(module, agent, [directive | rest], plug) do
+      case directive do
+        %Directive.RunInstruction{instruction: instr, result_action: result_action} ->
+          payload = execute_tool_instruction(instr.action, instr.params, %{})
+          {agent, new_directives} = module.cmd(agent, {result_action, payload})
+          run_workflow_with_cassette(module, agent, new_directives ++ rest, plug)
+
+        %Directive.SpawnAgent{agent: child_module, tag: tag, opts: spawn_opts} ->
+          # Drive the child orchestrator with cassette plug
+          context = Map.get(spawn_opts, :context, %{})
+          result = run_child_orchestrator_with_cassette(child_module, context, plug)
+
+          {agent, new_directives} =
+            module.cmd(agent, {:workflow_child_result, %{tag: tag, result: result}})
+
+          run_workflow_with_cassette(module, agent, new_directives ++ rest, plug)
+
+        _other ->
+          run_workflow_with_cassette(module, agent, rest, plug)
+      end
+    end
+
+    defp run_child_orchestrator_with_cassette(child_module, context, plug) do
+      query = Map.get(context, :query, "Summarize the extracted data.")
+
+      # Initialize the child orchestrator with cassette plug
+      orch_agent =
+        init_cassette_orchestrator(plug,
+          nodes: child_module.strategy_opts()[:nodes] || [EchoAction],
+          system_prompt:
+            child_module.strategy_opts()[:system_prompt] || "You are a helpful assistant."
+        )
+
+      orch_agent = execute_orchestrator_loop(orch_agent, query)
+      strat = StratState.get(orch_agent)
+
+      case strat.status do
+        :completed -> {:ok, %{result: strat.result, context: strat.context}}
+        _ -> {:error, strat.result}
+      end
     end
   end
 

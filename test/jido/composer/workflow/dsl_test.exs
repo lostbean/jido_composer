@@ -148,6 +148,37 @@ defmodule Jido.Composer.Workflow.DSLTest do
     end
   end
 
+  describe "SpawnAgent directive handling" do
+    defmodule WorkflowWithNestedWorkflow do
+      use Jido.Composer.Workflow,
+        name: "workflow_with_nested",
+        nodes: %{
+          extract: Jido.Composer.TestActions.ExtractAction,
+          nested: {Jido.Composer.TestAgents.TestWorkflowAgent, []}
+        },
+        transitions: %{
+          {:extract, :ok} => :nested,
+          {:nested, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :extract
+    end
+
+    test "run_sync handles SpawnAgent directives for workflow agents" do
+      agent = WorkflowWithNestedWorkflow.new()
+
+      assert {:ok, result} =
+               WorkflowWithNestedWorkflow.run_sync(agent, %{source: "test_db"})
+
+      assert is_map(result)
+      # The nested workflow should have run and its result should be scoped
+      assert Map.has_key?(result, :nested)
+      # The nested workflow ran transform + load internally
+      nested = result[:nested]
+      assert nested[:load][:status] == :complete
+    end
+  end
+
   describe "compile-time validation" do
     test "rejects initial state not in nodes" do
       assert_raise CompileError, fn ->
