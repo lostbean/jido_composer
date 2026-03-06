@@ -40,20 +40,20 @@
 
 > **References**: `IMPLEMENTATION_PLAN.md` Phase 3. `native-agent-composition.md` §4. `docs/design/nodes/context-flow.md` (Context Layers section). `prototypes/test_context_layering.exs` (8 tests). `prototypes/learnings.md` §Round 3 findings 5-6 (`__ambient__` key, actions read top-level keys).
 
-- [ ] 3.1 Write unit tests in `test/jido/composer/context_test.exs` (NEW) — `new/1` empty, `new/1` with all fields, `get_ambient/2`, `apply_result/3` scopes in working, `apply_result/3` doesn't modify ambient, `fork_for_child/1` runs MFA forks, `fork_for_child/1` doesn't modify working, `to_flat_map/1` puts ambient under `__ambient__`, `to_serializable/1` plain map, `from_serializable/1` round-trip, backward compat bare map wrapping
-- [ ] 3.2 Write Machine unit tests in `test/jido/composer/workflow/machine_test.exs` — `new/1` wraps bare map as Context, `new/1` accepts Context, `apply_result` scopes into `Context.working`
-- [ ] 3.3 Write Workflow strategy tests in `test/jido/composer/workflow/strategy_test.exs` — dispatch passes flat map to ActionNode, dispatch forks context for AgentNode SpawnAgent
-- [ ] 3.4 Write Orchestrator strategy tests in `test/jido/composer/orchestrator/strategy_test.exs` — ambient context available in orchestrator (if system prompt interpolation configured)
-- [ ] 3.5 Write integration tests — `test/integration/workflow_test.exs`: ambient context flows through all workflow states, fork functions run at agent boundaries
-- [ ] 3.6 Write e2e test — `test/e2e/e2e_test.exs`: multi-level nesting (3 levels) with ambient context flow (LLMStub)
-- [ ] 3.7 Implement `Jido.Composer.Context` in `lib/jido/composer/context.ex` (NEW) — struct, `new/1`, `get_ambient/2`, `apply_result/3`, `fork_for_child/1`, `to_flat_map/1`, `to_serializable/1`, `from_serializable/1`
-- [ ] 3.8 Integrate Context into `lib/jido/composer/workflow/machine.ex` — `Context.t()` in context field, backward-compat `new/1`, delegate `apply_result` to Context
-- [ ] 3.9 Update `lib/jido/composer/workflow/strategy.ex` — `to_flat_map` for ActionNode dispatch, `fork_for_child` for AgentNode SpawnAgent
-- [ ] 3.10 Update `lib/jido/composer/orchestrator/strategy.ex` — same pattern for tool execution and child spawning
-- [ ] 3.11 Add `ambient:` and `fork_fns:` DSL options in `lib/jido/composer/workflow/dsl.ex`
-- [ ] 3.12 Add `ambient:` and `fork_fns:` DSL options in `lib/jido/composer/orchestrator/dsl.ex`
-- [ ] 3.13 Record e2e cassette `e2e_context_layers_ambient` — delete stub, record, verify replay
-- [ ] 3.14 PHASE GATE: `mix precommit`
+- [x] 3.1 Write unit tests in `test/jido/composer/context_test.exs` (NEW) — `new/1` empty, `new/1` with all fields, `get_ambient/2`, `apply_result/3` scopes in working, `apply_result/3` doesn't modify ambient, `fork_for_child/1` runs MFA forks, `fork_for_child/1` doesn't modify working, `to_flat_map/1` puts ambient under `__ambient__`, `to_serializable/1` plain map, `from_serializable/1` round-trip, backward compat bare map wrapping
+- [x] 3.2 Write Machine unit tests in `test/jido/composer/workflow/machine_test.exs` — `new/1` wraps bare map as Context, `new/1` accepts Context, `apply_result` scopes into `Context.working`
+- [x] 3.3 Write Workflow strategy tests in `test/jido/composer/workflow/strategy_test.exs` — dispatch passes flat map to ActionNode, dispatch forks context for AgentNode SpawnAgent
+- [x] 3.4 Write Orchestrator strategy tests in `test/jido/composer/orchestrator/strategy_test.exs` — ambient context available in orchestrator (if system prompt interpolation configured)
+- [x] 3.5 Write integration tests — `test/integration/workflow_test.exs`: ambient context flows through all workflow states, fork functions run at agent boundaries
+- [x] 3.6 Write e2e test — `test/e2e/e2e_test.exs`: multi-level nesting (3 levels) with ambient context flow (LLMStub)
+- [x] 3.7 Implement `Jido.Composer.Context` in `lib/jido/composer/context.ex` (NEW) — struct, `new/1`, `get_ambient/2`, `apply_result/3`, `fork_for_child/1`, `to_flat_map/1`, `to_serializable/1`, `from_serializable/1`
+- [x] 3.8 Integrate Context into `lib/jido/composer/workflow/machine.ex` — `Context.t()` in context field, backward-compat `new/1`, delegate `apply_result` to Context
+- [x] 3.9 Update `lib/jido/composer/workflow/strategy.ex` — `to_flat_map` for ActionNode dispatch, `fork_for_child` for AgentNode SpawnAgent
+- [x] 3.10 Update `lib/jido/composer/orchestrator/strategy.ex` — same pattern for tool execution and child spawning
+- [x] 3.11 Add `ambient:` and `fork_fns:` DSL options in `lib/jido/composer/workflow/dsl.ex`
+- [x] 3.12 Add `ambient:` and `fork_fns:` DSL options in `lib/jido/composer/orchestrator/dsl.ex`
+- [x] 3.13 Record e2e cassette `e2e_context_layers_ambient` — delete stub, record, verify replay
+- [x] 3.14 PHASE GATE: `mix precommit`
 
 ---
 

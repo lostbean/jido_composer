@@ -94,7 +94,7 @@ defmodule Jido.Composer.Workflow.StrategyTest do
 
       {agent, _directives} = Strategy.cmd(agent, instructions, ctx)
       strat = StratState.get(agent)
-      assert strat.machine.context[:value] == 1.0
+      assert strat.machine.context.working[:value] == 1.0
     end
   end
 
@@ -161,7 +161,7 @@ defmodule Jido.Composer.Workflow.StrategyTest do
         )
 
       strat = StratState.get(agent)
-      assert strat.machine.context[:extract] == %{result: 3.0}
+      assert strat.machine.context.working[:extract] == %{result: 3.0}
     end
   end
 
@@ -390,6 +390,73 @@ defmodule Jido.Composer.Workflow.StrategyTest do
       snap = Strategy.snapshot(agent, ctx)
       assert snap.status == :success
       assert snap.done?
+    end
+  end
+
+  describe "Context integration" do
+    test "dispatch passes flat map with __ambient__ to ActionNode" do
+      {agent, ctx} = init_agent()
+
+      instructions = [
+        %Jido.Instruction{action: :workflow_start, params: %{value: 1.0, amount: 2.0}}
+      ]
+
+      {_agent, directives} = Strategy.cmd(agent, instructions, ctx)
+
+      assert [%Directive.RunInstruction{instruction: instr}] = directives
+      # ActionNode should receive flat map with __ambient__ key
+      assert Map.has_key?(instr.params, :__ambient__)
+      assert instr.params[:value] == 1.0
+    end
+
+    test "dispatch forks context for AgentNode SpawnAgent" do
+      # Use the agent_node_workflow setup
+      ctx = %{
+        agent_module: TestWorkflowAgent,
+        strategy_opts: [
+          nodes: %{
+            prepare: {:action, Jido.Composer.TestActions.AddAction},
+            delegate: {:agent, Jido.Composer.TestAgents.EchoAgent, []}
+          },
+          transitions: %{
+            {:prepare, :ok} => :delegate,
+            {:delegate, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :prepare
+        ]
+      }
+
+      agent = TestWorkflowAgent.new()
+      {agent, _directives} = Strategy.init(agent, ctx)
+
+      # Start workflow
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_start, params: %{value: 1.0, amount: 2.0}}],
+          ctx
+        )
+
+      # Simulate successful result from prepare node -> transitions to :delegate (AgentNode)
+      result_params = %{
+        status: :ok,
+        result: %{result: 3.0},
+        instruction: %Jido.Instruction{action: Jido.Composer.TestActions.AddAction, params: %{}},
+        effects: [],
+        meta: %{}
+      }
+
+      {_agent, directives} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_node_result, params: result_params}],
+          ctx
+        )
+
+      assert [%Directive.SpawnAgent{} = spawn] = directives
+      # Child receives a flat map context with __ambient__
+      assert Map.has_key?(spawn.opts[:context], :__ambient__)
     end
   end
 

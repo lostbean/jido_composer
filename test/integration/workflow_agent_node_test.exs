@@ -217,7 +217,7 @@ defmodule Jido.Composer.Integration.WorkflowAgentNodeTest do
       agent = execute_workflow(AgentStepWorkflow, agent, directives)
 
       strat = StratState.get(agent)
-      ctx = strat.machine.context
+      ctx = strat.machine.context.working
 
       # Extract step should have produced its result
       assert ctx[:extract][:records] != nil

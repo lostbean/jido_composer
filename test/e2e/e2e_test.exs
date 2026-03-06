@@ -480,9 +480,9 @@ defmodule Jido.Composer.E2E.E2ETest do
           assert StratState.status(wf_agent) == :success
 
           # Extract step produced records
-          assert strat.machine.context[:extract][:records] != nil
+          assert strat.machine.context.working[:extract][:records] != nil
           # Analyze step (orchestrator) produced a result
-          assert Map.has_key?(strat.machine.context, :analyze)
+          assert Map.has_key?(strat.machine.context.working, :analyze)
         end
       )
     end
@@ -576,10 +576,10 @@ defmodule Jido.Composer.E2E.E2ETest do
       assert StratState.status(wf_agent) == :success
 
       # Extract step produced records
-      assert strat.machine.context[:extract][:records] != nil
+      assert strat.machine.context.working[:extract][:records] != nil
 
       # Analyze step result should be present — orchestrator text output as a string (via query_sync unwrap)
-      assert Map.has_key?(strat.machine.context, :analyze)
+      assert Map.has_key?(strat.machine.context.working, :analyze)
     end
 
     defp run_nodeio_workflow(_module, agent, [], _plug), do: agent
@@ -707,8 +707,8 @@ defmodule Jido.Composer.E2E.E2ETest do
           strat = StratState.get(wf_agent)
           assert strat.machine.status == :done
           assert StratState.status(wf_agent) == :success
-          assert strat.machine.context[:extract][:records] != nil
-          assert Map.has_key?(strat.machine.context, :analyze)
+          assert strat.machine.context.working[:extract][:records] != nil
+          assert Map.has_key?(strat.machine.context.working, :analyze)
         end
       )
     end
@@ -733,6 +733,337 @@ defmodule Jido.Composer.E2E.E2ETest do
 
         _other ->
           run_nodeio_cassette_workflow(module, agent, rest, plug)
+      end
+    end
+  end
+
+  describe "context layers: multi-level nesting with ambient context flow (LLMStub)" do
+    defmodule ContextForks do
+      @moduledoc false
+      def depth_fork(ambient, _working) do
+        Map.update(ambient, :depth, 1, &(&1 + 1))
+      end
+    end
+
+    defmodule InnerWorkflowAgent do
+      @moduledoc false
+      use Jido.Composer.Workflow,
+        name: "inner_workflow",
+        description: "Innermost workflow for 3-level nesting test",
+        nodes: %{
+          compute: AddAction
+        },
+        transitions: %{
+          {:compute, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :compute
+    end
+
+    defmodule MiddleOrchestratorAgent do
+      @moduledoc false
+      use Jido.Composer.Orchestrator,
+        name: "middle_orchestrator",
+        description: "Middle orchestrator for 3-level nesting test",
+        nodes: [EchoAction],
+        system_prompt: "You have an echo tool. Use it to respond."
+    end
+
+    defmodule OuterContextWorkflow do
+      @moduledoc false
+      use Jido.Composer.Workflow,
+        name: "outer_context_workflow",
+        nodes: %{
+          extract: ExtractAction,
+          middle: {MiddleOrchestratorAgent, []}
+        },
+        transitions: %{
+          {:extract, :ok} => :middle,
+          {:middle, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :extract
+    end
+
+    test "three-level nesting preserves ambient context and results flow up" do
+      alias Jido.Composer.Context
+      alias Jido.Composer.TestSupport.LLMStub
+      alias Jido.Composer.Workflow.Strategy, as: WfStrategy
+
+      plug =
+        LLMStub.setup_req_stub(:context_layers_test, [
+          {:final_answer, "Ambient context test complete."}
+        ])
+
+      # Create Context with ambient and fork functions
+      ctx =
+        Context.new(
+          ambient: %{org_id: "acme", user_id: "alice", depth: 0},
+          working: %{},
+          fork_fns: %{depth: {ContextForks, :depth_fork, []}}
+        )
+
+      # Manually drive the outer workflow with Context
+      agent = OuterContextWorkflow.new()
+
+      strat_ctx = %{
+        agent_module: OuterContextWorkflow,
+        strategy_opts: OuterContextWorkflow.strategy_opts()
+      }
+
+      {agent, _} = WfStrategy.init(agent, strat_ctx)
+
+      # Set the machine context to our layered Context
+      strat = StratState.get(agent)
+      machine = %{strat.machine | context: ctx}
+
+      agent =
+        Jido.Agent.Strategy.State.update(agent, fn s -> %{s | machine: machine} end)
+
+      # Start workflow with source param
+      {agent, directives} =
+        WfStrategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_start, params: %{source: "context_test"}}],
+          strat_ctx
+        )
+
+      # Execute extract (RunInstruction for ExtractAction)
+      agent = run_context_directives(OuterContextWorkflow, agent, directives, plug, strat_ctx)
+
+      strat = StratState.get(agent)
+      assert strat.machine.status == :done
+      assert StratState.status(agent) == :success
+
+      # Ambient should be preserved in the outer context
+      assert strat.machine.context.ambient[:org_id] == "acme"
+      assert strat.machine.context.ambient[:depth] == 0
+
+      # Working should have results from both steps
+      assert strat.machine.context.working[:extract][:records] != nil
+      assert Map.has_key?(strat.machine.context.working, :middle)
+    end
+
+    defp run_context_directives(_module, agent, [], _plug, _strat_ctx), do: agent
+
+    defp run_context_directives(module, agent, [directive | rest], plug, strat_ctx) do
+      case directive do
+        %Directive.RunInstruction{instruction: instr, result_action: result_action} ->
+          payload = execute_tool_instruction(instr.action, instr.params, %{})
+          {agent, new_directives} = module.cmd(agent, {result_action, payload})
+          run_context_directives(module, agent, new_directives ++ rest, plug, strat_ctx)
+
+        %Directive.SpawnAgent{agent: child_module, tag: tag, opts: spawn_opts} ->
+          context = Map.get(spawn_opts, :context, %{})
+
+          # Verify forked ambient has incremented depth
+          assert context[:__ambient__][:depth] == 1
+          assert context[:__ambient__][:org_id] == "acme"
+
+          result = run_child_with_context(child_module, context, plug)
+
+          {agent, new_directives} =
+            Jido.Composer.Workflow.Strategy.cmd(
+              agent,
+              [
+                %Jido.Instruction{
+                  action: :workflow_child_result,
+                  params: %{tag: tag, result: result}
+                }
+              ],
+              strat_ctx
+            )
+
+          run_context_directives(module, agent, new_directives ++ rest, plug, strat_ctx)
+
+        _other ->
+          run_context_directives(module, agent, rest, plug, strat_ctx)
+      end
+    end
+
+    defp run_child_with_context(child_module, context, plug) do
+      query = Map.get(context, :query, "Test ambient context.")
+
+      strategy_opts = [
+        nodes: child_module.strategy_opts()[:nodes] || [EchoAction],
+        model: "anthropic:claude-sonnet-4-20250514",
+        system_prompt:
+          child_module.strategy_opts()[:system_prompt] || "You are a test assistant.",
+        max_iterations: 10,
+        req_options: [plug: plug]
+      ]
+
+      orch_agent = CassetteOrchestratorAgent.new()
+      ctx = %{strategy_opts: strategy_opts}
+      {orch_agent, _} = Strategy.init(orch_agent, ctx)
+
+      {orch_agent, directives} =
+        Strategy.cmd(
+          orch_agent,
+          [make_instruction(:orchestrator_start, %{query: query})],
+          %{}
+        )
+
+      orch_agent = run_orch_context_directives(orch_agent, directives)
+      strat = StratState.get(orch_agent)
+
+      case strat.status do
+        :completed ->
+          result =
+            case strat.result do
+              %Jido.Composer.NodeIO{} = io -> Jido.Composer.NodeIO.unwrap(io)
+              other -> other
+            end
+
+          {:ok, %{result: result, context: strat.context}}
+
+        _ ->
+          {:error, strat.result}
+      end
+    end
+
+    defp run_orch_context_directives(agent, []), do: agent
+
+    defp run_orch_context_directives(agent, [directive | rest]) do
+      case directive do
+        %Directive.RunInstruction{
+          instruction: %Jido.Instruction{action: Jido.Composer.Orchestrator.LLMAction} = instr,
+          result_action: result_action
+        } ->
+          payload = execute_llm_instruction(instr)
+
+          {agent, new_directives} =
+            Strategy.cmd(agent, [make_instruction(result_action, payload)], %{})
+
+          run_orch_context_directives(agent, new_directives ++ rest)
+
+        %Directive.RunInstruction{
+          instruction: %Jido.Instruction{action: action_module, params: params},
+          result_action: result_action,
+          meta: meta
+        } ->
+          payload = execute_tool_instruction(action_module, params, meta)
+
+          {agent, new_directives} =
+            Strategy.cmd(agent, [make_instruction(result_action, payload)], %{})
+
+          run_orch_context_directives(agent, new_directives ++ rest)
+
+        _other ->
+          run_orch_context_directives(agent, rest)
+      end
+    end
+  end
+
+  describe "context layers: ambient context with cassette" do
+    defmodule ContextCassetteWorkflow do
+      @moduledoc false
+      use Jido.Composer.Workflow,
+        name: "context_cassette_workflow",
+        nodes: %{
+          extract: ExtractAction,
+          analyze: {Jido.Composer.TestAgents.TestOrchestratorAgent, []}
+        },
+        transitions: %{
+          {:extract, :ok} => :analyze,
+          {:analyze, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :extract,
+        ambient: [:org_id]
+    end
+
+    test "ambient context preserved through workflow with nested orchestrator" do
+      with_cassette(
+        "e2e_context_layers_ambient",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          alias Jido.Composer.Workflow.Strategy, as: WfStrategy
+
+          wf_agent = ContextCassetteWorkflow.new()
+
+          {wf_agent, directives} =
+            ContextCassetteWorkflow.run(wf_agent, %{
+              source: "ambient_cassette_db",
+              org_id: "acme-corp"
+            })
+
+          wf_agent =
+            run_context_cassette_workflow(
+              ContextCassetteWorkflow,
+              wf_agent,
+              directives,
+              plug
+            )
+
+          strat = StratState.get(wf_agent)
+          assert strat.machine.status == :done
+          assert StratState.status(wf_agent) == :success
+
+          # Ambient key was extracted
+          assert strat.machine.context.ambient[:org_id] == "acme-corp"
+
+          # Working results present
+          assert strat.machine.context.working[:extract][:records] != nil
+          assert Map.has_key?(strat.machine.context.working, :analyze)
+        end
+      )
+    end
+
+    defp run_context_cassette_workflow(_module, agent, [], _plug), do: agent
+
+    defp run_context_cassette_workflow(module, agent, [directive | rest], plug) do
+      case directive do
+        %Directive.RunInstruction{instruction: instr, result_action: result_action} ->
+          payload = execute_tool_instruction(instr.action, instr.params, %{})
+          {agent, new_directives} = module.cmd(agent, {result_action, payload})
+          run_context_cassette_workflow(module, agent, new_directives ++ rest, plug)
+
+        %Directive.SpawnAgent{agent: child_module, tag: tag, opts: spawn_opts} ->
+          context = Map.get(spawn_opts, :context, %{})
+          result = run_child_orchestrator_with_cassette_ctx(child_module, context, plug)
+
+          {agent, new_directives} =
+            module.cmd(agent, {:workflow_child_result, %{tag: tag, result: result}})
+
+          run_context_cassette_workflow(module, agent, new_directives ++ rest, plug)
+
+        _other ->
+          run_context_cassette_workflow(module, agent, rest, plug)
+      end
+    end
+
+    defp run_child_orchestrator_with_cassette_ctx(child_module, context, plug) do
+      query = Map.get(context, :query, "Summarize the extracted data.")
+
+      strategy_opts = [
+        nodes: child_module.strategy_opts()[:nodes] || [EchoAction],
+        model: "anthropic:claude-sonnet-4-20250514",
+        system_prompt:
+          child_module.strategy_opts()[:system_prompt] || "You are a helpful assistant.",
+        max_iterations: 10,
+        req_options: [plug: plug]
+      ]
+
+      orch_agent = CassetteOrchestratorAgent.new()
+      ctx = %{strategy_opts: strategy_opts}
+      {orch_agent, _} = Strategy.init(orch_agent, ctx)
+
+      orch_agent = execute_orchestrator_loop(orch_agent, query)
+      strat = StratState.get(orch_agent)
+
+      case strat.status do
+        :completed ->
+          result =
+            case strat.result do
+              %Jido.Composer.NodeIO{} = io -> Jido.Composer.NodeIO.unwrap(io)
+              other -> other
+            end
+
+          {:ok, %{result: result, context: strat.context}}
+
+        _ ->
+          {:error, strat.result}
       end
     end
   end

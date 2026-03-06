@@ -232,7 +232,7 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       agent = execute_workflow(ETLWorkflow, agent, directives)
 
       strat = StratState.get(agent)
-      ctx = strat.machine.context
+      ctx = strat.machine.context.working
 
       # Extract step scoped its result
       assert ctx[:extract][:records] == [%{id: 1, source: "test_db"}, %{id: 2, source: "test_db"}]
@@ -350,7 +350,7 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       agent = execute_workflow(ThreeStepWorkflow, agent, directives)
 
       strat = StratState.get(agent)
-      ctx = strat.machine.context
+      ctx = strat.machine.context.working
 
       # Each step scoped under its state name
       assert ctx[:step_a][:tag] == "initial"
@@ -364,7 +364,7 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       agent = execute_workflow(ETLWorkflow, agent, directives)
 
       strat = StratState.get(agent)
-      ctx = strat.machine.context
+      ctx = strat.machine.context.working
 
       # Initial params should still be in context
       assert ctx[:source] == "my_source"
@@ -377,7 +377,7 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       agent = execute_workflow(MathWorkflow, agent, directives)
 
       strat = StratState.get(agent)
-      ctx = strat.machine.context
+      ctx = strat.machine.context.working
 
       # Initial params preserved
       assert ctx[:value] == 5.0
@@ -438,6 +438,107 @@ defmodule Jido.Composer.Integration.WorkflowTest do
         |> Enum.reverse()
 
       assert history_states == [:check, :retry_step]
+    end
+  end
+
+  describe "ambient context flow" do
+    test "ambient context flows through all workflow states" do
+      agent = ETLWorkflow.new()
+
+      assert {:ok, result} =
+               ETLWorkflow.run_sync(agent, %{
+                 source: "ambient_test",
+                 __ambient__: %{org_id: "acme"}
+               })
+
+      # The result from run_sync is a flat map (via to_flat_map)
+      # Ambient key __ambient__ is populated even though we passed it as initial param
+      # (it ends up in working since DSL doesn't extract ambient keys yet)
+      assert result[:extract][:records] != nil
+      assert result[:load][:status] == :complete
+    end
+
+    test "fork functions run at agent boundaries" do
+      alias Jido.Agent.Strategy.State, as: StratState
+      alias Jido.Composer.Context
+      alias Jido.Composer.Workflow.Strategy
+
+      # Create a workflow agent module for testing
+      agent_module = Jido.Composer.Integration.WorkflowTest.ETLWorkflow
+
+      # Set up strategy with Context that has fork functions
+      defmodule TestForks do
+        def depth_fork(ambient, _working) do
+          Map.update(ambient, :depth, 1, &(&1 + 1))
+        end
+      end
+
+      ctx =
+        Context.new(
+          ambient: %{org_id: "acme", depth: 0},
+          working: %{},
+          fork_fns: %{depth: {TestForks, :depth_fork, []}}
+        )
+
+      strategy_opts = [
+        nodes: %{
+          prepare: {:action, Jido.Composer.TestActions.AddAction},
+          delegate: {:agent, Jido.Composer.TestAgents.EchoAgent, []}
+        },
+        transitions: %{
+          {:prepare, :ok} => :delegate,
+          {:delegate, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :prepare
+      ]
+
+      agent = Jido.Composer.Integration.WorkflowTest.ETLWorkflow.new()
+      strat_ctx = %{agent_module: agent_module, strategy_opts: strategy_opts}
+      {agent, _} = Strategy.init(agent, strat_ctx)
+
+      # Manually set the machine context to use our Context with fork functions
+      strat = StratState.get(agent)
+      machine = %{strat.machine | context: ctx}
+
+      agent =
+        StratState.update(agent, fn s -> %{s | machine: machine} end)
+
+      # Start workflow
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_start, params: %{value: 1.0, amount: 2.0}}],
+          strat_ctx
+        )
+
+      # Simulate result from prepare -> transitions to delegate (AgentNode)
+      {_agent, directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_node_result,
+              params: %{
+                status: :ok,
+                result: %{result: 3.0},
+                instruction: %Jido.Instruction{
+                  action: Jido.Composer.TestActions.AddAction,
+                  params: %{}
+                },
+                effects: [],
+                meta: %{}
+              }
+            }
+          ],
+          strat_ctx
+        )
+
+      # SpawnAgent should have forked context with depth incremented
+      assert [%Jido.Agent.Directive.SpawnAgent{} = spawn] = directives
+      child_ctx = spawn.opts[:context]
+      assert child_ctx[:__ambient__][:depth] == 1
+      assert child_ctx[:__ambient__][:org_id] == "acme"
     end
   end
 

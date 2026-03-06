@@ -32,6 +32,8 @@ defmodule Jido.Composer.Orchestrator.DSL do
     llm_opts = Keyword.get(opts, :llm_opts, [])
     req_options = Keyword.get(opts, :req_options, [])
     rejection_policy = Keyword.get(opts, :rejection_policy)
+    ambient_keys = Keyword.get(opts, :ambient, [])
+    fork_fns = Keyword.get(opts, :fork_fns, %{})
 
     orchestrator_routes = Jido.Composer.Orchestrator.Strategy.signal_routes(%{})
 
@@ -62,6 +64,14 @@ defmodule Jido.Composer.Orchestrator.DSL do
                                 ) ++
                                 if(unquote(rejection_policy) != nil,
                                   do: [rejection_policy: unquote(rejection_policy)],
+                                  else: []
+                                ) ++
+                                if(unquote(ambient_keys) != [],
+                                  do: [ambient: unquote(ambient_keys)],
+                                  else: []
+                                ) ++
+                                if(unquote(Macro.escape(fork_fns)) != %{},
+                                  do: [fork_fns: unquote(Macro.escape(fork_fns))],
                                   else: []
                                 )
 

@@ -7,6 +7,7 @@ defmodule Jido.Composer.Workflow.Machine do
   functions — no side effects.
   """
 
+  alias Jido.Composer.Context
   alias Jido.Composer.Error
   alias Jido.Composer.NodeIO
 
@@ -27,12 +28,20 @@ defmodule Jido.Composer.Workflow.Machine do
           nodes: %{atom() => struct()},
           transitions: %{{atom(), atom()} => atom()},
           terminal_states: MapSet.t(),
-          context: map(),
+          context: Context.t(),
           history: [{atom(), atom(), integer()}]
         }
 
   @spec new(keyword()) :: t()
   def new(opts) do
+    raw_context = Keyword.get(opts, :context, %{})
+
+    context =
+      case raw_context do
+        %Context{} -> raw_context
+        map when is_map(map) -> Context.new(working: map)
+      end
+
     %__MODULE__{
       status: Keyword.fetch!(opts, :initial),
       nodes: Keyword.fetch!(opts, :nodes),
@@ -41,7 +50,7 @@ defmodule Jido.Composer.Workflow.Machine do
         opts
         |> Keyword.get(:terminal_states, [:done, :failed])
         |> MapSet.new(),
-      context: Keyword.get(opts, :context, %{}),
+      context: context,
       history: []
     }
   end
@@ -76,8 +85,7 @@ defmodule Jido.Composer.Workflow.Machine do
   @spec apply_result(t(), map() | NodeIO.t()) :: t()
   def apply_result(%__MODULE__{status: status, context: context} = machine, result) do
     resolved = resolve_result(result)
-    scoped = %{status => resolved}
-    %{machine | context: DeepMerge.deep_merge(context, scoped)}
+    %{machine | context: Context.apply_result(context, status, resolved)}
   end
 
   defp resolve_result(%NodeIO{} = io), do: NodeIO.to_map(io)

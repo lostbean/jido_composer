@@ -98,7 +98,7 @@ defmodule Jido.Composer.Integration.CompositionTest do
     strat = StratState.get(agent)
 
     if strat.machine.status == :done do
-      {:ok, strat.machine.context}
+      {:ok, Jido.Composer.Context.to_flat_map(strat.machine.context)}
     else
       {:error, "workflow failed"}
     end

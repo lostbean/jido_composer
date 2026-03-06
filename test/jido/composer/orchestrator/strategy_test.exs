@@ -532,6 +532,31 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
     end
   end
 
+  describe "ambient context in orchestrator" do
+    test "ambient context available via __ambient__ key when passed in start params" do
+      LLMStub.setup([{:final_answer, "Done"}])
+      agent = init_agent()
+
+      # Pass ambient context as __ambient__ key (as workflow would via Context.to_flat_map)
+      start_params = %{query: "Test", __ambient__: %{org_id: "acme", user_id: "alice"}}
+
+      {agent, [llm_directive]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, start_params)], ctx())
+
+      # The query should be extracted
+      state = get_state(agent)
+      assert state.query == "Test"
+
+      llm_result = execute_llm_directive(llm_directive)
+
+      {agent, _} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :completed
+    end
+  end
+
   describe "persistence readiness" do
     test "strategy state is serializable via :erlang.term_to_binary" do
       LLMStub.setup([{:final_answer, "test"}])

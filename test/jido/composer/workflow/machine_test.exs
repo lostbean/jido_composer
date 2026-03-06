@@ -2,6 +2,7 @@ defmodule Jido.Composer.Workflow.MachineTest do
   use ExUnit.Case, async: true
 
   alias Jido.Composer.Workflow.Machine
+  alias Jido.Composer.Context
   alias Jido.Composer.Node.ActionNode
   alias Jido.Composer.NodeIO
   alias Jido.Composer.TestActions.{AddAction, MultiplyAction, FailAction}
@@ -56,7 +57,7 @@ defmodule Jido.Composer.Workflow.MachineTest do
 
     test "initializes with empty context" do
       machine = linear_machine()
-      assert machine.context == %{}
+      assert %Context{working: %{}, ambient: %{}} = machine.context
     end
 
     test "initializes with empty history" do
@@ -75,7 +76,7 @@ defmodule Jido.Composer.Workflow.MachineTest do
           context: %{input: "data"}
         )
 
-      assert machine.context == %{input: "data"}
+      assert machine.context.working == %{input: "data"}
     end
   end
 
@@ -186,7 +187,7 @@ defmodule Jido.Composer.Workflow.MachineTest do
       result = %{records: [1, 2, 3]}
 
       machine = Machine.apply_result(machine, result)
-      assert machine.context == %{extract: %{records: [1, 2, 3]}}
+      assert machine.context.working == %{extract: %{records: [1, 2, 3]}}
     end
 
     test "preserves existing context from other states" do
@@ -195,8 +196,8 @@ defmodule Jido.Composer.Workflow.MachineTest do
       {:ok, machine} = Machine.transition(machine, :ok)
       machine = Machine.apply_result(machine, %{cleaned: [1, 2]})
 
-      assert machine.context.extract == %{records: [1, 2, 3]}
-      assert machine.context.transform == %{cleaned: [1, 2]}
+      assert machine.context.working[:extract] == %{records: [1, 2, 3]}
+      assert machine.context.working[:transform] == %{cleaned: [1, 2]}
     end
 
     test "deep merges nested maps within same scope" do
@@ -206,31 +207,85 @@ defmodule Jido.Composer.Workflow.MachineTest do
       # Simulate re-running same state with additional nested data
       machine = Machine.apply_result(machine, %{a: %{y: 2}})
 
-      assert machine.context.extract.a == %{x: 1, y: 2}
+      assert machine.context.working[:extract][:a] == %{x: 1, y: 2}
     end
 
     test "resolves NodeIO.text to map" do
       machine = linear_machine()
       machine = Machine.apply_result(machine, NodeIO.text("answer"))
-      assert machine.context == %{extract: %{text: "answer"}}
+      assert machine.context.working == %{extract: %{text: "answer"}}
     end
 
     test "resolves NodeIO.object to map" do
       machine = linear_machine()
       machine = Machine.apply_result(machine, NodeIO.object(%{score: 0.9}))
-      assert machine.context == %{extract: %{object: %{score: 0.9}}}
+      assert machine.context.working == %{extract: %{object: %{score: 0.9}}}
     end
 
     test "passes through bare maps unchanged" do
       machine = linear_machine()
       machine = Machine.apply_result(machine, %{key: "value"})
-      assert machine.context == %{extract: %{key: "value"}}
+      assert machine.context.working == %{extract: %{key: "value"}}
     end
 
     test "resolves NodeIO.map to map" do
       machine = linear_machine()
       machine = Machine.apply_result(machine, NodeIO.map(%{key: "value"}))
-      assert machine.context == %{extract: %{key: "value"}}
+      assert machine.context.working == %{extract: %{key: "value"}}
+    end
+  end
+
+  describe "Context integration" do
+    test "new/1 wraps bare map as Context" do
+      nodes = build_nodes()
+
+      machine =
+        Machine.new(
+          nodes: %{extract: nodes.extract},
+          transitions: %{{:extract, :ok} => :done},
+          initial: :extract,
+          context: %{input: "data"}
+        )
+
+      assert %Context{} = machine.context
+      assert machine.context.working == %{input: "data"}
+      assert machine.context.ambient == %{}
+    end
+
+    test "new/1 accepts Context directly" do
+      nodes = build_nodes()
+      ctx = Context.new(ambient: %{org_id: "acme"}, working: %{input: "data"})
+
+      machine =
+        Machine.new(
+          nodes: %{extract: nodes.extract},
+          transitions: %{{:extract, :ok} => :done},
+          initial: :extract,
+          context: ctx
+        )
+
+      assert machine.context == ctx
+      assert machine.context.ambient == %{org_id: "acme"}
+    end
+
+    test "apply_result scopes into Context.working" do
+      nodes = build_nodes()
+      ctx = Context.new(ambient: %{org_id: "acme"}, working: %{})
+
+      machine =
+        Machine.new(
+          nodes: %{extract: nodes.extract, transform: nodes.transform},
+          transitions: %{
+            {:extract, :ok} => :transform,
+            {:transform, :ok} => :done
+          },
+          initial: :extract,
+          context: ctx
+        )
+
+      machine = Machine.apply_result(machine, %{records: [1, 2]})
+      assert machine.context.working == %{extract: %{records: [1, 2]}}
+      assert machine.context.ambient == %{org_id: "acme"}
     end
   end
 end

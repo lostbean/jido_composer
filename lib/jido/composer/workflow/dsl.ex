@@ -31,6 +31,8 @@ defmodule Jido.Composer.Workflow.DSL do
     schema = Keyword.get(opts, :schema, [])
     initial = Keyword.fetch!(opts, :initial)
     terminal_states = Keyword.get(opts, :terminal_states)
+    ambient_keys = Keyword.get(opts, :ambient, [])
+    fork_fns = Keyword.get(opts, :fork_fns, %{})
 
     # Generate signal routes from strategy (computed at compile time — these are static)
     workflow_routes = Jido.Composer.Workflow.Strategy.signal_routes(%{})
@@ -62,7 +64,9 @@ defmodule Jido.Composer.Workflow.DSL do
       @__wf_strategy_opts__ [
                               nodes: @__wf_nodes__,
                               transitions: @__wf_transitions__,
-                              initial: @__wf_initial__
+                              initial: @__wf_initial__,
+                              ambient: unquote(ambient_keys),
+                              fork_fns: unquote(Macro.escape(fork_fns))
                             ] ++
                               if(@__wf_terminal_states__,
                                 do: [terminal_states: @__wf_terminal_states__],
@@ -96,7 +100,14 @@ defmodule Jido.Composer.Workflow.DSL do
     case run_directives(module, agent, directives) do
       {:ok, agent} ->
         strat = Jido.Agent.Strategy.State.get(agent)
-        {:ok, strat.machine.context}
+
+        result =
+          case strat.machine.context do
+            %Jido.Composer.Context{} = ctx -> Jido.Composer.Context.to_flat_map(ctx)
+            map when is_map(map) -> map
+          end
+
+        {:ok, result}
 
       {:error, reason} ->
         {:error, reason}

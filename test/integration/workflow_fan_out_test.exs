@@ -159,7 +159,7 @@ defmodule Jido.Composer.Integration.WorkflowFanOutTest do
       {agent, _} = SingleFanOutWorkflow.run(agent, %{value: 1.0, amount: 2.0, message: "hi"})
 
       strat = StratState.get(agent)
-      ctx = strat.machine.context
+      ctx = strat.machine.context.working
 
       # FanOutNode results are scoped under the state name :compute
       assert ctx[:compute][:add][:result] == 3.0
@@ -184,7 +184,7 @@ defmodule Jido.Composer.Integration.WorkflowFanOutTest do
       agent = execute_workflow(ParallelStepWorkflow, agent, directives)
 
       strat = StratState.get(agent)
-      ctx = strat.machine.context
+      ctx = strat.machine.context.working
 
       # Prepare step scoped its result
       assert ctx[:prepare][:echoed] == "start"

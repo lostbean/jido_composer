@@ -164,8 +164,8 @@ defmodule Jido.Composer.Integration.WorkflowHITLTest do
       assert StratState.status(agent) == :success
 
       # HITL response should be merged into context
-      assert strat.machine.context[:hitl_response][:decision] == :approved
-      assert strat.machine.context[:hitl_response][:respondent] == "admin@co.com"
+      assert strat.machine.context.working[:hitl_response][:decision] == :approved
+      assert strat.machine.context.working[:hitl_response][:respondent] == "admin@co.com"
     end
 
     test "workflow resumes on rejected decision and transitions to failed" do

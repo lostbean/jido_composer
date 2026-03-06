@@ -107,7 +107,7 @@ defmodule Jido.Composer.Integration.HITLPersistenceTest do
       assert restored.pending_approval.id == strat.pending_approval.id
       assert restored.pending_approval.prompt == "Approve processing?"
       assert restored.machine.status == :approval
-      assert restored.machine.context[:tag] == "test"
+      assert restored.machine.context.working[:tag] == "test"
     end
 
     test "full agent struct is serializable (after stripping non-serializable data)" do

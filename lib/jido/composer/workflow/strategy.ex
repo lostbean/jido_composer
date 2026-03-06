@@ -10,6 +10,7 @@ defmodule Jido.Composer.Workflow.Strategy do
 
   alias Jido.Agent.Directive
   alias Jido.Agent.Strategy.State, as: StratState
+  alias Jido.Composer.Context
   alias Jido.Composer.Directive.SuspendForHuman
   alias Jido.Composer.HITL.{ApprovalRequest, ApprovalResponse}
   alias Jido.Composer.Node.ActionNode
@@ -40,7 +41,9 @@ defmodule Jido.Composer.Workflow.Strategy do
         machine: machine,
         pending_child: nil,
         child_request_id: nil,
-        pending_approval: nil
+        pending_approval: nil,
+        ambient_keys: opts[:ambient] || [],
+        fork_fns: opts[:fork_fns] || %{}
       })
 
     {agent, []}
@@ -52,9 +55,11 @@ defmodule Jido.Composer.Workflow.Strategy do
   def cmd(agent, [%Jido.Instruction{action: :workflow_start} = instr | _rest], _ctx) do
     agent = StratState.set_status(agent, :running)
     strat = StratState.get(agent)
+    params = instr.params || %{}
 
-    # Merge initial params into machine context
-    machine = %{strat.machine | context: Map.merge(strat.machine.context, instr.params || %{})}
+    # Build Context from params: extract ambient keys, remaining go to working
+    context = build_start_context(strat.machine.context, params, strat)
+    machine = %{strat.machine | context: context}
     agent = put_machine(agent, machine)
 
     dispatch_current_node(agent)
@@ -246,10 +251,18 @@ defmodule Jido.Composer.Workflow.Strategy do
           details
       end
 
+    raw_context = get_in(strat, [:machine, Access.key(:context)])
+
+    snapshot_result =
+      case raw_context do
+        %Context{} -> Context.to_flat_map(raw_context)
+        other -> other
+      end
+
     %Jido.Agent.Strategy.Snapshot{
       status: status,
       done?: status in [:success, :failure],
-      result: get_in(strat, [:machine, Access.key(:context)]),
+      result: snapshot_result,
       details: details
     }
   end
@@ -276,7 +289,7 @@ defmodule Jido.Composer.Workflow.Strategy do
       %ActionNode{action_module: action_module} ->
         instruction = %Jido.Instruction{
           action: action_module,
-          params: strat.machine.context
+          params: Context.to_flat_map(strat.machine.context)
         }
 
         directive = %Directive.RunInstruction{
@@ -287,16 +300,20 @@ defmodule Jido.Composer.Workflow.Strategy do
         {agent, [directive]}
 
       %AgentNode{agent_module: agent_module, opts: opts} ->
+        child_context = Context.fork_for_child(strat.machine.context)
+        child_flat = Context.to_flat_map(child_context)
+
         directive = %Directive.SpawnAgent{
           tag: strat.machine.status,
           agent: agent_module,
-          opts: Map.new(opts) |> Map.put(:context, strat.machine.context)
+          opts: Map.new(opts) |> Map.put(:context, child_flat)
         }
 
         {agent, [directive]}
 
       %HumanNode{} = human_node ->
-        {:ok, updated_context, :suspend} = HumanNode.run(human_node, strat.machine.context)
+        flat_context = Context.to_flat_map(strat.machine.context)
+        {:ok, updated_context, :suspend} = HumanNode.run(human_node, flat_context)
 
         # Extract and enrich the ApprovalRequest
         request = updated_context.__approval_request__
@@ -320,7 +337,7 @@ defmodule Jido.Composer.Workflow.Strategy do
 
       %FanOutNode{} = fan_out_node ->
         # FanOutNode encapsulates concurrency internally — execute and process result
-        case FanOutNode.run(fan_out_node, strat.machine.context) do
+        case FanOutNode.run(fan_out_node, Context.to_flat_map(strat.machine.context)) do
           {:ok, result} ->
             machine = Machine.apply_result(strat.machine, result)
 
@@ -353,7 +370,7 @@ defmodule Jido.Composer.Workflow.Strategy do
   end
 
   defp handle_hitl_decision(agent, %ApprovalResponse{} = response) do
-    # Merge response data into machine context
+    # Merge response data into machine context working layer
     strat = StratState.get(agent)
 
     hitl_data = %{
@@ -366,10 +383,9 @@ defmodule Jido.Composer.Workflow.Strategy do
       }
     }
 
-    machine = %{
-      strat.machine
-      | context: DeepMerge.deep_merge(strat.machine.context, hitl_data)
-    }
+    current_ctx = strat.machine.context
+    merged_working = DeepMerge.deep_merge(current_ctx.working, hitl_data)
+    machine = %{strat.machine | context: %{current_ctx | working: merged_working}}
 
     # Use decision as transition outcome
     case Machine.transition(machine, response.decision) do
@@ -391,6 +407,27 @@ defmodule Jido.Composer.Workflow.Strategy do
           StratState.update(agent, fn s -> %{s | pending_approval: nil} end)
 
         {agent, []}
+    end
+  end
+
+  defp build_start_context(%Context{} = current_ctx, params, strat) do
+    ambient_keys = Map.get(strat, :ambient_keys, [])
+    fork_fns = Map.get(strat, :fork_fns, %{})
+
+    if ambient_keys == [] and fork_fns == %{} do
+      # No ambient/fork config — just merge params into working
+      %{current_ctx | working: Map.merge(current_ctx.working, params)}
+    else
+      # Extract ambient keys from params
+      {ambient_vals, working_vals} = Map.split(params, ambient_keys)
+      ambient = Map.merge(current_ctx.ambient, ambient_vals)
+      working = Map.merge(current_ctx.working, working_vals)
+
+      %Context{
+        ambient: ambient,
+        working: working,
+        fork_fns: Map.merge(current_ctx.fork_fns, fork_fns)
+      }
     end
   end
 
