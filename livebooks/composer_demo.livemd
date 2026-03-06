@@ -421,7 +421,7 @@ Kino.Layout.grid([
 
 ## Demo 4: Human-in-the-Loop (Suspend/Resume)
 
-HumanNode pauses the workflow and emits a `SuspendForHuman` directive.
+HumanNode pauses the workflow and emits a `Suspend` directive (with `reason: :human_input`).
 The workflow waits for an `ApprovalResponse` before continuing.
 
 We'll visualize the FSM state in real-time using Mermaid diagrams that
@@ -439,7 +439,7 @@ stateDiagram-v2
 ````elixir
 alias Jido.Agent.Directive
 alias Jido.Agent.Strategy.State, as: StratState
-alias Jido.Composer.Directive.SuspendForHuman
+alias Jido.Composer.Directive.Suspend, as: SuspendDirective
 alias Jido.Composer.HITL.{ApprovalRequest, ApprovalResponse}
 alias Jido.Composer.Node.HumanNode
 
@@ -490,13 +490,12 @@ fsm_diagram = fn current_state ->
   """
 end
 
-# Helper: execute directives until SuspendForHuman or done (recursive loop)
+# Helper: execute directives until Suspend or done (recursive loop)
 defmodule Demo.DirectiveRunner do
   def run(_agent_module, agent, []), do: {agent, []}
 
   def run(agent_module, agent, [directive | rest]) do
     alias Jido.Agent.Directive
-    alias Jido.Composer.Directive.SuspendForHuman
 
     case directive do
       %Directive.RunInstruction{instruction: instr, result_action: result_action} ->
@@ -510,7 +509,8 @@ defmodule Demo.DirectiveRunner do
         {agent, new_directives} = agent_module.cmd(agent, {result_action, payload})
         run(agent_module, agent, new_directives ++ rest)
 
-      %SuspendForHuman{} = suspend ->
+      # SuspendForHuman.new/1 now returns a generalized %Suspend{} directive
+      %Jido.Composer.Directive.Suspend{} = suspend ->
         {agent, [suspend | rest]}
 
       _ ->
@@ -533,7 +533,8 @@ agent = Demo.DeployWorkflow.new()
 # Step 2: Execute until we hit the HumanNode
 {agent, remaining} = Demo.DirectiveRunner.run(Demo.DeployWorkflow, agent, directives)
 
-[%SuspendForHuman{approval_request: request} | _] = remaining
+[%Jido.Composer.Directive.Suspend{suspension: suspension} | _] = remaining
+request = suspension.approval_request
 
 Kino.Frame.render(state_frame, Kino.Markdown.new(fsm_diagram.("approval")))
 
@@ -594,7 +595,7 @@ Kino.Frame.render(
 
   - Decision: `#{decision}`
   - Final state: `#{final_state}`
-  - HITL response in context: `#{inspect(strat.machine.context[:hitl_response][:decision])}`
+  - HITL response in context: `#{inspect(Jido.Composer.Context.to_flat_map(strat.machine.context)[:hitl_response][:decision])}`
   """)
 )
 ````
@@ -724,6 +725,10 @@ child agent, sends context, and awaits the result.
 This lets you nest LLM-driven orchestrators inside deterministic workflows,
 combining the predictability of FSMs with the flexibility of LLM reasoning.
 
+**Native composition:** Just drop an agent module directly into the `nodes` map.
+The DSL detects it's a `Jido.Agent` module and creates an `AgentNode` automatically.
+No wrapper Action needed!
+
 ```mermaid
 stateDiagram-v2
     [*] --> gather_input
@@ -792,45 +797,17 @@ defmodule Demo.AnalysisOrchestrator do
   Demo.Helpers.suppress_agent_doctests()
 end
 
-# Step 3: Wrap the orchestrator call as an Action so we can use it as a workflow tool.
-# This is the pattern for nesting an orchestrator inside a workflow step.
-defmodule Demo.AnalyzeAction do
-  use Jido.Action,
-    name: "analyze",
-    description: "Runs an LLM-powered analysis orchestrator on the gathered input",
-    schema: [
-      gather_input: [type: :map, required: false, doc: "Results from gather_input step"]
-    ]
-
-  def run(params, _context) do
-    input = params[:gather_input] || %{}
-    topic = input[:topic] || "unknown topic"
-    depth = input[:depth] || "brief"
-
-    agent = Demo.AnalysisOrchestrator.new()
-
-    case Demo.AnalysisOrchestrator.query_sync(
-           agent,
-           "Analyze the topic '#{topic}' at #{depth} depth. Provide key points."
-         ) do
-      {:ok, answer} ->
-        {:ok, %{topic: topic, analysis: answer, depth: depth}}
-
-      {:error, reason} ->
-        {:error, "Analysis failed: #{inspect(reason)}"}
-    end
-  end
-end
-
-# Step 4: Build the workflow with the orchestrator-backed step
+# Step 3: Build the workflow with the orchestrator as a NATIVE AgentNode.
+# No wrapper Action needed! The workflow DSL detects that Demo.AnalysisOrchestrator
+# is a Jido.Agent module and automatically creates an AgentNode for it.
 defmodule Demo.AnalysisWorkflow do
   @moduledoc false
   use Jido.Composer.Workflow,
     name: "analysis_pipeline",
-    description: "Deterministic pipeline with LLM analysis step",
+    description: "Deterministic pipeline with LLM analysis step via native AgentNode",
     nodes: %{
       gather_input: Demo.GatherInputAction,
-      analyze: Demo.AnalyzeAction,
+      analyze: Demo.AnalysisOrchestrator,     # <-- Native! No wrapper Action!
       format_output: Demo.FormatOutputAction
     },
     transitions: %{
@@ -850,7 +827,15 @@ frame = Kino.Frame.new() |> Kino.render()
 Kino.Frame.render(frame, Kino.Markdown.new("**Running analysis pipeline...**\n\nThe workflow will:\n1. Gather input (deterministic)\n2. Run LLM orchestrator to analyze (LLM-driven)\n3. Format output (deterministic)"))
 
 agent = Demo.AnalysisWorkflow.new()
-{:ok, ctx} = Demo.AnalysisWorkflow.run_sync(agent, %{topic: "composable agent architectures", depth: "brief"})
+# The :query key flows through as top-level working context, which AgentNode picks up
+# when dispatching to the orchestrator
+topic = "composable agent architectures"
+depth = "brief"
+{:ok, ctx} = Demo.AnalysisWorkflow.run_sync(agent, %{
+  topic: topic,
+  depth: depth,
+  query: "Analyze the topic '#{topic}' at #{depth} depth. Provide key points."
+})
 
 Kino.Frame.render(frame, Kino.Markdown.new("**Pipeline complete!**"))
 
@@ -860,8 +845,9 @@ Kino.Layout.tabs(
     Kino.Tree.new(ctx[:gather_input])
   ], columns: 1),
   "LLM Analysis": Kino.Layout.grid([
-    Kino.Markdown.new("**Step 2** -- LLM orchestrator produced this analysis:"),
-    Kino.Markdown.new(ctx[:analyze][:analysis] || "_No analysis_")
+    Kino.Markdown.new("**Step 2** -- LLM orchestrator ran as a **native AgentNode** (no wrapper Action)"),
+    Kino.Markdown.new("The orchestrator's text result is automatically adapted to a map via NodeIO:"),
+    Kino.Tree.new(ctx[:analyze])
   ], columns: 1),
   "Formatted Report": Kino.Layout.grid([
     Kino.Markdown.new("**Step 3** -- Final formatted output"),
@@ -1127,7 +1113,10 @@ Kino.Markdown.new("**Specialist orchestrators defined:** Researcher, Architect, 
 ### Define Pipeline Actions
 
 ```elixir
-# Wrap each orchestrator call as a pipeline action
+# Note: Demo 8 calls orchestrators directly (not through a workflow DSL) because
+# the refinement loop requires passing evaluation hints back to the architect.
+# With native AgentNode composition (Demo 7), you'd put orchestrators directly in
+# the nodes map. Here the loop logic requires manual orchestrator invocation.
 
 defmodule Demo.ResearchAction do
   use Jido.Action,
@@ -1422,22 +1411,27 @@ end
 
 This notebook demonstrated the full range of composition patterns in **jido_composer**:
 
-| Demo               | Pattern                 | Key Concept                               |
-| ------------------ | ----------------------- | ----------------------------------------- |
-| 1. ETL Pipeline    | Workflow                | Linear FSM, scoped context accumulation   |
-| 2. Quality Gate    | Workflow                | Custom outcomes for branching transitions |
-| 3. Fan-Out         | Workflow                | Parallel execution with FanOutNode        |
-| 4. Deploy Pipeline | Workflow + HITL         | Suspend/resume with human approval        |
-| 5. Tool Assistant  | Orchestrator            | LLM-driven ReAct loop with tools          |
-| 6. Composed        | Orchestrator + Workflow | Workflows as tools inside orchestrators   |
-| 7. Analysis Agent  | Workflow + AgentNode    | LLM orchestrator nested in workflow step  |
-| 8. Domain Modeler  | Multi-Orchestrator      | Three specialist LLM agents in a pipeline |
+| Demo               | Pattern                 | Key Concept                                                    |
+| ------------------ | ----------------------- | -------------------------------------------------------------- |
+| 1. ETL Pipeline    | Workflow                | Linear FSM, scoped context accumulation                        |
+| 2. Quality Gate    | Workflow                | Custom outcomes for branching transitions                      |
+| 3. Fan-Out         | Workflow                | Parallel execution with FanOutNode                             |
+| 4. Deploy Pipeline | Workflow + HITL         | Suspend/resume with human approval                             |
+| 5. Tool Assistant  | Orchestrator            | LLM-driven ReAct loop with tools                               |
+| 6. Composed        | Orchestrator + Workflow | Workflows as tools inside orchestrators                        |
+| 7. Analysis Agent  | Workflow + AgentNode    | LLM orchestrator nested **natively** in workflow (no wrapper!) |
+| 8. Domain Modeler  | Multi-Orchestrator      | Three specialist LLM agents in a pipeline                      |
 
 **Key takeaways:**
 
 * **Workflows** give you deterministic, auditable pipelines with FSM guarantees
 * **Orchestrators** give you flexible, LLM-driven composition at runtime
 * **Nodes** provide a uniform interface -- actions, workflows, and human gates are all interchangeable
-* **AgentNode** lets you nest orchestrators inside workflows, combining FSM predictability with LLM flexibility
+* **Native AgentNode** lets you drop agent modules directly into workflow `nodes` maps -- no wrapper Actions needed
 * **Multi-agent pipelines** compose specialist orchestrators with quality-driven iteration loops
 * **Nesting** is natural -- orchestrators can call workflows, workflows can contain agents, all composable
+
+**Want to see more?** The companion livebook **`native_composition_demo.livemd`** showcases
+six additional capabilities: NodeIO typed envelopes, Context layers (ambient/working/fork),
+directive-based FanOut with mixed branches, generalized suspension (rate limits, external jobs),
+and full checkpoint/thaw persistence with resume across process restarts.
