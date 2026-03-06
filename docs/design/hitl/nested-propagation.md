@@ -203,6 +203,38 @@ If the outer timeout fires first (e.g., outer is 12hr, inner is 24hr):
 | Timeout fires after manual resolution           | Strategy checks if request is still pending; ignores if resolved                              |
 | Resume after hibernate but LLM context is stale | Semantic issue, not technical — flow resumes correctly; application may add a staleness check |
 
+## FanOut Branch Suspension
+
+When a [FanOutNode](../nodes/README.md#fanoutnode) branch suspends, the
+interaction with nesting follows the same isolation principle:
+
+```mermaid
+sequenceDiagram
+    participant WF as OuterWorkflow
+    participant FO as FanOut State
+    participant B1 as Branch: ActionNode
+    participant B2 as Branch: AgentNode (suspends)
+
+    WF->>FO: Dispatch branches
+    FO->>B1: RunInstruction
+    FO->>B2: SpawnAgent
+    B1-->>FO: Result (completed)
+    B2-->>FO: :suspend (rate limit)
+    Note over FO: completed: [B1], suspended: [B2]
+    Note over WF: Status: :waiting (already was)
+    Note over FO: Timer fires...
+    B2-->>FO: Resumed, result arrives
+    Note over FO: All done — merge and transition
+    FO-->>WF: Merged result
+```
+
+The OuterWorkflow does not know that a FanOut branch suspended — it was already
+waiting for the FanOut to complete. The FanOut tracking state (completed +
+suspended branches) is fully serializable and survives checkpointing.
+
+For the detailed FanOut partial completion model, see
+[Strategy Integration — FanOut Partial Completion](strategy-integration.md#fanout-partial-completion).
+
 ## Observability
 
 The [Snapshot](../glossary.md#snapshot) mechanism provides visibility into HITL

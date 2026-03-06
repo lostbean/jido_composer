@@ -16,8 +16,12 @@ graph TB
         AGN["AgentNode"]
         HN["HumanNode"]
         FN["FanOutNode"]
+        NIO["NodeIO<br/>(typed envelope)"]
+        CTX["Context<br/>(ambient/working/fork)"]
+        SUS["Suspension<br/>(any reason)"]
         HITL["HITL<br/>(ApprovalRequest/Response)"]
-        SFH["SuspendForHuman<br/>(Directive)"]
+        SD["Suspend / SuspendForHuman<br/>(Directives)"]
+        FOB["FanOutBranch<br/>(Directive)"]
         WF["Workflow Strategy"]
         Machine["Machine (FSM)"]
         WDSL["Workflow DSL"]
@@ -28,6 +32,8 @@ graph TB
         Err["Error"]
 
         Composer --> Node
+        Composer --> CTX
+        Composer --> NIO
         Composer --> WF
         Composer --> ORC
         Composer --> Err
@@ -35,8 +41,10 @@ graph TB
         Node --> AGN
         Node --> HN
         Node --> FN
-        HN --> HITL
-        HITL --> SFH
+        HN --> SUS
+        HITL --> SUS
+        SUS --> SD
+        FN --> FOB
         AN --> WF
         AGN --> WF
         AN --> ORC
@@ -77,23 +85,30 @@ but establishes the module hierarchy and exposes library-level documentation.
 
 All user-facing modules live under this namespace:
 
-| Module                                 | Purpose                                                                    |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| `Jido.Composer.Node`                   | [Node](nodes/README.md) behaviour definition                               |
-| `Jido.Composer.Node.ActionNode`        | [Action adapter](nodes/README.md#actionnode)                               |
-| `Jido.Composer.Node.AgentNode`         | [Agent adapter](nodes/README.md#agentnode)                                 |
-| `Jido.Composer.Node.HumanNode`         | [Human decision gate](hitl/human-node.md)                                  |
-| `Jido.Composer.Node.FanOutNode`        | [Parallel branch execution](nodes/README.md#fanoutnode)                    |
-| `Jido.Composer.HITL.ApprovalRequest`   | [Pending human decision](hitl/approval-lifecycle.md)                       |
-| `Jido.Composer.HITL.ApprovalResponse`  | [Human decision response](hitl/approval-lifecycle.md)                      |
-| `Jido.Composer.Workflow`               | [Workflow DSL](workflow/README.md) macro                                   |
-| `Jido.Composer.Workflow.Strategy`      | [Workflow strategy](workflow/strategy.md)                                  |
-| `Jido.Composer.Workflow.Machine`       | [FSM data structure](workflow/state-machine.md)                            |
-| `Jido.Composer.Orchestrator`           | [Orchestrator DSL](orchestrator/README.md) macro                           |
-| `Jido.Composer.Orchestrator.Strategy`  | [Orchestrator strategy](orchestrator/strategy.md)                          |
-| `Jido.Composer.Orchestrator.LLMAction` | [LLM integration](orchestrator/llm-integration.md) calling ReqLLM directly |
-| `Jido.Composer.Orchestrator.AgentTool` | [Node-to-tool adapter](orchestrator/README.md#agenttool-adapter)           |
-| `Jido.Composer.Error`                  | [Structured errors](#error-handling)                                       |
+| Module                                 | Purpose                                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `Jido.Composer.Node`                   | [Node](nodes/README.md) behaviour definition                                                            |
+| `Jido.Composer.Node.ActionNode`        | [Action adapter](nodes/README.md#actionnode)                                                            |
+| `Jido.Composer.Node.AgentNode`         | [Agent adapter](nodes/README.md#agentnode) — [dual-path execution](nodes/README.md#dual-path-execution) |
+| `Jido.Composer.Node.HumanNode`         | [Human decision gate](hitl/human-node.md)                                                               |
+| `Jido.Composer.Node.FanOutNode`        | [Parallel branch execution](nodes/README.md#fanoutnode) — directive-based                               |
+| `Jido.Composer.NodeIO`                 | [Typed output envelope](nodes/typed-io.md) preserving monoidal structure                                |
+| `Jido.Composer.Context`                | [Layered context](nodes/context-flow.md#context-layers) (ambient, working, fork)                        |
+| `Jido.Composer.Suspension`             | [Generalized suspension metadata](hitl/README.md#generalized-suspension)                                |
+| `Jido.Composer.ChildRef`               | [Serializable child reference](hitl/persistence.md#childref-serializable-child-references)              |
+| `Jido.Composer.Resume`                 | [Targeted resume](hitl/persistence.md#targeted-resume) (thaw-and-resume API)                            |
+| `Jido.Composer.HITL.ApprovalRequest`   | [Pending human decision](hitl/approval-lifecycle.md)                                                    |
+| `Jido.Composer.HITL.ApprovalResponse`  | [Human decision response](hitl/approval-lifecycle.md)                                                   |
+| `Jido.Composer.Directive.Suspend`      | [Generalized suspend directive](hitl/strategy-integration.md#suspend-directive)                         |
+| `Jido.Composer.Directive.FanOutBranch` | [Per-branch FanOut directive](workflow/strategy.md#execution-flow-fanoutnode)                           |
+| `Jido.Composer.Workflow`               | [Workflow DSL](workflow/README.md) macro                                                                |
+| `Jido.Composer.Workflow.Strategy`      | [Workflow strategy](workflow/strategy.md)                                                               |
+| `Jido.Composer.Workflow.Machine`       | [FSM data structure](workflow/state-machine.md)                                                         |
+| `Jido.Composer.Orchestrator`           | [Orchestrator DSL](orchestrator/README.md) macro                                                        |
+| `Jido.Composer.Orchestrator.Strategy`  | [Orchestrator strategy](orchestrator/strategy.md)                                                       |
+| `Jido.Composer.Orchestrator.LLMAction` | [LLM integration](orchestrator/llm-integration.md) calling ReqLLM directly                              |
+| `Jido.Composer.Orchestrator.AgentTool` | [Node-to-tool adapter](orchestrator/README.md#agenttool-adapter)                                        |
+| `Jido.Composer.Error`                  | [Structured errors](#error-handling)                                                                    |
 
 ## Design Principles
 
@@ -152,9 +167,9 @@ stateDiagram-v2
     [*] --> idle
     idle --> running : cmd received
     running --> waiting : awaiting external result
-    running --> waiting : node returns :suspend (HITL)
+    running --> waiting : node returns :suspend (any reason)
     waiting --> running : result received
-    waiting --> running : HITL response received
+    waiting --> running : resume signal received
     running --> success : completed successfully
     running --> failure : error occurred
     success --> [*]
@@ -162,29 +177,33 @@ stateDiagram-v2
 ```
 
 The `:waiting` status serves double duty: it represents both "awaiting an
-external action result" (e.g., a RunInstruction callback) and "awaiting a human
-decision" (a [HITL suspension](hitl/README.md)). The strategy's internal state
-distinguishes these cases via the `pending_hitl_request` field.
+external action result" (e.g., a RunInstruction callback) and "awaiting a
+[suspension](hitl/README.md) resume" (human input, rate limit backoff, async
+completion, etc.). The strategy's internal state distinguishes these cases via
+the `pending_suspension` field.
 
 ## Directive System
 
 Strategies communicate with the runtime exclusively through directives. The
 directives most relevant to Composer are:
 
-| Directive       | Purpose                                                                           | Used By      |
-| --------------- | --------------------------------------------------------------------------------- | ------------ |
-| RunInstruction  | Execute an action and route result back to cmd/3                                  | Both         |
-| SpawnAgent      | Spawn a child agent with parent-child tracking                                    | Both         |
-| StopChild       | Stop a tracked child agent                                                        | Both         |
-| Emit            | Dispatch a signal via configured adapters                                         | Both         |
-| Schedule        | Schedule a delayed message                                                        | Orchestrator |
-| SuspendForHuman | Pause flow for human input, deliver [ApprovalRequest](hitl/approval-lifecycle.md) | Both         |
-| Error           | Signal an error condition                                                         | Both         |
+| Directive       | Purpose                                                                                                              | Used By      |
+| --------------- | -------------------------------------------------------------------------------------------------------------------- | ------------ |
+| RunInstruction  | Execute an action and route result back to cmd/3                                                                     | Both         |
+| SpawnAgent      | Spawn a child agent with parent-child tracking                                                                       | Both         |
+| StopChild       | Stop a tracked child agent                                                                                           | Both         |
+| Emit            | Dispatch a signal via configured adapters                                                                            | Both         |
+| Schedule        | Schedule a delayed message                                                                                           | Orchestrator |
+| Suspend         | Pause flow for any reason, deliver [Suspension](hitl/README.md#generalized-suspension) metadata                      | Both         |
+| SuspendForHuman | Convenience wrapper — builds a Suspend with `reason: :human_input` and [ApprovalRequest](hitl/approval-lifecycle.md) | Both         |
+| FanOutBranch    | Execute a single [FanOutNode](nodes/README.md#fanoutnode) branch (contains RunInstruction or SpawnAgent)             | Workflow     |
+| Error           | Signal an error condition                                                                                            | Both         |
 
-SuspendForHuman is a custom directive introduced by Composer. The AgentServer's
-directive execution is protocol-based (`Jido.AgentServer.DirectiveExec`), so
-Composer implements this protocol for its custom directive struct. Unknown
-directives fall through to a no-op `Any` implementation.
+Suspend, SuspendForHuman, and FanOutBranch are custom directives introduced by
+Composer. The AgentServer's directive execution is protocol-based
+(`Jido.AgentServer.DirectiveExec`), so Composer implements this protocol for its
+custom directive structs. Unknown directives fall through to a no-op `Any`
+implementation.
 
 The RunInstruction directive is central to both patterns. It lets strategies
 remain pure by deferring action execution to the runtime. The runtime executes

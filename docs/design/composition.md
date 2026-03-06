@@ -68,12 +68,57 @@ sequenceDiagram
 
 Key properties of this communication model:
 
-| Property         | Description                                                                                                                  |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Signal-based** | All inter-agent communication flows through [Signals](glossary.md#signal). No direct function calls across agent boundaries. |
-| **Serializable** | Context is a plain map — no PIDs, references, or closures. It can cross process boundaries safely.                           |
-| **Hierarchical** | The parent-child relationship is tracked by AgentServer. Children have a `__parent__` reference for `emit_to_parent`.        |
-| **Isolated**     | Each child runs its own strategy independently. The parent only sees the final result, not intermediate states.              |
+| Property            | Description                                                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Signal-based**    | All inter-agent communication flows through [Signals](glossary.md#signal). No direct function calls across agent boundaries.                               |
+| **Serializable**    | Context is a plain map — no PIDs, references, or closures. It can cross process boundaries safely.                                                         |
+| **Hierarchical**    | The parent-child relationship is tracked by AgentServer. Children have a `__parent__` reference for `emit_to_parent`.                                      |
+| **Isolated**        | Each child runs its own strategy independently. The parent only sees the final result, not intermediate states.                                            |
+| **Context-layered** | [Ambient context](nodes/context-flow.md#context-layers) propagates read-only. Fork functions transform at boundaries. Working context is scoped per child. |
+
+## Context Propagation Across Boundaries
+
+When an agent spawns a child, [context layers](nodes/context-flow.md#context-layers)
+propagate differently:
+
+```mermaid
+flowchart TB
+    P["Parent Agent"]
+    F["Fork Functions Applied"]
+    C["Child Agent"]
+
+    P -->|"ambient (read-only)"| F
+    P -->|"working (scoped)"| F
+    F -->|"forked ambient"| C
+    F -->|"working subset"| C
+    C -->|"result only"| P
+```
+
+| Layer        | Direction           | Behaviour                                                        |
+| ------------ | ------------------- | ---------------------------------------------------------------- |
+| **Ambient**  | Parent -> Child     | Flows down unchanged (or transformed by fork functions)          |
+| **Working**  | Parent -> Child     | Passed as signal payload; child works on its own copy            |
+| **Fork Fns** | Applied at boundary | MFA tuples that transform ambient (e.g., create child OTel span) |
+| **Results**  | Child -> Parent     | Scoped under the child's name in the parent's working context    |
+
+Ambient context is **never modified by children**. A child's result flows back
+to the parent and is scoped under the node name — it cannot overwrite ambient
+data. This ensures that `org_id`, `trace_id`, and similar data survive the
+entire composition tree.
+
+### Three-Level Nesting Example
+
+OuterWorkflow -> MiddleOrchestrator -> InnerWorkflow:
+
+1. **Level 1 starts** — Context has `ambient: %{org_id: "acme", trace_id: "abc"}`,
+   `working: %{}`, fork function for OTel span creation
+2. **Level 1 -> 2** (SpawnAgent for MiddleOrchestrator) — Fork function runs,
+   creates child OTel span in ambient. `org_id` unchanged
+3. **Level 2 -> 3** (SpawnAgent for InnerWorkflow) — Fork function runs again,
+   creates grandchild span. `org_id` still unchanged
+4. **Results flow up** — unchanged from today. Child sends result via
+   `emit_to_parent`. Parent scopes under node/tool name in working context.
+   Ambient is never modified
 
 ## Depth and Recursion
 
@@ -96,20 +141,21 @@ graph TB
 Each level is a separate agent process. Context flows down as signal payloads
 and results flow back up via `emit_to_parent`.
 
-## HITL Across Composition Boundaries
+## Suspension Across Composition Boundaries
 
-When a nested agent suspends for [human input](hitl/README.md), the pause
-interacts with the composition model:
+When a nested agent [suspends](hitl/README.md) (for human input, rate limits,
+or any other reason), the pause interacts with the composition model:
 
-| Behaviour                  | Description                                                                                                                                                          |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Parent isolation**       | The parent does not know the child is paused — it was already waiting for the child result. The [isolation property](#communication-across-boundaries) is preserved. |
-| **Concurrent work**        | An Orchestrator can dispatch non-gated tool calls while a gated tool call awaits approval. Work proceeds in parallel where possible.                                 |
-| **Cascading checkpoint**   | If the child hibernates during a long pause, it signals the parent, which may also hibernate. See [Persistence](hitl/persistence.md).                                |
-| **Cascading cancellation** | If the human rejects, the rejection is internalized within the child. The parent sees a normal result or error — not a special "rejected" outcome.                   |
+| Behaviour                     | Description                                                                                                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Parent isolation**          | The parent does not know the child is paused — it was already waiting for the child result. The [isolation property](#communication-across-boundaries) is preserved. |
+| **Concurrent work**           | An Orchestrator can dispatch non-gated tool calls while a gated tool call awaits approval. Work proceeds in parallel where possible.                                 |
+| **FanOut partial completion** | A [FanOutNode](nodes/README.md#fanoutnode) tracks completed and suspended branches independently. Merge happens when all branches resolve.                           |
+| **Cascading checkpoint**      | If the child hibernates during a long pause, it signals the parent, which may also hibernate. See [Persistence](hitl/persistence.md).                                |
+| **Cascading cancellation**    | If a suspension is rejected or cancelled, the effect is internalized within the child. The parent sees a normal result or error — not a special outcome.             |
 
-For the complete analysis of HITL across nested agent trees, including race
-conditions and timeout interactions, see
+For the complete analysis of suspension across nested agent trees, including race
+conditions, timeout interactions, and FanOut partial completion, see
 [Nested Propagation](hitl/nested-propagation.md).
 
 ## Composition vs. Jido.Exec.Chain

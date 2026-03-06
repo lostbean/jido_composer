@@ -198,32 +198,83 @@ identity) is mapped to a single morphism in the outer category. The functor
 preserves composition and identity — the inner workflow's sequential pipeline
 appears as an atomic operation to the parent.
 
+All node types — including [AgentNode](nodes/README.md#agentnode) — satisfy the
+morphism contract via `run/3`. An AgentNode in sync mode delegates to the
+child's `run_sync` or `query_sync` function, producing a valid
+`{:ok, context}` result. This ensures the monoid closes: `f >>> g` works for
+all node type combinations, and [FanOutNode](nodes/README.md#fanoutnode)
+branches can contain AgentNodes.
+
+## Environment Propagation as Reader Monad
+
+[Context](nodes/context-flow.md) carries three layers: ambient, working, and
+fork functions. This maps to a **Reader monad transformer** stacked on the
+existing Kleisli structure:
+
+```
+Node : ReaderT Env (Result Ctx)
+```
+
+- **Ambient** = Reader environment `r`. Flows via `ask`, never modified by
+  nodes.
+- **Fork** = natural transformation `eta: F_parent -> F_child` at the functorial
+  embedding boundary (AgentNode spawns child). Transforms ambient at each level.
+- **Working** = existing endomorphism monoid, unchanged.
+
+The fork functions are **natural transformations** applied at agent boundaries.
+They transform the ambient environment when entering a new functorial embedding
+— for example, creating a child OTel span from a parent span. Fork functions
+use MFA tuples (not closures) for serializability.
+
+## Suspension as Partial Morphism
+
+A node that suspends (for human input, rate limits, or async completion) is a
+**partial morphism**: it may not produce a result immediately. The suspension
+carries metadata about how and when to resume. On resumption, the computation
+completes and the morphism is finalized. The composition layer tracks the
+suspended state and reconnects the morphism chain when the result arrives.
+
+## Typed Output and Monoidal Closure
+
+Different node types produce different output shapes: ActionNodes produce maps,
+Orchestrators produce text, object-mode generation produces structured data. The
+[NodeIO envelope](nodes/typed-io.md) wraps output with type metadata. The
+`to_map/1` function is a **natural transformation** from the typed envelope back
+to the map category, preserving monoidal structure. This ensures the monoid
+closes even when composing nodes with heterogeneous output types.
+
 ## Summary
 
-| Concept              | Category Theory                 | jido_composer Representation                                                  |
-| -------------------- | ------------------------------- | ----------------------------------------------------------------------------- |
-| Node                 | Morphism `A -> A`               | `Node.run(ctx) :: {:ok, ctx}`                                                 |
-| Sequential pipe      | Composition `f >>> g`           | FSM transitions: `state_a -> state_b -> state_c`                              |
-| Context accumulation | Monoidal operation              | Scoped `deep_merge` — each node writes under its own key                      |
-| Error handling       | Kleisli category (Result monad) | `{:error, reason}` short-circuits; `{:_, :error} => :failed`                  |
-| Branching            | Coproduct / copairing           | Outcome atoms + FSM transition table                                          |
-| Parallel execution   | Product / fan-out (`&&&`)       | [FanOutNode](nodes/README.md#fanoutnode) — concurrent branches, merge results |
-| Pass-through         | Identity morphism               | `fn ctx -> {:ok, ctx} end`                                                    |
-| Deterministic flow   | Concrete morphism chain         | Workflow (compile-time FSM)                                                   |
-| Dynamic composition  | Free category                   | Orchestrator (LLM selects morphisms at runtime)                               |
-| Streaming            | F-coalgebra / unfold            | AgentNode with `mode: :streaming`                                             |
-| Nesting              | Functor between categories      | An agent running its own Workflow is a single morphism to the parent          |
+| Concept              | Category Theory                 | jido_composer Representation                                                         |
+| -------------------- | ------------------------------- | ------------------------------------------------------------------------------------ |
+| Node                 | Morphism `A -> A`               | `Node.run(ctx) :: {:ok, ctx}` — all node types satisfy this                          |
+| Sequential pipe      | Composition `f >>> g`           | FSM transitions: `state_a -> state_b -> state_c`                                     |
+| Context accumulation | Monoidal operation              | Scoped `deep_merge` — each node writes under its own key                             |
+| Error handling       | Kleisli category (Result monad) | `{:error, reason}` short-circuits; `{:_, :error} => :failed`                         |
+| Branching            | Coproduct / copairing           | Outcome atoms + FSM transition table                                                 |
+| Parallel execution   | Product / fan-out (`&&&`)       | [FanOutNode](nodes/README.md#fanoutnode) — concurrent branches, merge results        |
+| Pass-through         | Identity morphism               | `fn ctx -> {:ok, ctx} end`                                                           |
+| Deterministic flow   | Concrete morphism chain         | Workflow (compile-time FSM)                                                          |
+| Dynamic composition  | Free category                   | Orchestrator (LLM selects morphisms at runtime)                                      |
+| Streaming            | F-coalgebra / unfold            | AgentNode with `mode: :streaming`                                                    |
+| Nesting              | Functor between categories      | AgentNode — inner agent is a single morphism to the parent                           |
+| Environment          | Reader monad                    | [Ambient context](nodes/context-flow.md#context-layers) — read-only, propagates down |
+| Boundary transform   | Natural transformation          | Fork functions — MFA tuples applied at agent boundaries                              |
+| Suspension           | Partial morphism                | Generalized [suspension](hitl/README.md#generalized-suspension) for any reason       |
+| Type adaptation      | Natural transformation          | [NodeIO](nodes/typed-io.md) `to_map/1` — typed envelope to map                       |
 
 ## Laws That Must Hold
 
 These are not just theoretical — they should be verified in property-based
 tests:
 
-| Law                      | Statement                                       | Test Strategy                                                           |
-| ------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------- |
-| **Identity**             | `id >>> f = f = f >>> id`                       | A pass-through node before or after any node does not change the result |
-| **Associativity**        | `(f >>> g) >>> h = f >>> (g >>> h)`             | Grouping does not matter for sequential composition                     |
-| **Left zero**            | `error >>> f = error`                           | An error node followed by anything still produces the error             |
-| **Merge associativity**  | `merge(merge(a, b), c) = merge(a, merge(b, c))` | Context accumulation is associative                                     |
-| **Merge identity**       | `merge(%{}, a) = a`                             | Empty context is identity                                               |
-| **Outcome preservation** | Composing nodes preserves outcome semantics     | `:ok` from node A feeds into node B; `:error` short-circuits            |
+| Law                       | Statement                                       | Test Strategy                                                           |
+| ------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------- |
+| **Identity**              | `id >>> f = f = f >>> id`                       | A pass-through node before or after any node does not change the result |
+| **Associativity**         | `(f >>> g) >>> h = f >>> (g >>> h)`             | Grouping does not matter for sequential composition                     |
+| **Left zero**             | `error >>> f = error`                           | An error node followed by anything still produces the error             |
+| **Merge associativity**   | `merge(merge(a, b), c) = merge(a, merge(b, c))` | Context accumulation is associative                                     |
+| **Merge identity**        | `merge(%{}, a) = a`                             | Empty context is identity                                               |
+| **Outcome preservation**  | Composing nodes preserves outcome semantics     | `:ok` from node A feeds into node B; `:error` short-circuits            |
+| **Functor embedding**     | Inner agent as single outer morphism            | AgentNode.run/3 produces `{:ok, ctx}` for any agent type                |
+| **Environment read-only** | Reader environment is never modified by nodes   | Ambient context unchanged by child execution                            |

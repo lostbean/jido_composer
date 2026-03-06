@@ -1,33 +1,51 @@
 # Persistence
 
-When a flow suspends for human input, the pause may last seconds or months.
-This document describes how agent state is preserved across long pauses and
-how flows resume after process termination.
+When a flow [suspends](README.md#generalized-suspension) for any reason — human
+input, rate limits, async completion, external jobs — the pause may last
+milliseconds or months. This document describes how agent state is preserved
+across pauses and how flows resume after process termination.
 
-## Hybrid Lifecycle Strategy
+## Three-Tier Resource Management
+
+The persistence model has three tiers, each trading memory for resume latency:
 
 ```mermaid
 stateDiagram-v2
-    state "Live Process" as live
-    state "Hibernated (checkpointed)" as hibernate
+    state "Live Wait" as live
+    state "OTP Hibernate" as otp
+    state "Full Checkpoint" as checkpoint
     state "Resumed" as resumed
 
     [*] --> live : flow suspends
-    live --> live : short wait (< hibernate_after)
-    live --> hibernate : hibernate_after fires
     live --> resumed : resume signal arrives quickly
-    hibernate --> resumed : resume signal arrives (thaw + resume)
+    live --> otp : hibernate_after (short)
+    otp --> resumed : resume signal arrives
+    otp --> checkpoint : checkpoint_after (longer)
+    checkpoint --> resumed : thaw + resume
     resumed --> [*] : flow continues
 ```
 
-| Phase      | Process State                      | Resource Cost           | Resume Latency            |
-| ---------- | ---------------------------------- | ----------------------- | ------------------------- |
-| Live wait  | GenServer alive, `:waiting` status | Memory for agent struct | Instant (signal delivery) |
-| Hibernated | Process stopped, state in storage  | Zero (storage only)     | Thaw + process start      |
+| Tier                | Trigger                              | Process alive?     | Memory            | Resume Latency  |
+| ------------------- | ------------------------------------ | ------------------ | ----------------- | --------------- |
+| **Live wait**       | Suspension starts                    | Yes                | Full agent struct | Instant         |
+| **OTP hibernate**   | `hibernate_after` (short, e.g. 30s)  | Yes (minimal heap) | GC'd, compressed  | Sub-millisecond |
+| **Full checkpoint** | `checkpoint_after` (longer, e.g. 5m) | No (stopped)       | Zero (on disk)    | Thaw + start    |
 
-The `hibernate_after` threshold (default: 5 minutes) controls the transition
-from live wait to hibernation. When the threshold fires, the strategy emits
-directives to checkpoint state and stop the process. A shorter threshold saves
+### OTP Hibernate
+
+Erlang's `:proc_lib.hibernate/3` compresses the process heap. The process
+remains alive and can receive messages, but uses minimal memory. This is the
+middle tier — faster than full checkpoint for moderate waits, cheaper than
+keeping full state in memory.
+
+The Suspend directive's `hibernate` field controls this: `true` for immediate
+OTP hibernate, `%{after: ms}` for delayed hibernate.
+
+### Full Checkpoint
+
+When `checkpoint_after` fires (or `hibernate_after` in the original two-tier
+model), the strategy emits directives to checkpoint state via
+`Jido.Persist.hibernate/2` and stop the process. A shorter threshold saves
 memory at the cost of resume latency; a longer one favours responsiveness.
 
 ## What Gets Checkpointed
@@ -36,13 +54,16 @@ The entire agent state — including strategy state under `__strategy__` — is
 persisted via `Jido.Persist.hibernate/2`. The checkpoint captures the logical
 state of the computation at the moment of suspension.
 
-| Data                                        | Location                            | Serializable?                                                   |
-| ------------------------------------------- | ----------------------------------- | --------------------------------------------------------------- |
-| Machine status, context, history            | `__strategy__.machine`              | Yes (atoms, maps, timestamps)                                   |
-| Orchestrator conversation, tools, iteration | `__strategy__.*`                    | Yes (LLM module must ensure conversation state is serializable) |
-| Pending ApprovalRequest                     | `__strategy__.pending_hitl_request` | Yes (no PIDs)                                                   |
-| Execution thread                            | Stored separately via Thread        | Yes (append-only log)                                           |
-| Child process PIDs                          | `__parent__`, AgentServer children  | **No** — replaced by ChildRef                                   |
+| Data                                        | Location                           | Serializable?                                                   |
+| ------------------------------------------- | ---------------------------------- | --------------------------------------------------------------- |
+| Machine status, context, history            | `__strategy__.machine`             | Yes (atoms, maps, timestamps)                                   |
+| Orchestrator conversation, tools, iteration | `__strategy__.*`                   | Yes (LLM module must ensure conversation state is serializable) |
+| Pending Suspension                          | `__strategy__.pending_suspension`  | Yes (no PIDs, no closures)                                      |
+| FanOut state (completed + suspended)        | `__strategy__.pending_fan_out`     | Yes (results, branch names, Suspension structs)                 |
+| Fork functions                              | `Context.fork_fns`                 | Yes (MFA tuples by design)                                      |
+| Approval policy (closure)                   | Orchestrator state                 | **No** — stripped on checkpoint, reattached from DSL on restore |
+| Execution thread                            | Stored separately via Thread       | Yes (append-only log)                                           |
+| Child process PIDs                          | `__parent__`, AgentServer children | **No** — replaced by ChildRef                                   |
 
 ## ParentRef PID Handling
 
@@ -58,15 +79,18 @@ checkpoint/restore.
 ## ChildRef: Serializable Child References
 
 The strategy layer never stores raw PIDs. When checkpointing, process-level
-references are replaced with serializable `ChildRef` structs:
+references are replaced with serializable `ChildRef` structs. ChildRef is a
+top-level Composer concept (not HITL-specific) since any suspension reason
+requires serializable child tracking.
 
-| Field            | Type         | Purpose                                              |
-| ---------------- | ------------ | ---------------------------------------------------- |
-| `agent_module`   | `module()`   | The child's agent module (for re-spawning)           |
-| `agent_id`       | `String.t()` | The child's unique ID                                |
-| `tag`            | `term()`     | The tag used for parent-child tracking               |
-| `checkpoint_key` | `term()`     | Storage key for the child's own checkpoint           |
-| `status`         | atom         | `:running` \| `:paused` \| `:completed` \| `:failed` |
+| Field            | Type                | Purpose                                                 |
+| ---------------- | ------------------- | ------------------------------------------------------- |
+| `agent_module`   | `module()`          | The child's agent module (for re-spawning)              |
+| `agent_id`       | `String.t()`        | The child's unique ID                                   |
+| `tag`            | `term()`            | The tag used for parent-child tracking                  |
+| `checkpoint_key` | `term()`            | Storage key for the child's own checkpoint              |
+| `suspension_id`  | `String.t()` \| nil | Links to the Suspension that caused this child to pause |
+| `status`         | atom                | `:running` \| `:paused` \| `:completed` \| `:failed`    |
 
 On resume, the strategy emits a SpawnAgent directive with the `checkpoint_key`,
 telling the runtime to restore the child from its checkpoint rather than
@@ -76,16 +100,20 @@ creating a fresh agent.
 
 A Composer checkpoint extends the base `Jido.Persist` format:
 
-| Field                  | Source       | Purpose                                            |
-| ---------------------- | ------------ | -------------------------------------------------- |
-| `version`              | Jido.Persist | Schema version for migration                       |
-| `checkpoint_schema`    | Composer     | `:composer_workflow` or `:composer_orchestrator`   |
-| `agent_module`         | Jido.Persist | The agent's module                                 |
-| `id`                   | Jido.Persist | The agent's unique ID                              |
-| `status`               | Composer     | `:hibernated` \| `:resuming` \| `:resumed`         |
-| `state`                | Jido.Persist | Full `agent.state` including `__strategy__`        |
-| `thread`               | Jido.Persist | Thread pointer `{id, rev}`                         |
-| `children_checkpoints` | Composer     | Map of `tag => checkpoint_key` for nested children |
+| Field                  | Source       | Purpose                                                             |
+| ---------------------- | ------------ | ------------------------------------------------------------------- |
+| `version`              | Jido.Persist | Schema version for migration (current: 2)                           |
+| `checkpoint_schema`    | Composer     | `:composer_v2`                                                      |
+| `agent_module`         | Jido.Persist | The agent's module                                                  |
+| `id`                   | Jido.Persist | The agent's unique ID                                               |
+| `status`               | Composer     | `:hibernated` \| `:resuming` \| `:resumed`                          |
+| `state`                | Jido.Persist | Full `agent.state` including `__strategy__`                         |
+| `thread`               | Jido.Persist | Thread pointer `{id, rev}`                                          |
+| `children_checkpoints` | Composer     | Map of `tag => ChildRef` for nested children (with checkpoint keys) |
+
+The strategy state within the checkpoint includes `pending_suspension` (the
+active Suspension struct, if any) and `pending_fan_out` (completed + suspended
+branch state for in-progress fan-outs). Both are fully serializable.
 
 ## Serialization Format
 
@@ -96,6 +124,46 @@ preserves atoms, module references, and nested data structures natively.
 JSON and MsgPack serialization (via jido_signal) are available for export but
 are not the primary checkpoint format, as they require atom-to-string mapping
 and lose type fidelity.
+
+### Large Conversation Handling
+
+Orchestrator conversations can grow to 100KB+. The default approach is eager
+serialization with `:compressed`, which typically achieves 3-5x compression on
+text-heavy data.
+
+For conversations exceeding a configurable threshold (e.g., 1MB), a
+split-storage escape hatch stores the conversation separately under a secondary
+key. The checkpoint stores a reference instead of the full conversation. On
+restore, the conversation is fetched separately and reattached. This is an
+optimization for the persistence layer, not a requirement — the default is
+eager serialization.
+
+## Cascading Checkpoint Protocol
+
+When a nested agent suspends and its `hibernate_after` or `checkpoint_after`
+fires, the cascade propagates inside-out:
+
+```mermaid
+sequenceDiagram
+    participant Parent as Parent Agent
+    participant Child as Child Agent
+    participant Store as Storage
+
+    Note over Child: Suspension → hibernate_after fires
+    Child->>Store: Checkpoint (strategy state + pending suspension)
+    Child->>Parent: Signal: composer.child.hibernated
+    Note over Child: Process stops
+    Note over Parent: Receives hibernation signal
+    Parent->>Parent: Update ChildRef: status → :paused, checkpoint_key set
+    Note over Parent: Parent's own hibernate_after fires (if configured)
+    Parent->>Store: Checkpoint (strategy state + ChildRef entries)
+    Note over Parent: Process stops
+```
+
+The child checkpoints first because it holds the suspension-specific state. The
+parent then records the child's hibernation in its ChildRef and may checkpoint
+itself independently. The parent does NOT checkpoint just because the child
+did — it only checkpoints when its own threshold fires.
 
 ## Top-Down Resume Protocol
 
@@ -111,23 +179,24 @@ sequenceDiagram
     Ext->>Store: Thaw parent agent
     Store-->>Ext: Parent agent struct
     Ext->>Parent: Start AgentServer
-    Note over Parent: Detects pending_child with ChildRef
+    Note over Parent: Detects ChildRef with status :paused
     Parent->>Store: Thaw child agent (via checkpoint_key)
     Store-->>Parent: Child agent struct
     Parent->>Child: SpawnAgent (from checkpoint)
     Child-->>Parent: child_started
-    Ext->>Child: Deliver HITL response signal
+    Ext->>Child: Deliver resume signal (suspend_resume)
     Child->>Child: Resume execution
     Child->>Parent: emit_to_parent(result)
-    Parent->>Parent: Continue workflow
+    Parent->>Parent: Continue flow
 ```
 
 1. The outermost agent is thawed first and started in a new AgentServer
 2. The strategy inspects its `ChildRef` entries and re-spawns children from
-   their checkpoints
+   their checkpoints (those with `status: :paused`)
 3. Each child is started with a fresh PID and a new `__parent__` reference
    pointing to the (new) parent PID
-4. The HITL response signal is delivered to the innermost suspended agent
+4. The resume signal is delivered to the innermost suspended agent (this may be
+   a HITL response, a rate-limit retry, or any other resume trigger)
 5. Results propagate upward through the normal `emit_to_parent` mechanism
 
 ## Idempotent Resume
@@ -186,16 +255,38 @@ replay on resume:
 
 ## External Timeout Management
 
-`Schedule` directives do not survive process death. For HITL flows with long
-timeouts, the timeout must be managed externally:
+`Schedule` directives do not survive process death. For long-lived suspensions
+(any reason, not just HITL), timeouts must be managed externally:
 
-1. The ApprovalRequest includes a `timeout` and `created_at`
+1. The Suspension struct includes `timeout` and `created_at`
 2. An external scheduler (cron, database trigger, separate process) checks for
-   expired requests
+   expired suspensions
 3. On expiry: if the agent is alive, deliver the timeout signal directly; if
    hibernated, thaw and deliver
-4. If the agent's checkpoint no longer exists, mark the request as expired
+4. If the agent's checkpoint no longer exists, mark the suspension as expired
 
 This places timeout management outside jido_composer, which is appropriate
 since the library is transport-agnostic and does not mandate a specific
 scheduling infrastructure.
+
+## Targeted Resume
+
+Resuming a specific suspended agent in an arbitrarily deep tree requires
+addressing:
+
+1. Look up the agent by module + ID (via registry or storage)
+2. If alive, deliver the resume signal directly
+3. If checkpointed, thaw from storage, start in AgentServer, then deliver
+4. The Suspension's `id` field ensures the correct suspension is matched
+
+The parent does not need to be involved in targeted resume — the resume signal
+goes directly to the suspended agent. Results propagate upward through the
+normal `emit_to_parent` mechanism.
+
+## Closure Stripping
+
+Some strategy state fields contain closures that cannot be serialized (e.g.,
+`approval_policy` in the Orchestrator). On checkpoint, these are stripped (set
+to nil). On restore, they are reattached from the agent module's DSL
+configuration (`strategy_opts`). Convention: closures in strategy state must
+be re-derivable from module metadata.

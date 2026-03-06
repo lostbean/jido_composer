@@ -84,6 +84,8 @@ use Jido.Composer.Workflow,
   transitions: map           — FSM transition rules
   initial:     atom          — starting state
   terminal:    list(atom)    — terminal states (default: [:done, :failed])
+  ambient:     list(atom)    — context keys extracted into the ambient layer
+  fork_fns:    keyword       — MFA tuples applied at agent boundaries
 ```
 
 ### Generated Functions
@@ -123,6 +125,8 @@ use Jido.Composer.Orchestrator,
   output_schema:   map           — JSON Schema for object generation modes (default: nil)
   llm_opts:        keyword       — additional options passed through to req_llm (default: [])
   req_options:     keyword       — opaque Req HTTP options forwarded to LLMAction (default: [])
+  ambient:         list(atom)    — context keys extracted into the ambient layer
+  fork_fns:        keyword       — MFA tuples applied at agent boundaries
 ```
 
 ### Generated Functions

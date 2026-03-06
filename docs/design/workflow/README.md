@@ -40,8 +40,9 @@ graph TB
    [Node](../nodes/README.md) in the [Machine](state-machine.md)
 3. For ActionNodes, the strategy emits a RunInstruction directive
 4. For AgentNodes, the strategy emits a SpawnAgent directive
-5. For [FanOutNodes](../nodes/README.md#fanoutnode), the strategy executes all
-   branches concurrently and merges results
+5. For [FanOutNodes](../nodes/README.md#fanoutnode), the strategy emits
+   [FanOutBranch](strategy.md#execution-flow-fanoutnode) directives for each
+   branch, collects results, and merges them
 6. The runtime executes the directive and routes the result back
 7. The strategy [deep-merges](../nodes/context-flow.md) the result into the
    machine's context

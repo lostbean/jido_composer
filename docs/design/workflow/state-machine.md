@@ -25,14 +25,14 @@ classDiagram
     Machine --> "0..*" Node : binds states to
 ```
 
-| Field             | Type                            | Purpose                                                      |
-| ----------------- | ------------------------------- | ------------------------------------------------------------ |
-| `status`          | atom                            | Current state name (e.g., `:extract`, `:done`)               |
-| `nodes`           | `%{atom => Node.t()}`           | Maps each state name to its bound [Node](../nodes/README.md) |
-| `transitions`     | `%{{atom, atom} => atom}`       | Maps `{state, outcome}` to next state                        |
-| `terminal_states` | `MapSet.t()`                    | States where execution stops (default: `:done`, `:failed`)   |
-| `context`         | map                             | Accumulated context flowing through the pipeline             |
-| `history`         | `[{state, outcome, timestamp}]` | Audit trail of state transitions                             |
+| Field             | Type                            | Purpose                                                                                                                          |
+| ----------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `status`          | atom                            | Current state name (e.g., `:extract`, `:done`)                                                                                   |
+| `nodes`           | `%{atom => Node.t()}`           | Maps each state name to its bound [Node](../nodes/README.md)                                                                     |
+| `transitions`     | `%{{atom, atom} => atom}`       | Maps `{state, outcome}` to next state                                                                                            |
+| `terminal_states` | `MapSet.t()`                    | States where execution stops (default: `:done`, `:failed`)                                                                       |
+| `context`         | `Context.t()` or `map()`        | [Layered context](../nodes/context-flow.md#context-layers) flowing through the pipeline. Bare maps are accepted and auto-wrapped |
+| `history`         | `[{state, outcome, timestamp}]` | Audit trail of state transitions                                                                                                 |
 
 ## Operations
 

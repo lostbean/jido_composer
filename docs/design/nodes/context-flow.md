@@ -139,13 +139,96 @@ When the LLM calls the same tool multiple times across iterations, the second
 call's result overwrites the first under the same scope key. The tool
 implementation can read its previous output from context and append if needed.
 
+## Context Layers
+
+Context carries three distinct layers, each with different propagation semantics:
+
+```mermaid
+graph TB
+    subgraph "Context"
+        A["Ambient<br/>(read-only)"]
+        W["Working<br/>(mutable, scoped)"]
+        F["Fork Functions<br/>(MFA tuples)"]
+    end
+
+    A -->|"flows down unchanged"| Child["Child Agent"]
+    W -->|"scoped deep merge"| Child
+    F -->|"applied at boundary"| Child
+```
+
+| Layer        | Mutability | Scope               | Examples                            |
+| ------------ | ---------- | ------------------- | ----------------------------------- |
+| **Ambient**  | Read-only  | Propagates downward | `org_id`, `user_id`, `trace_id`     |
+| **Working**  | Mutable    | Scoped deep merge   | Node results, accumulated data      |
+| **Fork Fns** | Applied    | At agent boundaries | OTel span creation, correlation IDs |
+
+### Ambient
+
+Data that must survive the entire composition tree without modification. Nodes
+read ambient data but cannot change it. The composition layer is the sole
+gatekeeper — node results never modify ambient context.
+
+Ambient keys are extracted from the initial context during workflow/orchestrator
+start. They are declared in the DSL configuration.
+
+### Working
+
+The existing scoped deep merge model described above. Each node's output is
+scoped under its name and merged into the working layer. This is where all
+node result accumulation happens.
+
+### Fork Functions
+
+Named MFA tuples applied at agent boundaries (when a SpawnAgent directive
+creates a child). Fork functions transform the ambient context for the child —
+for example, creating a child OTel span from the parent span, or generating a
+derived correlation ID.
+
+Fork functions use MFA tuples (not closures) for serializability. They receive
+`(ambient, working)` as arguments and return the transformed ambient map.
+
+| Property            | Guarantee                                                                                                                     |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Direction**       | Ambient flows downward only — children never modify parent                                                                    |
+| **Serializable**    | MFA tuples survive checkpoint/restore                                                                                         |
+| **At boundaries**   | Fork runs only at SpawnAgent, not within a single agent                                                                       |
+| **FanOut branches** | Branches share ambient without fork (they are products, not functor embeddings). Fork runs only when a branch is an AgentNode |
+
+### How Nodes See Context
+
+Nodes still receive a flat `map()`. The Node behaviour does not change. The
+composition layer flattens the layered context before passing it to a node,
+placing ambient data under the reserved key `__ambient__`:
+
+```
+%{
+  __ambient__: %{org_id: "acme", trace_id: "abc"},
+  extract: %{records: [...]},
+  transform: %{cleaned: [...]}
+}
+```
+
+Nodes that need ambient data access it via `context.__ambient__.org_id`. A
+node's result returning `%{__ambient__: modified}` is scoped under its state
+name (`%{my_state: %{__ambient__: modified}}`), leaving the real ambient
+untouched.
+
+For the categorical treatment of context layers, see
+[Foundations — Environment Propagation](../foundations.md#environment-propagation-as-reader-monad).
+
 ## Context Across Agent Boundaries
 
-When an [AgentNode](README.md#agentnode) executes, the current context is
-serialized into a [Signal](../glossary.md#signal) payload and sent to the child
-agent. The child processes this context through its own strategy, then sends
-the result back as a signal to the parent. The parent stores the child's result
-under the node's scope key in its own context.
+When an [AgentNode](README.md#agentnode) executes, the context crosses a process
+boundary. The composition layer:
 
-This means context crosses process boundaries via signal payloads. The context
-must therefore be serializable (plain maps, no PIDs or references).
+1. Runs [fork functions](#fork-functions) to transform ambient for the child
+2. Serializes the forked context into a [Signal](../glossary.md#signal) payload
+3. Sends the signal to the child agent
+
+The child processes this context through its own strategy, then sends the result
+back as a signal to the parent. The parent stores the child's result under the
+node's scope key in its **working** context.
+
+Context must be serializable (plain maps, no PIDs or references). Fork functions
+use MFA tuples precisely for this reason — closures would not survive
+serialization.

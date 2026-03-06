@@ -27,28 +27,31 @@ shared by all participants.
 
 - [Nodes](nodes/README.md) — The uniform `context -> context` interface all
   participants implement
-  - [Context Flow](nodes/context-flow.md) — Context accumulation and the
-    monoidal merge model
+  - [Context Flow](nodes/context-flow.md) — Context accumulation, the monoidal
+    merge model, and context layering (ambient/working/fork)
+  - [Typed I/O](nodes/typed-io.md) — NodeIO envelope for heterogeneous output
+    types, preserving monoidal closure
 - [Workflow](workflow/README.md) — Deterministic FSM-based pipelines
   - [State Machine](workflow/state-machine.md) — The Machine struct, transitions,
     and terminal states
-  - [Strategy](workflow/strategy.md) — Workflow strategy lifecycle and directive
-    flow
+  - [Strategy](workflow/strategy.md) — Workflow strategy lifecycle, directive
+    flow, and directive-based FanOut
 - [Orchestrator](orchestrator/README.md) — LLM-driven dynamic composition
   - [LLM Integration](orchestrator/llm-integration.md) — LLMAction calling
     ReqLLM directly, generation modes, and parameter flow
   - [Strategy](orchestrator/strategy.md) — Orchestrator strategy lifecycle and
     ReAct loop
-- [Human-in-the-Loop](hitl/README.md) — Human decision gates, approval
-  workflows, and long-pause persistence
+- [Suspension and HITL](hitl/README.md) — Generalized suspension (human input,
+  rate limits, async completion), approval workflows, and long-pause persistence
   - [HumanNode](hitl/human-node.md) — The Node type for human decisions
   - [Approval Lifecycle](hitl/approval-lifecycle.md) — Request/response protocol
   - [Strategy Integration](hitl/strategy-integration.md) — Suspend and resume in
-    Workflow and Orchestrator strategies
-  - [Persistence](hitl/persistence.md) — Checkpointing, serialization, and
-    hibernate/thaw across long pauses
-  - [Nested Propagation](hitl/nested-propagation.md) — HITL across recursive
-    composition, concurrent work, and cascading cancellation
+    Workflow and Orchestrator strategies, FanOut partial completion
+  - [Persistence](hitl/persistence.md) — Three-tier resource management,
+    checkpointing, serialization, and hibernate/thaw
+  - [Nested Propagation](hitl/nested-propagation.md) — Suspension across
+    recursive composition, FanOut branches, concurrent work, and cascading
+    cancellation
 
 ## Testing
 

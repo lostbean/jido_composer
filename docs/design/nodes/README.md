@@ -20,16 +20,22 @@ for driving [Workflow](../workflow/README.md) transitions.
 
 ## Callbacks
 
-| Callback        | Returns            | Purpose                                            |
-| --------------- | ------------------ | -------------------------------------------------- |
-| `run/3`         | result (see above) | Execute the node's logic (struct, context, opts)   |
-| `name/1`        | `String.t()`       | Human-readable identifier (receives struct)        |
-| `description/1` | `String.t()`       | What this node does (receives struct)              |
-| `schema/1`      | keyword \| nil     | Input parameter schema (receives struct, optional) |
+| Callback        | Returns            | Required | Purpose                                          |
+| --------------- | ------------------ | -------- | ------------------------------------------------ |
+| `run/3`         | result (see above) | Yes      | Execute the node's logic (struct, context, opts) |
+| `name/1`        | `String.t()`       | Yes      | Human-readable identifier (receives struct)      |
+| `description/1` | `String.t()`       | Yes      | What this node does (receives struct)            |
+| `schema/1`      | keyword \| nil     | No       | Input parameter schema (receives struct)         |
+| `input_type/1`  | io type or `:any`  | No       | Expected input type (for compile-time warnings)  |
+| `output_type/1` | io type or `:any`  | No       | Produced output type (for compile-time warnings) |
 
 All callbacks receive the node struct as first argument, enabling per-instance
 configuration (e.g., different options for the same action module in different
 workflow states).
+
+The optional `input_type/1` and `output_type/1` callbacks declare the node's I/O
+types for compile-time compatibility checking. See
+[Typed I/O](typed-io.md#optional-type-declarations).
 
 ## Node Types
 
@@ -70,9 +76,11 @@ classDiagram
 
     class FanOutNode {
         name : String
-        branches : list(Node)
+        branches : map(atom => Node)
         merge : function | :deep_merge
         timeout : integer | :infinity
+        on_error : :fail_fast | :collect_partial
+        max_concurrency : integer | :infinity
         +new(opts)
     }
 
@@ -132,6 +140,25 @@ the child agent's FSM states should trigger an event emission to the parent.
 This allows the parent to observe intermediate progress without waiting for full
 completion.
 
+#### Dual-Path Execution
+
+AgentNode has two execution paths that coexist:
+
+| Path                 | Used by                                  | How                                             |
+| -------------------- | ---------------------------------------- | ----------------------------------------------- |
+| `run/3` (sync)       | FanOutNode branches, `run_sync`, testing | Delegates to child's `run_sync` or `query_sync` |
+| SpawnAgent directive | AgentServer runtime, async, streaming    | Full process lifecycle via signals              |
+
+In sync mode, `run/3` delegates to the child agent's existing `run_sync/2` or
+`query_sync/3` functions (which the DSLs generate). This ensures AgentNode
+satisfies the [Node contract](#contract) — it is a valid morphism in the
+composition monoid. See
+[Foundations — Nesting](../foundations.md#nesting-as-functorial-embedding).
+
+The dual-path principle means FanOutNode branches can be AgentNodes (the branch
+calls `run/3`), while the strategy can still use SpawnAgent for process-based
+lifecycle management.
+
 **Sync mode** is the primary mode for [Workflow](../workflow/README.md)
 composition:
 
@@ -183,41 +210,77 @@ appears as a single state to the FSM but internally spawns multiple branches.
 
 FanOutNode carries per-instance configuration:
 
-| Field      | Type                                  | Purpose                                                        |
-| ---------- | ------------------------------------- | -------------------------------------------------------------- |
-| `name`     | `String.t()`                          | Node identifier                                                |
-| `branches` | `[Node.t()]`                          | Child nodes to execute concurrently                            |
-| `merge`    | `(results -> map())` \| `:deep_merge` | Strategy for combining branch results (default: `:deep_merge`) |
-| `timeout`  | `pos_integer()` \| `:infinity`        | Maximum wait time for all branches (default: 30_000)           |
+| Field             | Type                                  | Purpose                                                        |
+| ----------------- | ------------------------------------- | -------------------------------------------------------------- |
+| `name`            | `String.t()`                          | Node identifier                                                |
+| `branches`        | `%{atom => Node.t()}`                 | Named child nodes to execute concurrently                      |
+| `merge`           | `(results -> map())` \| `:deep_merge` | Strategy for combining branch results (default: `:deep_merge`) |
+| `timeout`         | `pos_integer()` \| `:infinity`        | Maximum wait time for all branches (default: 30_000)           |
+| `on_error`        | `:fail_fast` \| `:collect_partial`    | Error handling policy (default: `:fail_fast`)                  |
+| `max_concurrency` | `pos_integer()` \| `:infinity`        | Maximum branches running simultaneously (default: `:infinity`) |
 
-When `run/2` is called:
+#### Directive-Based Execution
 
-1. The FanOutNode spawns all branches concurrently (via `Task.async_stream` or
-   equivalent)
-2. Each branch receives the same input context
-3. Branch results are collected and merged using the configured merge strategy
-4. The merged result is returned as the node's output
+The [Workflow Strategy](../workflow/strategy.md) decomposes FanOutNode into
+individual `FanOutBranch` directives — one per branch. This keeps the strategy
+pure (no inline `Task.async_stream`) and enables branches to be any node type,
+including AgentNodes.
+
+```mermaid
+flowchart TB
+    FO["FanOutNode<br/>(3 branches)"]
+    B1["FanOutBranch<br/>:fast_check → ActionNode"]
+    B2["FanOutBranch<br/>:analysis → AgentNode"]
+    B3["FanOutBranch<br/>:review → ActionNode"]
+    MERGE["Merge results"]
+
+    FO --> B1
+    FO --> B2
+    FO --> B3
+    B1 --> MERGE
+    B2 --> MERGE
+    B3 --> MERGE
+```
+
+| Branch type | Directive content                                       |
+| ----------- | ------------------------------------------------------- |
+| ActionNode  | RunInstruction with action module and flattened context |
+| AgentNode   | SpawnAgent with forked context (fork functions applied) |
+
+The strategy tracks pending branches and collects results as they arrive. When
+all branches complete, results are merged and the FSM transitions.
+
+#### Backpressure
+
+When `max_concurrency` is set, the strategy dispatches only that many branches
+initially and queues the rest. As branches complete, queued branches are
+dispatched. This prevents resource exhaustion when branches are expensive.
+
+#### Result Merging
 
 The default merge strategy (`:deep_merge`) scopes each branch result under the
-branch node's name, then deep-merges them into a single map:
-
-```elixir
-# Three branches: financial_review, legal_review, background_check
-# Result:
-%{
-  financial_review: %{score: 85, risk: :low},
-  legal_review: %{status: :clear, notes: "..."},
-  background_check: %{passed: true}
-}
-```
+branch name, then deep-merges into a single map. Branch results may be
+[NodeIO](typed-io.md) envelopes — each is resolved via `to_map/1` before
+merging.
 
 Custom merge functions receive the list of `{branch_name, result}` tuples and
 return a single map, enabling domain-specific aggregation (e.g., voting,
 scoring, consensus).
 
-**Error handling**: If any branch fails, the FanOutNode can be configured to
-either fail fast (return `{:error, reason}` immediately) or collect partial
-results. The default is fail-fast.
+**Error handling**: Controlled by `on_error`. In `:fail_fast` mode (default),
+the first branch error cancels remaining branches (via StopChild for agent
+branches) and the FanOutNode returns an error. In `:collect_partial` mode,
+errors are stored alongside successful results and all are passed to the merge
+function.
+
+#### Branch Suspension
+
+When a branch suspends (e.g., a HumanNode branch or a rate-limited agent), the
+strategy tracks it separately from completed and pending branches. The FanOut
+remains in progress until all non-suspended branches finish, then emits Suspend
+directives for the suspended branches. On resume, the branch contributes its
+result and the merge completes. See
+[Strategy Integration — FanOut Partial Completion](../hitl/strategy-integration.md#fanout-partial-completion).
 
 **Relationship to arrow combinators**: FanOutNode is the concrete implementation
 of the fan-out (`&&&`) combinator described in

@@ -1,34 +1,43 @@
 # Strategy Integration
 
 Both the [Workflow](../workflow/README.md) and
-[Orchestrator](../orchestrator/README.md) strategies handle HITL through the
-same suspend/resume protocol, with pattern-specific extensions.
+[Orchestrator](../orchestrator/README.md) strategies handle suspension through
+the same suspend/resume protocol, with pattern-specific extensions.
 
-## SuspendForHuman Directive
+## Suspend Directive
 
-A new [directive](../glossary.md#directive) emitted by strategies when a flow
-suspends for human input:
+The generalized Suspend [directive](../glossary.md#directive) is emitted by
+strategies when a flow suspends for any reason:
 
-| Field              | Type                  | Purpose                                                                      |
-| ------------------ | --------------------- | ---------------------------------------------------------------------------- |
-| `approval_request` | `ApprovalRequest.t()` | The fully-enriched request (see [Approval Lifecycle](approval-lifecycle.md)) |
-| `notification`     | config \| nil         | How to deliver the request (PubSub, webhook, etc.)                           |
-| `hibernate`        | `boolean()` \| config | Whether to checkpoint the agent after suspending                             |
+| Field          | Type              | Purpose                                                     |
+| -------------- | ----------------- | ----------------------------------------------------------- |
+| `suspension`   | `Suspension.t()`  | The [suspension metadata](README.md#generalized-suspension) |
+| `notification` | config \| nil     | How to deliver the notification (PubSub, webhook, etc.)     |
+| `hibernate`    | boolean \| config | Whether to hibernate the agent after suspending             |
 
 The runtime interprets this directive to:
 
-1. Deliver the ApprovalRequest through the configured notification channel
+1. Deliver the notification through the configured channel
 2. Optionally start a timeout timer via a Schedule directive
 3. Optionally hibernate the agent (see [Persistence](persistence.md))
 
+### SuspendForHuman (Convenience Wrapper)
+
+SuspendForHuman remains as a convenience constructor that builds a Suspend
+directive with `reason: :human_input` and an embedded
+[ApprovalRequest](approval-lifecycle.md). Existing code using SuspendForHuman
+continues to work unchanged.
+
 ## Signal Routes
 
-Both strategies declare routes for HITL signals:
+Both strategies declare routes for suspension signals:
 
-| Signal Type              | Target                            | Purpose                  |
-| ------------------------ | --------------------------------- | ------------------------ |
-| `composer.hitl.response` | `{:strategy_cmd, :hitl_response}` | Human's decision arrived |
-| `composer.hitl.timeout`  | `{:strategy_cmd, :hitl_timeout}`  | Approval timeout fired   |
+| Signal Type                | Target                              | Purpose                       |
+| -------------------------- | ----------------------------------- | ----------------------------- |
+| `composer.suspend.resume`  | `{:strategy_cmd, :suspend_resume}`  | Resume from any suspension    |
+| `composer.suspend.timeout` | `{:strategy_cmd, :suspend_timeout}` | Suspension timeout fired      |
+| `composer.hitl.response`   | `{:strategy_cmd, :hitl_response}`   | Human decision (legacy alias) |
+| `composer.hitl.timeout`    | `{:strategy_cmd, :hitl_timeout}`    | HITL timeout (legacy alias)   |
 
 These routes sit alongside the existing strategy routes (e.g.,
 `composer.workflow.start`, `composer.orchestrator.query`).
@@ -51,40 +60,42 @@ stateDiagram-v2
     exec --> check
     check --> trans : outcome is :ok, :error, or custom
     check --> suspend : outcome is :suspend
-    suspend --> wait : emit SuspendForHuman
-    wait --> trans : resume signal with decision
+    suspend --> wait : emit Suspend directive
+    wait --> trans : resume signal with outcome
 ```
 
-1. Extract the [ApprovalRequest](approval-lifecycle.md#approvalrequest) from
-   `context.__approval_request__`
-2. Enrich the request with flow identification (`agent_id`, `workflow_state`,
-   `node_name`)
-3. Deep-merge the remaining context into the
-   [Machine](../workflow/state-machine.md) (excluding `__approval_request__`)
-4. Set strategy status to `:waiting`
-5. Store the pending request in strategy state
-6. Emit directives: SuspendForHuman + optional Schedule for timeout
+1. Extract the Suspension (from `context.__suspension__`) or ApprovalRequest
+   (from `context.__approval_request__`, legacy path)
+2. If an ApprovalRequest, wrap it in a Suspension with `reason: :human_input`
+3. Enrich with flow identification (`agent_id`, `workflow_state`, `node_name`)
+4. Deep-merge the remaining context into the
+   [Machine](../workflow/state-machine.md)
+5. Set strategy status to `:waiting`
+6. Store the Suspension in `pending_suspension`
+7. Emit directives: Suspend + optional Schedule for timeout
 
 ### Resume Handling
 
-When `cmd(:hitl_response, response_data)` arrives:
+When `cmd(:suspend_resume, resume_data)` arrives:
 
-1. Validate the response (see [Approval Lifecycle](approval-lifecycle.md#validation-on-resume))
-2. Merge the response into Machine context
-3. Use `response.decision` as the outcome for
-   [transition lookup](../workflow/state-machine.md)
-4. Set status back to `:running`
-5. Clear the pending request
-6. Continue executing from the new state
+1. Validate the suspension ID matches `pending_suspension.id`
+2. For `:human_input` suspensions, delegate to HITL-specific validation
+   (see [Approval Lifecycle](approval-lifecycle.md#validation-on-resume))
+3. For other reasons, extract `outcome` and `data` from the resume signal
+4. Merge resume data into Machine context
+5. Use the outcome for [transition lookup](../workflow/state-machine.md)
+6. Set status back to `:running`
+7. Clear `pending_suspension`
+8. Continue executing from the new state
 
 ### Timeout Handling
 
-When `cmd(:hitl_timeout, %{request_id: id})` fires:
+When `cmd(:suspend_timeout, %{suspension_id: id})` fires:
 
-1. Verify the request is still pending (it may have been answered already)
-2. If still pending, use the HumanNode's `timeout_outcome` (default: `:timeout`)
+1. Verify the suspension is still pending (it may have been resumed already)
+2. If still pending, use the Suspension's `timeout_outcome` (default: `:timeout`)
    as the transition outcome
-3. Clear the pending request and continue
+3. Clear the pending suspension and continue
 
 ## Orchestrator Strategy
 
@@ -184,15 +195,54 @@ applies a configurable rejection policy:
 | `:cancel_siblings`             | Cancel in-flight tool calls (StopChild); generate synthetic cancel results; pass everything to LLM |
 | `:abort_iteration`             | Cancel everything; emit an error                                                                   |
 
-### HITL DSL Options
+## FanOut Partial Completion
 
-Both Workflow and Orchestrator DSL macros accept a `hitl` configuration block:
+When a [FanOutNode](../nodes/README.md#fanoutnode) branch suspends (e.g., a
+branch is a HumanNode, or a nested agent hits a rate limit), the strategy tracks
+the suspended branch separately from completed and pending branches.
 
-| Option                    | Type                           | Default              | Purpose                                                          |
-| ------------------------- | ------------------------------ | -------------------- | ---------------------------------------------------------------- |
-| `notification`            | config                         | nil                  | How to deliver ApprovalRequests (PubSub, webhook, etc.)          |
-| `hibernate`               | boolean \| config              | false                | Whether to checkpoint during long pauses                         |
-| `hibernate_after`         | `pos_integer()`                | `300_000` (5 min)    | Delay before auto-hibernate                                      |
-| `default_timeout`         | `pos_integer()` \| `:infinity` | `:infinity`          | Default timeout for all HumanNodes                               |
-| `default_timeout_outcome` | `atom()`                       | `:timeout`           | Default timeout outcome                                          |
-| `rejection_policy`        | atom                           | `:continue_siblings` | Orchestrator only: how to handle sibling tool calls on rejection |
+```mermaid
+stateDiagram-v2
+    state "FanOut Running" as running
+    state "Some Branches Suspended" as partial
+    state "All Running Done,<br/>Suspensions Pending" as waiting
+    state "All Resolved" as done
+
+    running --> partial : branch returns :suspend
+    running --> done : all branches complete
+    partial --> waiting : all running branches finish
+    waiting --> done : all suspensions resume
+```
+
+| Branch State | Meaning                              |
+| ------------ | ------------------------------------ |
+| pending      | Dispatched, awaiting result          |
+| completed    | Result received and stored           |
+| suspended    | Returned `:suspend`, awaiting resume |
+| queued       | Waiting for backpressure slot        |
+
+When all running branches finish and only suspended branches remain, the
+strategy emits a Suspend directive for each suspended branch. On resume, each
+branch's result is added to `completed_results`. When all suspended branches
+resolve, the strategy merges all results and transitions the FSM.
+
+This supports scenarios like: a FanOut with three branches where one branch
+needs human approval, one hits a rate limit, and one completes immediately. The
+completed result is stored, the rate-limited branch auto-resumes after backoff,
+and the human-approval branch waits for input. The merge happens only when all
+three have results.
+
+### DSL Options
+
+Both Workflow and Orchestrator DSL macros accept suspension configuration:
+
+| Option                    | Type                           | Default              | Purpose                                                                                  |
+| ------------------------- | ------------------------------ | -------------------- | ---------------------------------------------------------------------------------------- |
+| `notification`            | config                         | nil                  | How to deliver suspension notifications (PubSub, webhook, etc.)                          |
+| `hibernate`               | boolean \| config              | false                | Whether to checkpoint during long pauses                                                 |
+| `hibernate_after`         | `pos_integer()`                | `300_000` (5 min)    | Delay before auto-hibernate                                                              |
+| `default_timeout`         | `pos_integer()` \| `:infinity` | `:infinity`          | Default timeout for HumanNodes and other suspending nodes                                |
+| `default_timeout_outcome` | `atom()`                       | `:timeout`           | Default timeout outcome                                                                  |
+| `rejection_policy`        | atom                           | `:continue_siblings` | Orchestrator only: how to handle sibling tool calls on rejection                         |
+| `ambient`                 | `[atom()]`                     | `[]`                 | Context keys extracted into the [ambient layer](../nodes/context-flow.md#context-layers) |
+| `fork_fns`                | keyword of MFA tuples          | `[]`                 | [Fork functions](../nodes/context-flow.md#fork-functions) applied at agent boundaries    |

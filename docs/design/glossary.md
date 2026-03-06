@@ -23,11 +23,27 @@ The OTP GenServer runtime that hosts an [Agent](#agent), processes
 [Signals](#signal), executes [Directives](#directive), and manages child
 processes. Jido Composer strategies run within AgentServer.
 
+### ChildRef
+
+A serializable struct representing a child agent across process boundaries.
+Replaces raw PIDs during checkpointing. Carries `agent_module`, `agent_id`,
+`tag`, `checkpoint_key`, and `status`. Used by the
+[persistence layer](hitl/persistence.md#childref-serializable-child-references)
+for checkpoint/restore of nested agent trees.
+
 ### Context
 
 A map that flows through a chain of [Nodes](#node). Each node receives context
 as input and produces updated context as output. Context accumulates results via
-[deep merge](#deep-merge).
+[deep merge](#deep-merge). Internally structured as three
+[layers](#context-layers): ambient, working, and fork functions.
+
+### Context Layers
+
+The three-layer context model separating read-only propagation (ambient),
+mutable accumulation (working), and boundary transformations (fork functions).
+Nodes receive a flattened view — the layering is managed by the composition
+layer. See [Context Flow — Context Layers](nodes/context-flow.md#context-layers).
 
 ### Directive
 
@@ -71,14 +87,31 @@ decision atom, optional structured data, respondent identity, and timestamp.
 Delivered to the suspended flow as a [Signal](#signal). See
 [Approval Lifecycle](hitl/approval-lifecycle.md#approvalresponse).
 
+### FanOutBranch
+
+A [Directive](#directive) representing a single branch of a
+[FanOutNode](#fanoutnode). The [Workflow Strategy](workflow/strategy.md)
+decomposes a FanOutNode into individual FanOutBranch directives, each containing
+either a RunInstruction (for ActionNode branches) or a SpawnAgent (for AgentNode
+branches). This keeps the strategy pure by deferring execution to the runtime.
+
 ### FanOutNode
 
 A [Node](#node) type that executes multiple child nodes concurrently and merges
 their results. Encapsulates parallel execution behind the standard Node
 interface — the [Machine](#machine) sees a single state while multiple branches
-run simultaneously. This addresses the limitation that the Machine's single
-`status` field cannot represent two active states. See
+run simultaneously. Branches can be ActionNodes, AgentNodes, or any other Node
+type. Supports backpressure via `max_concurrency` and partial completion when
+branches [suspend](#suspension). See
 [Nodes — FanOutNode](nodes/README.md#fanoutnode).
+
+### Fork Function
+
+An MFA tuple applied at agent boundaries (SpawnAgent) to transform
+[ambient context](#context-layers) for the child. Examples include creating
+child OTel spans from parent spans, or generating derived correlation IDs. Fork
+functions use MFA tuples (not closures) for serializability. See
+[Context Flow — Fork Functions](nodes/context-flow.md#fork-functions).
 
 ### Error
 
@@ -115,8 +148,16 @@ There is no facade module and no `@behaviour` enforcement. See
 ### Machine
 
 The pure FSM data structure used by the [Workflow](#workflow) pattern. Holds
-current state, transition rules, node bindings, accumulated context, and
-execution history. See [State Machine](workflow/state-machine.md).
+current state, transition rules, node bindings, accumulated
+[context](#context-layers), and execution history. See
+[State Machine](workflow/state-machine.md).
+
+### NodeIO
+
+A typed envelope wrapping node output with type metadata (`:map`, `:text`, or
+`:object`). The `to_map/1` function converts any typed output back to a map for
+monoidal deep merge, preserving the [composition guarantees](foundations.md).
+See [Typed I/O](nodes/typed-io.md).
 
 ### Node
 
@@ -154,19 +195,38 @@ for unrouted signals. The only built-in route is `jido.agent.stop`. See
 
 ### Suspend
 
-A reserved [outcome](#outcome) (`:suspend`) returned by a
-[HumanNode](#humannode). The strategy does not look up a transition for
-`:suspend`; instead it pauses the flow, emits a SuspendForHuman
-[directive](#directive), and waits for a resume signal. See
+A reserved [outcome](#outcome) (`:suspend`) returned by any node that needs to
+pause the flow. Originally used only by [HumanNode](#humannode), now generalized
+to support any [suspension reason](#suspension) (rate limits, async completion,
+external jobs). The strategy does not look up a transition for `:suspend`;
+instead it pauses the flow, emits a Suspend [directive](#directive), and waits
+for a resume signal. See
 [Strategy Integration](hitl/strategy-integration.md).
+
+### Suspend (Directive)
+
+A generalized [Directive](#directive) emitted when a flow suspends for any
+reason. Carries a [Suspension](#suspension) struct, notification configuration,
+and hibernate flag. The runtime delivers the notification and optionally
+hibernates the agent. See
+[Strategy Integration](hitl/strategy-integration.md#suspend-directive).
 
 ### SuspendForHuman
 
-A [Directive](#directive) emitted when a flow suspends for human input. Carries
-the [ApprovalRequest](#approvalrequest), notification configuration, and
-hibernate flag. The runtime delivers the request to the configured notification
-channel. See
-[Strategy Integration](hitl/strategy-integration.md#suspendforhuman-directive).
+A convenience wrapper that builds a [Suspend directive](#suspend-directive) with
+`reason: :human_input` and an embedded
+[ApprovalRequest](#approvalrequest). Backward compatible with existing HITL
+code. See
+[Strategy Integration](hitl/strategy-integration.md#suspendforhuman-convenience-wrapper).
+
+### Suspension
+
+A serializable struct representing the metadata of a paused computation.
+Generalizes [ApprovalRequest](#approvalrequest) to cover any suspension reason:
+`:human_input`, `:rate_limit`, `:async_completion`, `:external_job`, or
+`:custom`. Carried by the [Suspend directive](#suspend-directive) and stored in
+strategy state as `pending_suspension`. See
+[HITL — Generalized Suspension](hitl/README.md#generalized-suspension).
 
 ### Snapshot
 

@@ -97,20 +97,24 @@ externally rather than through req_llm's callback mechanism.
 
 The Orchestrator DSL (`use Jido.Composer.Orchestrator`) configures:
 
-| Option            | Purpose                                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
-| `name`            | Agent name (used as tool name when nested)                                                               |
-| `description`     | What this orchestrator does (used as tool description when nested)                                       |
-| `model`           | req_llm model spec string (e.g. `"anthropic:claude-sonnet-4-20250514"`)                                  |
-| `nodes`           | List of available nodes (actions and agents)                                                             |
-| `system_prompt`   | Instructions for the LLM's decision-making                                                               |
-| `max_iterations`  | Safety limit on the ReAct loop (default: 10)                                                             |
-| `temperature`     | Sampling temperature (default: nil -- provider default)                                                  |
-| `max_tokens`      | Maximum tokens in response (default: nil -- provider default)                                            |
-| `generation_mode` | `:generate_text` \| `:generate_object` \| `:stream_text` \| `:stream_object` (default: `:generate_text`) |
-| `output_schema`   | JSON Schema for object generation modes (default: nil)                                                   |
-| `llm_opts`        | Additional options passed through to req_llm (default: `[]`)                                             |
-| `req_options`     | Opaque Req HTTP options forwarded to [LLMAction](llm-integration.md#req-options) (default: `[]`)         |
+| Option                 | Purpose                                                                                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                 | Agent name (used as tool name when nested)                                                                                                                                         |
+| `description`          | What this orchestrator does (used as tool description when nested)                                                                                                                 |
+| `model`                | req_llm model spec string (e.g. `"anthropic:claude-sonnet-4-20250514"`)                                                                                                            |
+| `nodes`                | List of available nodes (actions and agents)                                                                                                                                       |
+| `system_prompt`        | Instructions for the LLM's decision-making                                                                                                                                         |
+| `max_iterations`       | Safety limit on the ReAct loop (default: 10)                                                                                                                                       |
+| `temperature`          | Sampling temperature (default: nil -- provider default)                                                                                                                            |
+| `max_tokens`           | Maximum tokens in response (default: nil -- provider default)                                                                                                                      |
+| `generation_mode`      | `:generate_text` \| `:generate_object` \| `:stream_text` \| `:stream_object` (default: `:generate_text`)                                                                           |
+| `output_schema`        | JSON Schema for object generation modes (default: nil)                                                                                                                             |
+| `llm_opts`             | Additional options passed through to req_llm (default: `[]`)                                                                                                                       |
+| `req_options`          | Opaque Req HTTP options forwarded to [LLMAction](llm-integration.md#req-options) (default: `[]`)                                                                                   |
+| `approval_policy`      | MFA tuple `(tool_call, context) -> :proceed \| {:require_approval, opts}` for dynamic [approval gating](../hitl/strategy-integration.md#orchestrator-approval-gate) (default: nil) |
+| `max_tool_concurrency` | Maximum simultaneous tool executions per LLM turn (default: `:infinity`). See [Tool Concurrency](strategy.md#tool-concurrency)                                                     |
+| `ambient`              | Context keys extracted into the [ambient layer](../nodes/context-flow.md#context-layers) (default: `[]`)                                                                           |
+| `fork_fns`             | MFA tuples applied at agent boundaries (default: `[]`). See [Fork Functions](../nodes/context-flow.md#fork-functions)                                                              |
 
 The DSL auto-wraps plain action modules as ActionNodes and agent modules as
 AgentNodes, then generates a Jido Agent wired to the Orchestrator Strategy.
