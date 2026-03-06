@@ -27,6 +27,10 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     node_modules = opts[:nodes] || []
     nodes = build_nodes(node_modules)
     tools = Enum.map(nodes, fn {_name, node} -> AgentTool.to_tool(node) end)
+    # Pre-create atoms for tool name scoping. This is safe because the set of
+    # node names is bounded and determined at compile time by the DSL.
+    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
+    name_atoms = Map.new(nodes, fn {name, _node} -> {name, String.to_atom(name)} end)
 
     gated_node_names = MapSet.new(opts[:gated_nodes] || [])
     approval_policy = opts[:approval_policy]
@@ -51,6 +55,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         iteration: 0,
         max_iterations: opts[:max_iterations] || 10,
         req_options: opts[:req_options] || [],
+        name_atoms: name_atoms,
         result: nil,
         query: nil,
         gated_node_names: gated_node_names,
@@ -117,7 +122,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       end
 
     # Scope result under tool name in context (only on success)
-    scope_key = String.to_existing_atom(tool_name)
+    scope_key = scope_atom(agent, tool_name)
 
     scoped_result =
       case params[:status] do
@@ -165,7 +170,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
     tool_result = AgentTool.to_tool_result(call_id, tool_name, {status, result})
 
-    scope_key = String.to_existing_atom(tool_name)
+    scope_key = scope_atom(agent, tool_name)
 
     scoped_result =
       case status do
@@ -606,6 +611,20 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         nil -> false
         policy when is_function(policy, 2) -> policy.(call, state.context) == :require_approval
       end
+    end
+  end
+
+  defp scope_atom(agent, tool_name) do
+    strat = StratState.get(agent)
+
+    case Map.fetch(strat.name_atoms, tool_name) do
+      {:ok, atom} ->
+        atom
+
+      :error ->
+        raise ArgumentError,
+              "unknown tool name #{inspect(tool_name)}, " <>
+                "expected one of: #{inspect(Map.keys(strat.name_atoms))}"
     end
   end
 
