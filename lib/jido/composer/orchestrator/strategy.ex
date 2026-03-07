@@ -48,6 +48,9 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     gated_node_names = MapSet.new(opts[:gated_nodes] || [])
     approval_policy = opts[:approval_policy]
 
+    {tools, name_atoms, term_name, term_mod} =
+      build_termination_tool(opts[:termination_tool], tools, name_atoms)
+
     restored =
       existing
       |> Map.put(:nodes, nodes)
@@ -60,6 +63,8 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         :max_tool_concurrency,
         opts[:max_tool_concurrency] || existing[:max_tool_concurrency]
       )
+      |> Map.put(:termination_tool_name, term_name)
+      |> Map.put(:termination_tool_mod, term_mod)
 
     agent = StratState.put(agent, restored)
     {agent, []}
@@ -79,6 +84,9 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     ambient_keys = opts[:ambient] || []
     fork_fns = opts[:fork_fns] || %{}
 
+    {tools, name_atoms, term_name, term_mod} =
+      build_termination_tool(opts[:termination_tool], tools, name_atoms)
+
     agent =
       StratState.put(agent, %{
         module: __MODULE__,
@@ -89,7 +97,6 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         temperature: opts[:temperature],
         max_tokens: opts[:max_tokens],
         stream: opts[:stream] || false,
-        output_schema: opts[:output_schema],
         llm_opts: opts[:llm_opts] || [],
         conversation: nil,
         tools: tools,
@@ -112,7 +119,9 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         child_phases: %{},
         hibernate_after: opts[:hibernate_after],
         max_tool_concurrency: opts[:max_tool_concurrency],
-        queued_tool_calls: []
+        queued_tool_calls: [],
+        termination_tool_name: term_name,
+        termination_tool_mod: term_mod
       })
 
     {agent, []}
@@ -622,100 +631,110 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
       {agent, []}
     else
-      {ungated, gated} =
-        Enum.split_with(calls, fn call ->
-          not requires_approval?(call, state)
-        end)
+      case find_termination_call(calls, state.termination_tool_name) do
+        {:terminated, call} ->
+          handle_termination(agent, call, state)
 
-      max_tc = state.max_tool_concurrency
-
-      {to_dispatch, to_queue} =
-        if max_tc && max_tc < length(ungated) do
-          Enum.split(ungated, max_tc)
-        else
-          {ungated, []}
-        end
-
-      dispatched_ids = Enum.map(to_dispatch, & &1.id)
-
-      # Build gated_calls map: request_id -> %{request, call}
-      gated_results =
-        Enum.reduce_while(gated, {:ok, %{}}, fn call, {:ok, acc} ->
-          case ApprovalRequest.new(
-                 prompt: "Approve tool call: #{call.name}(#{inspect(call.arguments)})",
-                 allowed_responses: [:approved, :rejected],
-                 visible_context: call.arguments,
-                 metadata: %{tool_call_id: call.id, tool_name: call.name}
-               ) do
-            {:ok, request} ->
-              {:cont, {:ok, Map.put(acc, request.id, %{request: request, call: call})}}
-
-            {:error, reason} ->
-              {:halt, {:error, reason}}
-          end
-        end)
-
-      case gated_results do
-        {:error, reason} ->
-          agent =
-            StratState.update(agent, fn s ->
-              %{s | status: :error, result: "Failed to create approval request: #{reason}"}
-            end)
-
-          {agent, []}
-
-        {:ok, gated_entries} ->
-          agent =
-            StratState.update(agent, fn s ->
-              new_status =
-                cond do
-                  gated == [] -> :awaiting_tools
-                  ungated == [] -> :awaiting_approval
-                  true -> :awaiting_tools_and_approval
-                end
-
-              %{
-                s
-                | status: new_status,
-                  pending_tool_calls: dispatched_ids,
-                  completed_tool_results: [],
-                  gated_calls: gated_entries,
-                  queued_tool_calls: to_queue
-              }
-            end)
-
-          # Build directives for dispatched (ungated, within concurrency limit) calls
-          ungated_directives =
-            Enum.map(to_dispatch, fn call ->
-              build_tool_directive(call, state.nodes, state.context)
-            end)
-
-          # Track spawning phase for AgentNode tool calls
-          spawn_phases =
-            ungated_directives
-            |> Enum.filter(&match?(%Directive.SpawnAgent{}, &1))
-            |> Map.new(fn %Directive.SpawnAgent{tag: tag} -> {tag, :spawning} end)
-
-          agent =
-            if spawn_phases != %{} do
-              StratState.update(agent, fn s ->
-                %{s | child_phases: Map.merge(s.child_phases, spawn_phases)}
-              end)
-            else
-              agent
-            end
-
-          # Build SuspendForHuman directives for gated calls
-          gated_directives =
-            Enum.reduce(gated_entries, [], fn {_req_id, %{request: request}}, acc ->
-              case SuspendForHuman.new(approval_request: request) do
-                {:ok, directive} -> acc ++ [directive]
-                {:error, _reason} -> acc
-              end
-            end)
-
-          {agent, ungated_directives ++ gated_directives}
+        :not_terminated ->
+          dispatch_regular_tool_calls(agent, calls, state)
       end
+    end
+  end
+
+  defp dispatch_regular_tool_calls(agent, calls, state) do
+    {ungated, gated} =
+      Enum.split_with(calls, fn call ->
+        not requires_approval?(call, state)
+      end)
+
+    max_tc = state.max_tool_concurrency
+
+    {to_dispatch, to_queue} =
+      if max_tc && max_tc < length(ungated) do
+        Enum.split(ungated, max_tc)
+      else
+        {ungated, []}
+      end
+
+    dispatched_ids = Enum.map(to_dispatch, & &1.id)
+
+    # Build gated_calls map: request_id -> %{request, call}
+    gated_results =
+      Enum.reduce_while(gated, {:ok, %{}}, fn call, {:ok, acc} ->
+        case ApprovalRequest.new(
+               prompt: "Approve tool call: #{call.name}(#{inspect(call.arguments)})",
+               allowed_responses: [:approved, :rejected],
+               visible_context: call.arguments,
+               metadata: %{tool_call_id: call.id, tool_name: call.name}
+             ) do
+          {:ok, request} ->
+            {:cont, {:ok, Map.put(acc, request.id, %{request: request, call: call})}}
+
+          {:error, reason} ->
+            {:halt, {:error, reason}}
+        end
+      end)
+
+    case gated_results do
+      {:error, reason} ->
+        agent =
+          StratState.update(agent, fn s ->
+            %{s | status: :error, result: "Failed to create approval request: #{reason}"}
+          end)
+
+        {agent, []}
+
+      {:ok, gated_entries} ->
+        agent =
+          StratState.update(agent, fn s ->
+            new_status =
+              cond do
+                gated == [] -> :awaiting_tools
+                ungated == [] -> :awaiting_approval
+                true -> :awaiting_tools_and_approval
+              end
+
+            %{
+              s
+              | status: new_status,
+                pending_tool_calls: dispatched_ids,
+                completed_tool_results: [],
+                gated_calls: gated_entries,
+                queued_tool_calls: to_queue
+            }
+          end)
+
+        # Build directives for dispatched (ungated, within concurrency limit) calls
+        ungated_directives =
+          Enum.map(to_dispatch, fn call ->
+            build_tool_directive(call, state.nodes, state.context)
+          end)
+
+        # Track spawning phase for AgentNode tool calls
+        spawn_phases =
+          ungated_directives
+          |> Enum.filter(&match?(%Directive.SpawnAgent{}, &1))
+          |> Map.new(fn %Directive.SpawnAgent{tag: tag} -> {tag, :spawning} end)
+
+        agent =
+          if spawn_phases != %{} do
+            StratState.update(agent, fn s ->
+              %{s | child_phases: Map.merge(s.child_phases, spawn_phases)}
+            end)
+          else
+            agent
+          end
+
+        # Build SuspendForHuman directives for gated calls
+        gated_directives =
+          Enum.reduce(gated_entries, [], fn {_req_id, %{request: request}}, acc ->
+            case SuspendForHuman.new(approval_request: request) do
+              {:ok, directive} -> acc ++ [directive]
+              {:error, _reason} -> acc
+            end
+          end)
+
+        {agent, ungated_directives ++ gated_directives}
     end
   end
 
@@ -767,7 +786,6 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         temperature: state.temperature,
         max_tokens: state.max_tokens,
         stream: state.stream,
-        output_schema: state.output_schema,
         llm_opts: state.llm_opts,
         req_options: state.req_options
       }
@@ -1187,6 +1205,51 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         working: working,
         fork_fns: Map.merge(current_ctx.fork_fns, Map.get(strat, :fork_fns, %{}))
       }
+    end
+  end
+
+  # -- Termination tool helpers --
+
+  defp build_termination_tool(nil, tools, name_atoms), do: {tools, name_atoms, nil, nil}
+
+  defp build_termination_tool(mod, tools, name_atoms) when is_atom(mod) do
+    tool = AgentTool.to_tool(mod)
+    name = mod.name()
+    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
+    updated_atoms = Map.put(name_atoms, name, String.to_atom(name))
+    {tools ++ [tool], updated_atoms, name, mod}
+  end
+
+  defp find_termination_call(_calls, nil), do: :not_terminated
+
+  defp find_termination_call(calls, term_name) do
+    case Enum.find(calls, &(&1.name == term_name)) do
+      nil -> :not_terminated
+      call -> {:terminated, call}
+    end
+  end
+
+  defp handle_termination(agent, call, state) do
+    args = AgentTool.to_context(call)
+
+    case Jido.Exec.run(state.termination_tool_mod, args, %{}) do
+      {:ok, result} ->
+        agent =
+          StratState.update(agent, fn s ->
+            %{s | status: :completed, result: NodeIO.object(result)}
+          end)
+
+        {agent, []}
+
+      {:error, reason} ->
+        tool_result = AgentTool.to_tool_result(call.id, call.name, {:error, reason})
+
+        agent =
+          StratState.update(agent, fn s ->
+            %{s | completed_tool_results: [tool_result], pending_tool_calls: []}
+          end)
+
+        emit_llm_call(agent)
     end
   end
 end

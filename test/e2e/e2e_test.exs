@@ -17,6 +17,8 @@ defmodule Jido.Composer.E2E.E2ETest do
   alias Jido.Composer.Node.{ActionNode, FanOutNode, HumanNode}
   alias Jido.Composer.Orchestrator.Strategy
 
+  alias Jido.Composer.NodeIO
+
   alias Jido.Composer.TestActions.{
     AddAction,
     MultiplyAction,
@@ -25,6 +27,7 @@ defmodule Jido.Composer.E2E.E2ETest do
     TransformAction,
     LoadAction,
     FailAction,
+    FinalReportAction,
     ValidateOutcomeAction,
     NoopAction,
     AccumulatorAction
@@ -177,18 +180,23 @@ defmodule Jido.Composer.E2E.E2ETest do
   defp init_cassette_orchestrator(plug, opts \\ []) do
     nodes = Keyword.get(opts, :nodes, [AddAction, EchoAction])
 
-    strategy_opts = [
-      nodes: nodes,
-      model: "anthropic:claude-sonnet-4-20250514",
-      system_prompt:
-        Keyword.get(
-          opts,
-          :system_prompt,
-          "You are a helpful assistant with math and echo tools."
-        ),
-      max_iterations: Keyword.get(opts, :max_iterations, 10),
-      req_options: [plug: plug]
-    ]
+    strategy_opts =
+      [
+        nodes: nodes,
+        model: "anthropic:claude-sonnet-4-20250514",
+        system_prompt:
+          Keyword.get(
+            opts,
+            :system_prompt,
+            "You are a helpful assistant with math and echo tools."
+          ),
+        max_iterations: Keyword.get(opts, :max_iterations, 10),
+        req_options: [plug: plug]
+      ] ++
+        if(Keyword.has_key?(opts, :termination_tool),
+          do: [termination_tool: opts[:termination_tool]],
+          else: []
+        )
 
     agent = CassetteOrchestratorAgent.new()
     ctx = %{strategy_opts: strategy_opts}
@@ -1326,6 +1334,46 @@ defmodule Jido.Composer.E2E.E2ETest do
           strat = StratState.get(agent)
           assert strat.status == :completed
           assert is_binary(strat.result.value)
+        end
+      )
+    end
+  end
+
+  describe "orchestrator: termination tool (cassette)" do
+    test "LLM uses tools then exits with structured result via termination tool" do
+      with_cassette(
+        "e2e_orchestrator_termination_tool",
+        CassetteHelper.default_cassette_opts(),
+        fn plug ->
+          agent =
+            init_cassette_orchestrator(plug,
+              nodes: [AddAction, EchoAction],
+              termination_tool: FinalReportAction,
+              system_prompt: """
+              You are a helpful assistant with math and echo tools.
+              When you have computed a result, call the final_report tool with a summary string
+              and a confidence float between 0.0 and 1.0. Do NOT respond with plain text.
+              Always finish by calling final_report.
+              """
+            )
+
+          agent =
+            execute_orchestrator_loop(
+              agent,
+              "What is 5 + 3? Use the add tool to compute it, then call final_report with the result."
+            )
+
+          strat = StratState.get(agent)
+          assert strat.status == :completed
+
+          # Result should be a NodeIO.object (structured), not NodeIO.text
+          assert %NodeIO{type: :object, value: result} = strat.result
+          assert is_map(result)
+          assert is_binary(result[:summary])
+          assert is_float(result[:confidence]) or is_integer(result[:confidence])
+
+          # The add tool should have been called before termination
+          assert strat.iteration >= 2
         end
       )
     end

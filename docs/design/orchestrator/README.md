@@ -70,12 +70,12 @@ flowchart TB
 
 ## Components
 
-| Component                             | Responsibility                    | Details                                                       |
-| ------------------------------------- | --------------------------------- | ------------------------------------------------------------- |
-| [LLM Integration](llm-integration.md) | LLMAction calling ReqLLM directly | Dispatches via `stream` + `output_schema` to ReqLLM functions |
-| [AgentTool](../glossary.md#tool)      | Node-to-tool adapter              | Converts Node metadata to `ReqLLM.Tool` structs               |
-| [Strategy](strategy.md)               | Strategy behaviour implementation | ReAct loop, directive emission, result handling               |
-| DSL                                   | Compile-time macro                | Agent generation with orchestrator strategy                   |
+| Component                             | Responsibility                    | Details                                                     |
+| ------------------------------------- | --------------------------------- | ----------------------------------------------------------- |
+| [LLM Integration](llm-integration.md) | LLMAction calling ReqLLM directly | Dispatches via `stream` to ReqLLM text generation functions |
+| [AgentTool](../glossary.md#tool)      | Node-to-tool adapter              | Converts Node metadata to `ReqLLM.Tool` structs             |
+| [Strategy](strategy.md)               | Strategy behaviour implementation | ReAct loop, directive emission, result handling             |
+| DSL                                   | Compile-time macro                | Agent generation with orchestrator strategy                 |
 
 ## AgentTool Adapter
 
@@ -108,7 +108,7 @@ The Orchestrator DSL (`use Jido.Composer.Orchestrator`) configures:
 | `temperature`          | Sampling temperature (default: nil -- provider default)                                                                                                                            |
 | `max_tokens`           | Maximum tokens in response (default: nil -- provider default)                                                                                                                      |
 | `stream`               | Whether to use streaming generation (default: `false`)                                                                                                                             |
-| `output_schema`        | JSON Schema for structured output — enables object generation (default: nil)                                                                                                       |
+| `termination_tool`     | A `Jido.Action` module for [structured termination](strategy.md#termination-tool) — LLM calls it to exit the loop with validated structured data (default: nil)                    |
 | `llm_opts`             | Additional options passed through to req_llm (default: `[]`)                                                                                                                       |
 | `req_options`          | Opaque Req HTTP options forwarded to [LLMAction](llm-integration.md#req-options) (default: `[]`)                                                                                   |
 | `approval_policy`      | MFA tuple `(tool_call, context) -> :proceed \| {:require_approval, opts}` for dynamic [approval gating](../hitl/strategy-integration.md#orchestrator-approval-gate) (default: nil) |

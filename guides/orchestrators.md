@@ -31,7 +31,7 @@ The orchestrator sends the user's query to the LLM along with available tool def
 | `temperature`          | `float`   | no       | `nil`                     | LLM temperature parameter                                           |
 | `max_tokens`           | `integer` | no       | `nil`                     | Token budget for LLM responses                                      |
 | `stream`               | `boolean` | no       | `false`                   | Whether to use streaming generation                                 |
-| `output_schema`        | `map`     | no       | `nil`                     | JSON Schema for structured output (object modes)                    |
+| `termination_tool`     | `module`  | no       | `nil`                     | A `Jido.Action` module for structured termination                   |
 | `llm_opts`             | `keyword` | no       | `[]`                      | Additional options passed to ReqLLM                                 |
 | `req_options`          | `keyword` | no       | `[]`                      | HTTP options for Req (useful for testing)                           |
 | `rejection_policy`     | `atom`    | no       | `:continue_siblings`      | Behavior when a gated tool is rejected                              |
@@ -69,28 +69,46 @@ When the LLM calls a tool, the orchestrator:
 3. Converts the result to a tool result message
 4. Adds it to the conversation for the next LLM call
 
-## Streaming and Structured Output
+## Streaming
 
-Two orthogonal options control how the LLM is called:
-
-| Option          | Default | Effect                                                                  |
-| --------------- | ------- | ----------------------------------------------------------------------- |
-| `stream`        | `false` | When `true`, uses streaming generation (collect-then-return internally) |
-| `output_schema` | `nil`   | When set, produces structured output conforming to the schema           |
-
-```elixir
-use Jido.Composer.Orchestrator,
-  output_schema: %{
-    "type" => "object",
-    "properties" => %{
-      "summary" => %{"type" => "string"},
-      "confidence" => %{"type" => "number"}
-    },
-    "required" => ["summary", "confidence"]
-  }
-```
+When `stream: true`, LLMAction uses streaming generation internally (collect-then-return). The strategy sees no difference from non-streaming mode.
 
 > **Note:** Streaming uses Finch directly, bypassing Req plugs. When using cassette/stub testing, set `stream: false` (the default).
+
+## Termination Tool (Structured Output)
+
+For structured output, define a `Jido.Action` module whose schema describes the output shape, and pass it as `termination_tool:`. The LLM sees it as a regular tool and calls it when ready to produce the final answer.
+
+```elixir
+defmodule FinalReportAction do
+  use Jido.Action,
+    name: "final_report",
+    description: "Produce the final analysis report. Call when you have the answer.",
+    schema: [
+      summary: [type: :string, required: true, doc: "Summary of findings"],
+      confidence: [type: :float, required: true, doc: "Confidence score 0.0-1.0"]
+    ]
+
+  def run(%{summary: summary, confidence: confidence}, _ctx) do
+    {:ok, %{summary: summary, confidence: confidence}}
+  end
+end
+
+defmodule Analyzer do
+  use Jido.Composer.Orchestrator,
+    name: "analyzer",
+    model: "anthropic:claude-sonnet-4-20250514",
+    nodes: [SearchAction, CalculateAction],
+    termination_tool: FinalReportAction,
+    system_prompt: "Analyze the query. Call final_report when you have the answer."
+end
+
+{:ok, %{summary: _, confidence: _}} = Analyzer.query_sync(agent, "Analyze X")
+```
+
+The termination tool action's `run/2` executes with the LLM's arguments, allowing validation and transformation. If the action returns an error, the error is fed back to the LLM so it can retry with corrected arguments.
+
+When the LLM returns both regular tools and the termination tool in the same batch, termination wins and sibling calls are dropped.
 
 ## Running Orchestrators
 

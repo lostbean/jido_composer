@@ -28,8 +28,8 @@ defmodule Jido.Composer.Orchestrator.DSL do
     temperature = Keyword.get(opts, :temperature, nil)
     max_tokens = Keyword.get(opts, :max_tokens, nil)
     stream = Keyword.get(opts, :stream, false)
-    output_schema = Keyword.get(opts, :output_schema, nil)
     llm_opts = Keyword.get(opts, :llm_opts, [])
+    termination_tool = Keyword.get(opts, :termination_tool, nil)
     req_options = Keyword.get(opts, :req_options, [])
     rejection_policy = Keyword.get(opts, :rejection_policy)
     ambient_keys = Keyword.get(opts, :ambient, [])
@@ -55,10 +55,13 @@ defmodule Jido.Composer.Orchestrator.DSL do
                                 temperature: unquote(temperature),
                                 max_tokens: unquote(max_tokens),
                                 stream: unquote(stream),
-                                output_schema: unquote(Macro.escape(output_schema)),
                                 llm_opts: unquote(llm_opts),
                                 req_options: unquote(req_options)
                               ] ++
+                                if(unquote(termination_tool) != nil,
+                                  do: [termination_tool: unquote(termination_tool)],
+                                  else: []
+                                ) ++
                                 if(@__orch_gated_nodes__ != [],
                                   do: [gated_nodes: @__orch_gated_nodes__],
                                   else: []

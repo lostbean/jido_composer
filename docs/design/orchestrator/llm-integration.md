@@ -22,9 +22,7 @@ graph TB
 
     subgraph "req_llm"
         GenText["ReqLLM.generate_text/3"]
-        GenObj["ReqLLM.generate_object/4"]
         StText["ReqLLM.stream_text/3"]
-        StObj["ReqLLM.stream_object/4"]
         Ctx["ReqLLM.Context"]
         Resp["ReqLLM.Response"]
         Tool["ReqLLM.Tool"]
@@ -33,9 +31,7 @@ graph TB
     Strategy -->|"RunInstruction(LLMAction)"| LLMAction
     AT -->|"to_tool/1"| Tool
     LLMAction --> GenText
-    LLMAction --> GenObj
     LLMAction --> StText
-    LLMAction --> StObj
     LLMAction --> Ctx
     LLMAction --> Resp
 ```
@@ -56,28 +52,36 @@ LLMAction performs three steps:
    calls, it appends tool result messages via `ReqLLM.Context.tool_result/3`.
 
 2. **Call req_llm** -- Invokes the appropriate ReqLLM function based on the
-   `stream` and `output_schema` parameters.
+   `stream` parameter.
 
-3. **Classify response** -- For text modes, uses `ReqLLM.Response.classify/1`
-   to determine whether the response contains tool calls or a final answer. For
-   object modes, wraps the parsed object as a final answer directly.
+3. **Classify response** -- Uses `ReqLLM.Response.classify/1` to determine
+   whether the response contains tool calls or a final answer.
 
-## Streaming and Structured Output
+## Streaming
 
-LLMAction dispatches to the appropriate ReqLLM function based on two orthogonal
-parameters: `stream` (boolean, default `false`) and `output_schema` (map or nil,
-default `nil`):
+LLMAction dispatches to the appropriate ReqLLM function based on the `stream`
+parameter (boolean, default `false`):
 
-| `stream` | `output_schema` | ReqLLM Function            | Response Handling                          | Use Case                      |
-| -------- | --------------- | -------------------------- | ------------------------------------------ | ----------------------------- |
-| `false`  | `nil`           | `ReqLLM.generate_text/3`   | Classify into tool_calls or final_answer   | Standard ReAct loop (default) |
-| `false`  | `%{...}`        | `ReqLLM.generate_object/4` | Return parsed object as final_answer       | Structured output extraction  |
-| `true`   | `nil`           | `ReqLLM.stream_text/3`     | Collect stream, then classify final chunk  | Streaming text generation     |
-| `true`   | `%{...}`        | `ReqLLM.stream_object/4`   | Collect stream, return final parsed object | Streaming structured output   |
+| `stream` | ReqLLM Function          | Response Handling                         | Use Case                      |
+| -------- | ------------------------ | ----------------------------------------- | ----------------------------- |
+| `false`  | `ReqLLM.generate_text/3` | Classify into tool_calls or final_answer  | Standard ReAct loop (default) |
+| `true`   | `ReqLLM.stream_text/3`   | Collect stream, then classify final chunk | Streaming text generation     |
 
-When `output_schema` is set, the schema is passed to the ReqLLM object
-generation function. Stream modes collect internally and return the final result
--- the strategy sees no difference from non-streaming modes.
+Stream mode collects internally and returns the final result -- the strategy
+sees no difference from non-streaming mode.
+
+## Structured Output via Termination Tool
+
+For structured output, the orchestrator uses a **termination tool** instead of
+a separate generation mode. The termination tool is a `Jido.Action` module
+whose schema defines the output structure. The LLM sees it as a regular tool
+and calls it when ready to produce the final answer.
+
+The strategy intercepts termination tool calls before regular tool dispatch:
+on success, the action's return value becomes the structured result wrapped as
+`NodeIO.object(result)`. On error, the error is fed back to the LLM as a tool
+result so it can retry. See [Strategy — Termination Tool](strategy.md#termination-tool)
+for the interception mechanism.
 
 ## Parameter Flow: DSL to Strategy State to LLMAction
 
@@ -99,32 +103,33 @@ flowchart LR
 
 ### DSL Options
 
-| Option           | Type                | Default    | Description                                                      |
-| ---------------- | ------------------- | ---------- | ---------------------------------------------------------------- |
-| `model`          | `String.t()`        | `nil`      | req_llm model spec (e.g. `"anthropic:claude-sonnet-4-20250514"`) |
-| `temperature`    | `float \| nil`      | `nil`      | Sampling temperature                                             |
-| `max_tokens`     | `integer \| nil`    | `nil`      | Maximum tokens in response                                       |
-| `stream`         | boolean             | `false`    | Whether to use streaming generation                              |
-| `output_schema`  | map \| nil          | `nil`      | JSON Schema for structured output (enables object generation)    |
-| `llm_opts`       | keyword             | `[]`       | Additional options passed through to req_llm (e.g. `:top_p`)     |
-| `req_options`    | keyword             | `[]`       | Opaque Req HTTP options (e.g. `plug:` for cassette testing)      |
-| `system_prompt`  | `String.t() \| nil` | `nil`      | System instructions for the LLM                                  |
-| `nodes`          | list                | (required) | Available nodes (actions and agents)                             |
-| `max_iterations` | integer             | `10`       | Safety limit on the ReAct loop                                   |
+| Option             | Type                | Default    | Description                                                                                               |
+| ------------------ | ------------------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `model`            | `String.t()`        | `nil`      | req_llm model spec (e.g. `"anthropic:claude-sonnet-4-20250514"`)                                          |
+| `temperature`      | `float \| nil`      | `nil`      | Sampling temperature                                                                                      |
+| `max_tokens`       | `integer \| nil`    | `nil`      | Maximum tokens in response                                                                                |
+| `stream`           | boolean             | `false`    | Whether to use streaming generation                                                                       |
+| `termination_tool` | module \| nil       | `nil`      | A `Jido.Action` module for [structured termination](strategy.md#termination-tool) (replaces final answer) |
+| `llm_opts`         | keyword             | `[]`       | Additional options passed through to req_llm (e.g. `:top_p`)                                              |
+| `req_options`      | keyword             | `[]`       | Opaque Req HTTP options (e.g. `plug:` for cassette testing)                                               |
+| `system_prompt`    | `String.t() \| nil` | `nil`      | System instructions for the LLM                                                                           |
+| `nodes`            | list                | (required) | Available nodes (actions and agents)                                                                      |
+| `max_iterations`   | integer             | `10`       | Safety limit on the ReAct loop                                                                            |
 
 ### Strategy State Fields (LLM-related)
 
-| Field           | Type                 | Source               |
-| --------------- | -------------------- | -------------------- |
-| `model`         | `String.t()`         | DSL `model:`         |
-| `temperature`   | `float \| nil`       | DSL `temperature:`   |
-| `max_tokens`    | `integer \| nil`     | DSL `max_tokens:`    |
-| `stream`        | boolean              | DSL `stream:`        |
-| `output_schema` | map \| nil           | DSL `output_schema:` |
-| `llm_opts`      | keyword              | DSL `llm_opts:`      |
-| `req_options`   | keyword              | DSL `req_options:`   |
-| `system_prompt` | `String.t() \| nil`  | DSL `system_prompt:` |
-| `conversation`  | `ReqLLM.Context.t()` | Managed at runtime   |
+| Field                   | Type                 | Source                  |
+| ----------------------- | -------------------- | ----------------------- |
+| `model`                 | `String.t()`         | DSL `model:`            |
+| `temperature`           | `float \| nil`       | DSL `temperature:`      |
+| `max_tokens`            | `integer \| nil`     | DSL `max_tokens:`       |
+| `stream`                | boolean              | DSL `stream:`           |
+| `termination_tool_name` | `String.t() \| nil`  | Derived from DSL module |
+| `termination_tool_mod`  | module \| nil        | DSL `termination_tool:` |
+| `llm_opts`              | keyword              | DSL `llm_opts:`         |
+| `req_options`           | keyword              | DSL `req_options:`      |
+| `system_prompt`         | `String.t() \| nil`  | DSL `system_prompt:`    |
+| `conversation`          | `ReqLLM.Context.t()` | Managed at runtime      |
 
 ### LLMAction Instruction Params
 
@@ -141,7 +146,6 @@ The strategy's `emit_llm_call/1` builds a flat params map from its state:
   temperature: state.temperature,
   max_tokens: state.max_tokens,
   stream: state.stream,
-  output_schema: state.output_schema,
   llm_opts: state.llm_opts,
   req_options: state.req_options
 }
@@ -151,10 +155,9 @@ LLMAction's `build_req_llm_opts/2` merges `system_prompt`, `temperature`,
 `max_tokens`, and `tools` into the base `llm_opts`, then maps `req_options` to
 req_llm's `req_http_options` key.
 
-## Response Classification (generate_text mode)
+## Response Classification
 
-For text modes (no `output_schema`), LLMAction uses
-`ReqLLM.Response.classify/1` to determine the response type:
+LLMAction uses `ReqLLM.Response.classify/1` to determine the response type:
 
 | Classified Type                | LLMAction Return                                           | Strategy Interpretation             |
 | ------------------------------ | ---------------------------------------------------------- | ----------------------------------- |
@@ -168,9 +171,9 @@ content blocks in the same response; OpenAI typically returns `content: null`
 when making tool calls. The strategy may log or discard this text -- it does not
 affect execution flow.
 
-For object modes (with `output_schema`), the response is always
-`{:final_answer, parsed_object}` -- no classification is needed since object
-modes do not support tool calling.
+When a [termination tool](strategy.md#termination-tool) is configured, tool
+calls targeting that tool are intercepted by the strategy before reaching
+LLMAction. See [Strategy — Termination Tool](strategy.md#termination-tool).
 
 **Tool call** structure:
 

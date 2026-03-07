@@ -2,7 +2,7 @@ defmodule Jido.Composer.Orchestrator.LLMAction do
   @moduledoc false
   # Internal action for executing LLM calls via RunInstruction.
   # Calls ReqLLM directly — no facade module. Dispatches based on
-  # `stream` (boolean) and `output_schema` (nil | map).
+  # `stream` (boolean).
 
   use Jido.Action,
     name: "orchestrator_llm_generate",
@@ -16,23 +16,14 @@ defmodule Jido.Composer.Orchestrator.LLMAction do
     tool_results = params[:tool_results] || []
     tools = params[:tools] || []
     stream = !!params[:stream]
-    output_schema = params[:output_schema]
 
     context = build_context(conversation, tool_results, params)
     req_llm_opts = build_req_llm_opts(tools, params)
 
-    case {stream, output_schema} do
-      {false, nil} ->
-        do_generate_text(model, context, req_llm_opts)
-
-      {false, schema} ->
-        do_generate_object(model, context, schema, req_llm_opts)
-
-      {true, nil} ->
-        do_stream_text(model, context, req_llm_opts)
-
-      {true, schema} ->
-        do_stream_object(model, context, schema, req_llm_opts)
+    if stream do
+      do_stream_text(model, context, req_llm_opts)
+    else
+      do_generate_text(model, context, req_llm_opts)
     end
   end
 
@@ -48,33 +39,12 @@ defmodule Jido.Composer.Orchestrator.LLMAction do
     end
   end
 
-  defp do_generate_object(model, context, output_schema, opts) do
-    case ReqLLM.generate_object(model, context, output_schema, opts) do
-      {:ok, %ReqLLM.Response{} = response} ->
-        {:ok, %{response: {:final_answer, response.object}, conversation: response.context}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
   defp do_stream_text(model, context, opts) do
     # Collect-then-return: stream internally, return final result
     case ReqLLM.stream_text(model, context, opts) do
       {:ok, stream} ->
         response = Enum.reduce(stream, nil, fn chunk, _acc -> chunk end)
         classify_and_return(response)
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp do_stream_object(model, context, output_schema, opts) do
-    case ReqLLM.stream_object(model, context, output_schema, opts) do
-      {:ok, stream} ->
-        response = Enum.reduce(stream, nil, fn chunk, _acc -> chunk end)
-        {:ok, %{response: {:final_answer, response.object}, conversation: response.context}}
 
       {:error, reason} ->
         {:error, reason}

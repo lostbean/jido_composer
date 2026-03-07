@@ -172,7 +172,6 @@ defmodule Jido.Composer.Checkpoint do
             temperature: Map.get(state, :temperature),
             max_tokens: Map.get(state, :max_tokens),
             stream: Map.get(state, :stream, false),
-            output_schema: Map.get(state, :output_schema),
             llm_opts: Map.get(state, :llm_opts, []),
             req_options: Map.get(state, :req_options, [])
           }

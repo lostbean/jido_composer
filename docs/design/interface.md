@@ -122,7 +122,7 @@ use Jido.Composer.Orchestrator,
   temperature:     float         — sampling temperature (default: nil)
   max_tokens:      integer       — maximum tokens in response (default: nil)
   stream:          boolean       — whether to use streaming generation (default: false)
-  output_schema:   map           — JSON Schema for structured output (default: nil)
+  termination_tool: module      — Jido.Action module for structured termination (default: nil)
   llm_opts:        keyword       — additional options passed through to req_llm (default: [])
   req_options:     keyword       — opaque Req HTTP options forwarded to LLMAction (default: [])
   ambient:         list(atom)    — context keys extracted into the ambient layer

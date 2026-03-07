@@ -257,4 +257,34 @@ defmodule Jido.Composer.TestActions do
       {:ok, %{suspended: true, __suspension__: suspension}, :suspend}
     end
   end
+
+  defmodule FinalReportAction do
+    @moduledoc false
+    use Jido.Action,
+      name: "final_report",
+      description: "Produces a structured final report. Call when you have the answer.",
+      schema: [
+        summary: [type: :string, required: true, doc: "Summary of findings"],
+        confidence: [type: :float, required: true, doc: "Confidence score 0.0-1.0"]
+      ]
+
+    def run(%{summary: summary, confidence: confidence}, _context) do
+      {:ok, %{summary: summary, confidence: confidence}}
+    end
+  end
+
+  defmodule FailingFinalReportAction do
+    @moduledoc false
+    use Jido.Action,
+      name: "failing_final_report",
+      description: "A termination tool that always fails validation.",
+      schema: [
+        summary: [type: :string, required: true, doc: "Summary"],
+        confidence: [type: :float, required: true, doc: "Confidence"]
+      ]
+
+    def run(_params, _context) do
+      {:error, "validation failed: confidence out of range"}
+    end
+  end
 end

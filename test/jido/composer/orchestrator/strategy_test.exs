@@ -5,7 +5,14 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
   alias Jido.Composer.Context
   alias Jido.Composer.NodeIO
   alias Jido.Composer.Orchestrator.Strategy
-  alias Jido.Composer.TestActions.{AddAction, EchoAction}
+
+  alias Jido.Composer.TestActions.{
+    AddAction,
+    EchoAction,
+    FinalReportAction,
+    FailingFinalReportAction
+  }
+
   alias Jido.Composer.TestSupport.LLMStub
 
   defmodule TestOrchestratorAgent do
@@ -1162,6 +1169,251 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       assert state.gated_calls == %{}
       assert length(state.queued_tool_calls) == 1
       assert hd(state.queued_tool_calls).id == "call_2"
+    end
+  end
+
+  describe "termination tool" do
+    test "init stores termination tool in tools and state" do
+      agent = init_agent(termination_tool: FinalReportAction)
+      state = get_state(agent)
+
+      # Termination tool should appear in tools list
+      tool_names = Enum.map(state.tools, & &1.name)
+      assert "final_report" in tool_names
+
+      # But NOT in nodes (it's not a regular node)
+      refute Map.has_key?(state.nodes, "final_report")
+
+      # State should track the termination tool
+      assert state.termination_tool_name == "final_report"
+      assert state.termination_tool_mod == FinalReportAction
+    end
+
+    test "termination call completes with structured result" do
+      tool_call = %{
+        id: "call_term",
+        name: "final_report",
+        arguments: %{"summary" => "Found the answer", "confidence" => 0.95}
+      }
+
+      LLMStub.setup([{:tool_calls, [tool_call]}])
+      agent = init_agent(termination_tool: FinalReportAction)
+
+      # Start
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Analyze"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      # LLM returns termination tool call
+      {agent, directives} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :completed
+
+      assert %NodeIO{type: :object, value: %{summary: "Found the answer", confidence: 0.95}} =
+               state.result
+
+      assert directives == []
+    end
+
+    test "termination action error feeds back to LLM" do
+      term_call = %{
+        id: "call_term",
+        name: "failing_final_report",
+        arguments: %{"summary" => "bad", "confidence" => 999.0}
+      }
+
+      LLMStub.setup([
+        {:tool_calls, [term_call]},
+        {:final_answer, "Gave up"}
+      ])
+
+      agent = init_agent(termination_tool: FailingFinalReportAction)
+
+      # Start
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Analyze"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      # LLM returns failing termination tool call — should NOT terminate
+      {agent, directives} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      # Should re-call LLM with error feedback
+      assert [%Jido.Agent.Directive.RunInstruction{result_action: :orchestrator_llm_result}] =
+               directives
+
+      state = get_state(agent)
+      refute state.status == :completed
+      assert state.status == :awaiting_llm
+
+      # Feed the second LLM response (final answer)
+      llm_result2 = execute_llm_directive(hd(directives))
+
+      {agent, []} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result2)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :completed
+      assert %NodeIO{type: :text, value: "Gave up"} = state.result
+    end
+
+    test "mixed calls: termination wins, siblings dropped" do
+      regular_call = %{id: "call_1", name: "add", arguments: %{"value" => 1.0, "amount" => 2.0}}
+
+      term_call = %{
+        id: "call_term",
+        name: "final_report",
+        arguments: %{"summary" => "Done", "confidence" => 0.9}
+      }
+
+      LLMStub.setup([{:tool_calls, [regular_call, term_call]}])
+      agent = init_agent(termination_tool: FinalReportAction)
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Do"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {agent, directives} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :completed
+      assert %NodeIO{type: :object, value: %{summary: "Done", confidence: 0.9}} = state.result
+      # No RunInstruction for the sibling "add" call
+      assert directives == []
+    end
+
+    test "multiple termination calls: first wins" do
+      term_call_1 = %{
+        id: "call_term_1",
+        name: "final_report",
+        arguments: %{"summary" => "First", "confidence" => 0.8}
+      }
+
+      term_call_2 = %{
+        id: "call_term_2",
+        name: "final_report",
+        arguments: %{"summary" => "Second", "confidence" => 0.9}
+      }
+
+      LLMStub.setup([{:tool_calls, [term_call_1, term_call_2]}])
+      agent = init_agent(termination_tool: FinalReportAction)
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Do"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {agent, _directives} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :completed
+      assert %NodeIO{type: :object, value: %{summary: "First", confidence: 0.8}} = state.result
+    end
+
+    test "max iterations takes precedence over termination call" do
+      term_call = %{
+        id: "call_term",
+        name: "final_report",
+        arguments: %{"summary" => "Done", "confidence" => 0.9}
+      }
+
+      # Use a regular tool call first iteration, then termination at iteration 2 (= max)
+      regular_call = %{id: "call_1", name: "echo", arguments: %{"message" => "loop"}}
+
+      LLMStub.setup([
+        {:tool_calls, [regular_call]},
+        {:tool_calls, [term_call]}
+      ])
+
+      agent = init_agent(max_iterations: 2, termination_tool: FinalReportAction)
+
+      # Start
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "loop"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      # Iteration 1: regular tool call
+      {agent, [tool_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      # Complete tool
+      {agent, [llm_dir2]} =
+        Strategy.cmd(
+          agent,
+          [
+            make_instruction(:orchestrator_tool_result, %{
+              status: :ok,
+              result: %{echoed: "loop"},
+              meta: tool_dir.meta
+            })
+          ],
+          ctx()
+        )
+
+      llm_result2 = execute_llm_directive(llm_dir2)
+
+      # Iteration 2: termination call, but at max iterations
+      {agent, directives} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result2)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :error
+      assert state.result =~ "iteration"
+      assert directives == []
+    end
+
+    test "no termination tool: unchanged behavior" do
+      tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 5.0, "amount" => 3.0}}
+
+      LLMStub.setup([
+        {:tool_calls, [tool_call]},
+        {:final_answer, "The result is 8.0"}
+      ])
+
+      # No termination_tool option
+      agent = init_agent()
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Add"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {agent, [tool_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      # Regular tool directive
+      assert %Jido.Agent.Directive.RunInstruction{} = tool_dir
+      assert tool_dir.result_action == :orchestrator_tool_result
+
+      {agent, [llm_dir2]} =
+        Strategy.cmd(
+          agent,
+          [
+            make_instruction(:orchestrator_tool_result, %{
+              status: :ok,
+              result: %{result: 8.0},
+              meta: tool_dir.meta
+            })
+          ],
+          ctx()
+        )
+
+      llm_result2 = execute_llm_directive(llm_dir2)
+
+      {agent, []} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result2)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :completed
+      assert %NodeIO{type: :text, value: "The result is 8.0"} = state.result
     end
   end
 

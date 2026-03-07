@@ -229,6 +229,53 @@ defmodule Jido.Composer.Orchestrator.DSLTest do
     end
   end
 
+  describe "termination tool DSL" do
+    defmodule TerminatingOrchestrator do
+      use Jido.Composer.Orchestrator,
+        name: "terminating_orchestrator",
+        model: "anthropic:claude-sonnet-4-20250514",
+        nodes: [
+          Jido.Composer.TestActions.AddAction,
+          Jido.Composer.TestActions.EchoAction
+        ],
+        termination_tool: Jido.Composer.TestActions.FinalReportAction,
+        system_prompt: "Call final_report when you have the answer."
+    end
+
+    test "DSL passes termination_tool to strategy opts" do
+      opts = TerminatingOrchestrator.strategy_opts()
+      assert opts[:termination_tool] == Jido.Composer.TestActions.FinalReportAction
+    end
+
+    test "query_sync returns structured result via termination tool" do
+      plug =
+        LLMStub.setup_req_stub(:dsl_term_tool, [
+          {:tool_calls,
+           [
+             %{
+               id: "call_1",
+               name: "add",
+               arguments: %{"value" => 5.0, "amount" => 3.0}
+             }
+           ]},
+          {:tool_calls,
+           [
+             %{
+               id: "call_term",
+               name: "final_report",
+               arguments: %{"summary" => "5 + 3 = 8", "confidence" => 0.99}
+             }
+           ]}
+        ])
+
+      agent = TerminatingOrchestrator.new()
+      agent = put_in(agent.state.__strategy__.req_options, plug: plug)
+
+      assert {:ok, %{summary: "5 + 3 = 8", confidence: 0.99}} =
+               TerminatingOrchestrator.query_sync(agent, "What is 5+3?")
+    end
+  end
+
   describe "LLM generation options in DSL" do
     defmodule CustomLLMOrchestrator do
       use Jido.Composer.Orchestrator,

@@ -27,6 +27,7 @@ This guide covers:
 1. **Basic Orchestrator** — LLM picks from simple tools
 2. **Workflow-as-Tool** — Wrapping a Workflow as a tool the LLM can invoke
 3. **AgentNode** — Nesting an Orchestrator inside a deterministic Workflow
+4. **Termination Tool** — Exiting the ReAct loop with validated structured data
 
 ## Setup
 
@@ -54,6 +55,14 @@ defmodule Demo.AddAction do
       amount: [type: :float, required: true, doc: "The amount to add"]
     ]
 
+  # LLMs send JSON integers (5) not floats (5.0) — coerce before NimbleOptions validates.
+  def on_before_validate_params(params) do
+    {:ok,
+     params
+     |> Map.update(:value, nil, fn v -> if is_integer(v), do: v / 1, else: v end)
+     |> Map.update(:amount, nil, fn v -> if is_integer(v), do: v / 1, else: v end)}
+  end
+
   def run(%{value: value, amount: amount}, _ctx) do
     {:ok, %{result: value + amount}}
   end
@@ -67,6 +76,14 @@ defmodule Demo.MultiplyAction do
       value: [type: :float, required: true, doc: "The current value"],
       amount: [type: :float, required: true, doc: "The multiplier"]
     ]
+
+  # LLMs send JSON integers (5) not floats (5.0) — coerce before NimbleOptions validates.
+  def on_before_validate_params(params) do
+    {:ok,
+     params
+     |> Map.update(:value, nil, fn v -> if is_integer(v), do: v / 1, else: v end)
+     |> Map.update(:amount, nil, fn v -> if is_integer(v), do: v / 1, else: v end)}
+  end
 
   def run(%{value: value, amount: amount}, _ctx) do
     {:ok, %{result: value * amount}}
@@ -373,6 +390,62 @@ IO.puts("\nStep 3 - Format Output (deterministic):")
 IO.puts("  formatted: #{ctx[:format_output][:formatted]}")
 ```
 
+## Part 4: Termination Tool (Structured Output)
+
+By default, the orchestrator exits the ReAct loop when the LLM produces free-form text.
+A **termination tool** lets you get structured, validated output instead. Define a
+`Jido.Action` whose schema describes the output shape. The LLM calls it like any other
+tool when it's ready to answer, and the action's `run/2` validates the result.
+
+```elixir
+defmodule Demo.FinalReportAction do
+  use Jido.Action,
+    name: "final_report",
+    description: "Produce the final report. Call this when you have computed the answer.",
+    schema: [
+      summary: [type: :string, required: true, doc: "Summary of findings"],
+      answer: [type: :float, required: true, doc: "The numeric answer"]
+    ]
+
+  # LLMs send JSON integers (16) not floats (16.0) — coerce before validation.
+  def on_before_validate_params(params) do
+    {:ok, Map.update(params, :answer, nil, fn v -> if is_integer(v), do: v / 1, else: v end)}
+  end
+
+  def run(%{summary: summary, answer: answer}, _ctx) do
+    {:ok, %{summary: summary, answer: answer}}
+  end
+end
+
+defmodule Demo.StructuredMathAssistant do
+  @moduledoc false
+  use Jido.Composer.Orchestrator,
+    name: "structured_math",
+    description: "Math assistant that returns structured results",
+    model: "anthropic:claude-sonnet-4-20250514",
+    nodes: [Demo.AddAction, Demo.MultiplyAction],
+    termination_tool: Demo.FinalReportAction,
+    system_prompt: """
+    You are a math assistant. Use the add and multiply tools to compute the answer.
+    When you have the final answer, call final_report with a summary and the numeric answer.
+    Do NOT respond with plain text — always use final_report to deliver results.
+    """,
+    max_iterations: 5
+
+  require Demo.Helpers
+  Demo.Helpers.suppress_agent_doctests()
+end
+
+agent = Demo.StructuredMathAssistant.new()
+{:ok, result} = Demo.StructuredMathAssistant.query_sync(agent, "What is (5 + 3) * 2?")
+
+IO.puts("=== Termination Tool (Structured Output) ===")
+IO.puts("Query:  What is (5 + 3) * 2?")
+IO.puts("Result: #{inspect(result)}")
+IO.puts("\nThe LLM used add and multiply tools, then called final_report")
+IO.puts("to exit the loop with validated structured data.")
+```
+
 ## Next Steps
 
 You've learned how to:
@@ -380,6 +453,7 @@ You've learned how to:
 - Build LLM-driven orchestrators with tool selection
 - Wrap workflows as tools for orchestrators
 - Nest orchestrators inside workflows with native AgentNode
+- Return structured output via termination tools
 
 Next guide: **Multi-Agent Pipeline** — coordinate multiple specialist agents with
 FanOut, HITL approval, and checkpoint/restore in a single complex pipeline.
