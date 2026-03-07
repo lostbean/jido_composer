@@ -268,4 +268,185 @@ defmodule Jido.Composer.ResumeTest do
       assert {:error, :no_matching_suspension} = result
     end
   end
+
+  describe "resume with checkpoint status CAS" do
+    test "CAS succeeds on first attempt" do
+      agent = ResumeWorkflow.new()
+      {suspended_agent, _directives} = run_to_suspend(agent)
+
+      strat = StratState.get(suspended_agent)
+      suspension = strat.pending_suspension
+
+      # Add checkpoint_status to simulate thawed state
+      suspended_agent =
+        StratState.update(suspended_agent, fn s ->
+          Map.put(s, :checkpoint_status, :hibernated)
+        end)
+
+      deliver_fn = fn agent_to_resume, signal ->
+        ResumeWorkflow.cmd(agent_to_resume, signal)
+      end
+
+      # Mock storage that tracks CAS calls
+      test_pid = self()
+
+      storage = %{
+        compare_and_set_status: fn _key, from, to ->
+          send(test_pid, {:cas, from, to})
+          :ok
+        end
+      }
+
+      {:ok, _resumed_agent, _directives} =
+        Resume.resume(
+          suspended_agent,
+          suspension.id,
+          %{decision: :approved, request_id: suspension.approval_request.id},
+          deliver_fn: deliver_fn,
+          storage: storage
+        )
+
+      assert_received {:cas, :hibernated, :resuming}
+      assert_received {:cas, :resuming, :resumed}
+    end
+
+    test "CAS failure prevents resume" do
+      agent = ResumeWorkflow.new()
+      {suspended_agent, _directives} = run_to_suspend(agent)
+
+      strat = StratState.get(suspended_agent)
+      suspension = strat.pending_suspension
+
+      suspended_agent =
+        StratState.update(suspended_agent, fn s ->
+          Map.put(s, :checkpoint_status, :hibernated)
+        end)
+
+      deliver_fn = fn agent_to_resume, signal ->
+        ResumeWorkflow.cmd(agent_to_resume, signal)
+      end
+
+      # Storage that rejects CAS (already resumed)
+      storage = %{
+        compare_and_set_status: fn _key, _from, _to ->
+          {:error, :already_resumed}
+        end
+      }
+
+      result =
+        Resume.resume(
+          suspended_agent,
+          suspension.id,
+          %{decision: :approved, request_id: suspension.approval_request.id},
+          deliver_fn: deliver_fn,
+          storage: storage
+        )
+
+      assert {:error, :already_resumed} = result
+    end
+
+    test "resume without storage option skips CAS" do
+      agent = ResumeWorkflow.new()
+      {suspended_agent, _directives} = run_to_suspend(agent)
+
+      strat = StratState.get(suspended_agent)
+      suspension = strat.pending_suspension
+
+      deliver_fn = fn agent_to_resume, signal ->
+        ResumeWorkflow.cmd(agent_to_resume, signal)
+      end
+
+      # No storage option — CAS should be skipped
+      {:ok, _resumed_agent, _directives} =
+        Resume.resume(
+          suspended_agent,
+          suspension.id,
+          %{decision: :approved, request_id: suspension.approval_request.id},
+          deliver_fn: deliver_fn
+        )
+    end
+  end
+
+  describe "resume includes child respawn directives" do
+    alias Jido.Composer.ChildRef
+
+    test "resume flow includes SpawnAgent for paused children" do
+      agent = ResumeWorkflow.new()
+      {suspended_agent, _directives} = run_to_suspend(agent)
+
+      strat = StratState.get(suspended_agent)
+      suspension = strat.pending_suspension
+
+      # Add a paused child to the strategy state
+      paused_child = %ChildRef{
+        agent_module: SomeChildModule,
+        agent_id: "child-paused-001",
+        tag: :worker,
+        status: :paused,
+        checkpoint_key: "ck-paused"
+      }
+
+      suspended_agent =
+        StratState.update(suspended_agent, fn s ->
+          %{s | children: Map.put(s.children, :worker, paused_child)}
+        end)
+
+      deliver_fn = fn agent_to_resume, signal ->
+        ResumeWorkflow.cmd(agent_to_resume, signal)
+      end
+
+      {:ok, _resumed_agent, directives} =
+        Resume.resume(
+          suspended_agent,
+          suspension.id,
+          %{
+            decision: :approved,
+            request_id: suspension.approval_request.id
+          },
+          deliver_fn: deliver_fn
+        )
+
+      spawn_directives =
+        Enum.filter(directives, fn d ->
+          match?(%Jido.Agent.Directive.SpawnAgent{}, d)
+        end)
+
+      assert spawn_directives != []
+
+      spawn = Enum.find(spawn_directives, fn d -> d.tag == :worker end)
+      assert spawn.agent == SomeChildModule
+      assert spawn.opts.id == "child-paused-001"
+      assert spawn.opts.checkpoint_key == "ck-paused"
+    end
+
+    test "resume flow returns no spawn directives when no paused children" do
+      agent = ResumeWorkflow.new()
+      {suspended_agent, _directives} = run_to_suspend(agent)
+
+      strat = StratState.get(suspended_agent)
+      suspension = strat.pending_suspension
+
+      deliver_fn = fn agent_to_resume, signal ->
+        ResumeWorkflow.cmd(agent_to_resume, signal)
+      end
+
+      {:ok, _resumed_agent, directives} =
+        Resume.resume(
+          suspended_agent,
+          suspension.id,
+          %{
+            decision: :approved,
+            request_id: suspension.approval_request.id
+          },
+          deliver_fn: deliver_fn
+        )
+
+      spawn_directives =
+        Enum.filter(directives, fn d ->
+          match?(%Jido.Agent.Directive.SpawnAgent{}, d)
+        end)
+
+      assert spawn_directives == []
+    end
+  end
 end

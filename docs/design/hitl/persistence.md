@@ -60,6 +60,8 @@ state of the computation at the moment of suspension.
 | Orchestrator conversation, tools, iteration | `__strategy__.*`                   | Yes (LLM module must ensure conversation state is serializable) |
 | Pending Suspension                          | `__strategy__.pending_suspension`  | Yes (no PIDs, no closures)                                      |
 | FanOut state (completed + suspended)        | `__strategy__.pending_fan_out`     | Yes (results, branch names, Suspension structs)                 |
+| Child references                            | `__strategy__.children`            | Yes (ChildRef structs with status, checkpoint keys)             |
+| Child communication phases                  | `__strategy__.child_phases`        | Yes (atoms)                                                     |
 | Fork functions                              | `Context.fork_fns`                 | Yes (MFA tuples by design)                                      |
 | Approval policy (closure)                   | Orchestrator state                 | **No** — stripped on checkpoint, reattached from DSL on restore |
 | Execution thread                            | Stored separately via Thread       | Yes (append-only log)                                           |
@@ -83,14 +85,14 @@ references are replaced with serializable `ChildRef` structs. ChildRef is a
 top-level Composer concept (not HITL-specific) since any suspension reason
 requires serializable child tracking.
 
-| Field            | Type                | Purpose                                                 |
-| ---------------- | ------------------- | ------------------------------------------------------- |
-| `agent_module`   | `module()`          | The child's agent module (for re-spawning)              |
-| `agent_id`       | `String.t()`        | The child's unique ID                                   |
-| `tag`            | `term()`            | The tag used for parent-child tracking                  |
-| `checkpoint_key` | `term()`            | Storage key for the child's own checkpoint              |
-| `suspension_id`  | `String.t()` \| nil | Links to the Suspension that caused this child to pause |
-| `status`         | atom                | `:running` \| `:paused` \| `:completed` \| `:failed`    |
+| Field            | Type                | Purpose                                                               |
+| ---------------- | ------------------- | --------------------------------------------------------------------- |
+| `agent_module`   | `module()`          | The child's agent module (for re-spawning)                            |
+| `agent_id`       | `String.t()`        | The child's unique ID                                                 |
+| `tag`            | `term()`            | The tag used for parent-child tracking                                |
+| `checkpoint_key` | `term()`            | Storage key for the child's own checkpoint                            |
+| `suspension_id`  | `String.t()` \| nil | Links to the Suspension that caused this child to pause               |
+| `status`         | atom                | `:running` \| `:paused` \| `:hibernated` \| `:completed` \| `:failed` |
 
 On resume, the strategy emits a SpawnAgent directive with the `checkpoint_key`,
 telling the runtime to restore the child from its checkpoint rather than
@@ -102,8 +104,8 @@ A Composer checkpoint extends the base `Jido.Persist` format:
 
 | Field                  | Source       | Purpose                                                             |
 | ---------------------- | ------------ | ------------------------------------------------------------------- |
-| `version`              | Jido.Persist | Schema version for migration (current: 2)                           |
-| `checkpoint_schema`    | Composer     | `:composer_v2`                                                      |
+| `version`              | Jido.Persist | Schema version for migration (current: 3)                           |
+| `checkpoint_schema`    | Composer     | `:composer_v3`                                                      |
 | `agent_module`         | Jido.Persist | The agent's module                                                  |
 | `id`                   | Jido.Persist | The agent's unique ID                                               |
 | `status`               | Composer     | `:hibernated` \| `:resuming` \| `:resumed`                          |

@@ -14,7 +14,7 @@ defmodule Jido.Composer.ChildRef do
 
   defstruct [:agent_module, :agent_id, :tag, :checkpoint_key, :suspension_id, status: :running]
 
-  @type status :: :running | :paused | :completed | :failed
+  @type status :: :running | :paused | :hibernated | :completed | :failed
 
   @type t :: %__MODULE__{
           agent_module: module(),

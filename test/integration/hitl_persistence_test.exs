@@ -523,7 +523,7 @@ defmodule Jido.Composer.Integration.HITLPersistenceTest do
       assert migrated.status == :waiting
     end
 
-    test "v2 checkpoint passes through unchanged" do
+    test "v2 checkpoint migrates to v3 with new fields" do
       v2_state = %{
         module: Jido.Composer.Workflow.Strategy,
         status: :waiting,
@@ -532,7 +532,9 @@ defmodule Jido.Composer.Integration.HITLPersistenceTest do
       }
 
       migrated = Checkpoint.migrate(v2_state, 2)
-      assert migrated == v2_state
+      assert migrated.children == %{worker: %{status: :paused}}
+      assert migrated.checkpoint_status == :hibernated
+      assert migrated.child_phases == %{}
     end
   end
 end

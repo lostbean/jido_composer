@@ -147,20 +147,229 @@ defmodule Jido.Composer.CheckpointTest do
       assert migrated.children == %{child1: :ref}
     end
 
-    test "v2 is a no-op for current version" do
+    test "v2 migrates to v3 (adds checkpoint_status and child_phases)" do
       v2_state = %{
         status: :running,
         children: %{},
         machine: %{status: :done}
       }
 
-      assert Checkpoint.migrate(v2_state, 2) == v2_state
+      migrated = Checkpoint.migrate(v2_state, 2)
+      assert migrated.checkpoint_status == :hibernated
+      assert migrated.child_phases == %{}
+      assert migrated.children == %{}
     end
   end
 
   describe "checkpoint schema version" do
-    test "checkpoint schema version is :composer_v2" do
-      assert Checkpoint.schema_version() == :composer_v2
+    test "checkpoint schema version is :composer_v3" do
+      assert Checkpoint.schema_version() == :composer_v3
+    end
+  end
+
+  describe "transition_status/2" do
+    test "hibernated -> resuming is valid" do
+      assert :ok = Checkpoint.transition_status(:hibernated, :resuming)
+    end
+
+    test "resuming -> resumed is valid" do
+      assert :ok = Checkpoint.transition_status(:resuming, :resumed)
+    end
+
+    test "resumed -> resuming is invalid" do
+      assert {:error, {:invalid_transition, :resumed, :resuming}} =
+               Checkpoint.transition_status(:resumed, :resuming)
+    end
+
+    test "hibernated -> resumed is invalid (must go through resuming)" do
+      assert {:error, {:invalid_transition, :hibernated, :resumed}} =
+               Checkpoint.transition_status(:hibernated, :resumed)
+    end
+
+    test "unknown status returns error" do
+      assert {:error, {:invalid_transition, :bogus, :resuming}} =
+               Checkpoint.transition_status(:bogus, :resuming)
+    end
+  end
+
+  describe "prepare_for_checkpoint/1 sets checkpoint_status" do
+    test "adds checkpoint_status :hibernated" do
+      strategy_state = %{
+        module: Jido.Composer.Workflow.Strategy,
+        status: :waiting,
+        machine: %{status: :process}
+      }
+
+      cleaned = Checkpoint.prepare_for_checkpoint(strategy_state)
+      assert cleaned.checkpoint_status == :hibernated
+    end
+
+    test "does not overwrite existing checkpoint_status" do
+      strategy_state = %{
+        module: Jido.Composer.Workflow.Strategy,
+        status: :waiting,
+        checkpoint_status: :resuming
+      }
+
+      cleaned = Checkpoint.prepare_for_checkpoint(strategy_state)
+      assert cleaned.checkpoint_status == :resuming
+    end
+  end
+
+  describe "migrate/2 v2 -> v3" do
+    test "adds checkpoint_status and child_phases defaults" do
+      v2_state = %{
+        module: Jido.Composer.Workflow.Strategy,
+        status: :running,
+        children: %{}
+      }
+
+      migrated = Checkpoint.migrate(v2_state, 2)
+      assert migrated.checkpoint_status == :hibernated
+      assert migrated.child_phases == %{}
+    end
+
+    test "v2 -> v3 does not overwrite existing fields" do
+      v2_state = %{
+        status: :running,
+        children: %{child1: :ref},
+        checkpoint_status: :resuming,
+        child_phases: %{child1: :awaiting_result}
+      }
+
+      migrated = Checkpoint.migrate(v2_state, 2)
+      assert migrated.checkpoint_status == :resuming
+      assert migrated.child_phases == %{child1: :awaiting_result}
+    end
+
+    test "v1 -> v3 migration chain adds all fields" do
+      v1_state = %{
+        module: Jido.Composer.Workflow.Strategy,
+        status: :running
+      }
+
+      migrated = Checkpoint.migrate(v1_state, 1)
+      assert migrated.children == %{}
+      assert migrated.checkpoint_status == :hibernated
+      assert migrated.child_phases == %{}
+    end
+
+    test "v3 is a no-op for current version" do
+      v3_state = %{
+        status: :running,
+        children: %{},
+        checkpoint_status: :hibernated,
+        child_phases: %{}
+      }
+
+      assert Checkpoint.migrate(v3_state, 3) == v3_state
+    end
+  end
+
+  describe "pending_child_respawns/1" do
+    alias Jido.Composer.ChildRef
+
+    test "returns SpawnAgent directives for paused children" do
+      strategy_state = %{
+        children: %{
+          worker: %ChildRef{
+            agent_module: SomeModule,
+            agent_id: "child-1",
+            tag: :worker,
+            status: :paused,
+            checkpoint_key: "ck-worker"
+          },
+          done: %ChildRef{
+            agent_module: OtherModule,
+            agent_id: "child-2",
+            tag: :done,
+            status: :completed
+          }
+        }
+      }
+
+      directives = Checkpoint.pending_child_respawns(strategy_state)
+      assert length(directives) == 1
+
+      [spawn] = directives
+      assert spawn.__struct__ == Jido.Agent.Directive.SpawnAgent
+      assert spawn.agent == SomeModule
+      assert spawn.tag == :worker
+      assert spawn.opts.id == "child-1"
+      assert spawn.opts.checkpoint_key == "ck-worker"
+    end
+
+    test "returns empty list when no paused children" do
+      strategy_state = %{
+        children: %{
+          worker: %ChildRef{
+            agent_module: SomeModule,
+            agent_id: "child-1",
+            tag: :worker,
+            status: :running
+          }
+        }
+      }
+
+      assert Checkpoint.pending_child_respawns(strategy_state) == []
+    end
+
+    test "returns empty list when children map is empty" do
+      assert Checkpoint.pending_child_respawns(%{children: %{}}) == []
+    end
+
+    test "returns empty list when children key is missing" do
+      assert Checkpoint.pending_child_respawns(%{}) == []
+    end
+  end
+
+  describe "replay_directives/1" do
+    alias Jido.Composer.ChildRef
+
+    test "replays SpawnAgent for child in :spawning phase" do
+      strategy_state = %{
+        child_phases: %{worker: :spawning},
+        children: %{
+          worker: %ChildRef{
+            agent_module: SomeModule,
+            agent_id: "child-spawn",
+            tag: :worker,
+            status: :running
+          }
+        }
+      }
+
+      directives = Checkpoint.replay_directives(strategy_state)
+      assert length(directives) == 1
+      [spawn] = directives
+      assert spawn.__struct__ == Jido.Agent.Directive.SpawnAgent
+      assert spawn.agent == SomeModule
+      assert spawn.tag == :worker
+    end
+
+    test "no replay for child in :awaiting_result phase" do
+      strategy_state = %{
+        child_phases: %{worker: :awaiting_result},
+        children: %{
+          worker: %ChildRef{
+            agent_module: SomeModule,
+            agent_id: "child-wait",
+            tag: :worker,
+            status: :running
+          }
+        }
+      }
+
+      directives = Checkpoint.replay_directives(strategy_state)
+      assert directives == []
+    end
+
+    test "returns empty when no phases tracked" do
+      assert Checkpoint.replay_directives(%{child_phases: %{}, children: %{}}) == []
+    end
+
+    test "returns empty when child_phases key is missing" do
+      assert Checkpoint.replay_directives(%{}) == []
     end
   end
 end

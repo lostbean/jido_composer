@@ -11,6 +11,7 @@ defmodule Jido.Composer.Workflow.Strategy do
   alias Jido.Agent.Directive
   alias Jido.Agent.Strategy.State, as: StratState
   alias Jido.Composer.Checkpoint
+  alias Jido.Composer.ChildRef
   alias Jido.Composer.Context
   alias Jido.Composer.Directive.FanOutBranch
   alias Jido.Composer.Directive.Suspend, as: SuspendDirective
@@ -50,6 +51,7 @@ defmodule Jido.Composer.Workflow.Strategy do
         ambient_keys: opts[:ambient] || [],
         fork_fns: opts[:fork_fns] || %{},
         children: %{},
+        child_phases: %{},
         agent_id: agent.id,
         agent_module: ctx[:agent_module]
       })
@@ -111,13 +113,39 @@ defmodule Jido.Composer.Workflow.Strategy do
     end
   end
 
-  def cmd(agent, [%Jido.Instruction{action: :workflow_child_started} | _rest], _ctx) do
+  def cmd(agent, [%Jido.Instruction{action: :workflow_child_started} = instr | _rest], _ctx) do
+    params = instr.params
+    tag = params[:tag]
+
+    child_ref =
+      ChildRef.new(
+        agent_module: params[:agent_module],
+        agent_id: params[:agent_id],
+        tag: tag,
+        status: :running
+      )
+
+    agent =
+      StratState.update(agent, fn s ->
+        %{
+          s
+          | children: Map.put(s.children, tag, child_ref),
+            child_phases: Map.put(Map.get(s, :child_phases, %{}), tag, :awaiting_result)
+        }
+      end)
+
     {agent, []}
   end
 
   def cmd(agent, [%Jido.Instruction{action: :workflow_child_result} = instr | _rest], _ctx) do
     strat = StratState.get(agent)
     params = instr.params
+    tag = params[:tag] || strat.machine.status
+
+    agent =
+      StratState.update(agent, fn s ->
+        %{s | child_phases: Map.delete(Map.get(s, :child_phases, %{}), tag)}
+      end)
 
     case params do
       %{result: {:ok, result}} ->
@@ -147,7 +175,21 @@ defmodule Jido.Composer.Workflow.Strategy do
     end
   end
 
-  def cmd(agent, [%Jido.Instruction{action: :workflow_child_exit} | _rest], _ctx) do
+  def cmd(agent, [%Jido.Instruction{action: :workflow_child_exit} = instr | _rest], _ctx) do
+    params = instr.params
+    tag = params[:tag]
+    exit_status = if params[:reason] == :normal, do: :completed, else: :failed
+
+    agent =
+      StratState.update(agent, fn s ->
+        children =
+          Map.update(s.children, tag, nil, fn ref ->
+            %{ref | status: exit_status}
+          end)
+
+        %{s | children: children}
+      end)
+
     {agent, []}
   end
 
@@ -323,6 +365,28 @@ defmodule Jido.Composer.Workflow.Strategy do
     end
   end
 
+  def cmd(agent, [%Jido.Instruction{action: :child_hibernated} = instr | _], _ctx) do
+    params = instr.params
+    tag = params[:tag]
+
+    agent =
+      StratState.update(agent, fn s ->
+        children =
+          Map.update(s.children, tag, nil, fn ref ->
+            %{
+              ref
+              | status: :paused,
+                checkpoint_key: params[:checkpoint_key],
+                suspension_id: params[:suspension_id]
+            }
+          end)
+
+        %{s | children: children}
+      end)
+
+    {agent, []}
+  end
+
   def cmd(agent, _instructions, _ctx) do
     {agent, []}
   end
@@ -340,7 +404,8 @@ defmodule Jido.Composer.Workflow.Strategy do
       {"composer.suspend.resume", {:strategy_cmd, :suspend_resume}},
       {"composer.suspend.timeout", {:strategy_cmd, :suspend_timeout}},
       {"composer.hitl.response", {:strategy_cmd, :hitl_response}},
-      {"composer.hitl.timeout", {:strategy_cmd, :hitl_timeout}}
+      {"composer.hitl.timeout", {:strategy_cmd, :hitl_timeout}},
+      {"composer.child.hibernated", {:strategy_cmd, :child_hibernated}}
     ]
   end
 
@@ -446,11 +511,17 @@ defmodule Jido.Composer.Workflow.Strategy do
         {agent, [directive]}
 
       %AgentNode{agent_module: agent_module, opts: opts} ->
+        tag = strat.machine.status
         child_context = Context.fork_for_child(strat.machine.context)
         child_flat = Context.to_flat_map(child_context)
 
+        agent =
+          StratState.update(agent, fn s ->
+            %{s | child_phases: Map.put(s.child_phases, tag, :spawning)}
+          end)
+
         directive = %Directive.SpawnAgent{
-          tag: strat.machine.status,
+          tag: tag,
           agent: agent_module,
           opts: Map.new(opts) |> Map.put(:context, child_flat)
         }

@@ -13,6 +13,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   alias Jido.Agent.Directive
   alias Jido.Agent.Strategy.State, as: StratState
   alias Jido.Composer.Checkpoint
+  alias Jido.Composer.ChildRef
   alias Jido.Composer.Context
   alias Jido.Composer.Directive.Suspend, as: SuspendDirective
   alias Jido.Composer.Directive.SuspendForHuman
@@ -175,7 +176,23 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     end
   end
 
-  def cmd(agent, [%Jido.Instruction{action: :orchestrator_child_started} | _], _ctx) do
+  def cmd(agent, [%Jido.Instruction{action: :orchestrator_child_started} = instr | _], _ctx) do
+    params = instr.params
+    tag = params[:tag]
+
+    child_ref =
+      ChildRef.new(
+        agent_module: params[:agent_module],
+        agent_id: params[:agent_id],
+        tag: tag,
+        status: :running
+      )
+
+    agent =
+      StratState.update(agent, fn s ->
+        %{s | children: Map.put(s.children, tag, child_ref)}
+      end)
+
     {agent, []}
   end
 
@@ -223,7 +240,21 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     check_all_tools_done(agent)
   end
 
-  def cmd(agent, [%Jido.Instruction{action: :orchestrator_child_exit} | _], _ctx) do
+  def cmd(agent, [%Jido.Instruction{action: :orchestrator_child_exit} = instr | _], _ctx) do
+    params = instr.params
+    tag = params[:tag]
+    exit_status = if params[:reason] == :normal, do: :completed, else: :failed
+
+    agent =
+      StratState.update(agent, fn s ->
+        children =
+          Map.update(s.children, tag, nil, fn ref ->
+            %{ref | status: exit_status}
+          end)
+
+        %{s | children: children}
+      end)
+
     {agent, []}
   end
 
@@ -394,6 +425,28 @@ defmodule Jido.Composer.Orchestrator.Strategy do
      ]}
   end
 
+  def cmd(agent, [%Jido.Instruction{action: :child_hibernated} = instr | _], _ctx) do
+    params = instr.params
+    tag = params[:tag]
+
+    agent =
+      StratState.update(agent, fn s ->
+        children =
+          Map.update(s.children, tag, nil, fn ref ->
+            %{
+              ref
+              | status: :paused,
+                checkpoint_key: params[:checkpoint_key],
+                suspension_id: params[:suspension_id]
+            }
+          end)
+
+        %{s | children: children}
+      end)
+
+    {agent, []}
+  end
+
   def cmd(agent, _instructions, _ctx) do
     {agent, []}
   end
@@ -410,7 +463,8 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       {"composer.suspend.resume", {:strategy_cmd, :suspend_resume}},
       {"composer.suspend.timeout", {:strategy_cmd, :suspend_timeout}},
       {"composer.hitl.response", {:strategy_cmd, :hitl_response}},
-      {"composer.hitl.timeout", {:strategy_cmd, :hitl_timeout}}
+      {"composer.hitl.timeout", {:strategy_cmd, :hitl_timeout}},
+      {"composer.child.hibernated", {:strategy_cmd, :child_hibernated}}
     ]
   end
 
