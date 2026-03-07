@@ -263,7 +263,7 @@ child_spawns = Jido.Composer.Checkpoint.pending_child_respawns(restored_state)
 
 ### Schema Migration
 
-Checkpoints include a schema version (current: `:composer_v3`). `Checkpoint.migrate/2` handles upgrades from older versions.
+Checkpoints include a schema version (current: `:composer_v1`). `Checkpoint.migrate/2` handles upgrades from older versions.
 
 ## Context System
 

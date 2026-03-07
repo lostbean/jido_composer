@@ -508,33 +508,18 @@ defmodule Jido.Composer.Integration.HITLPersistenceTest do
     end
   end
 
-  describe "schema migration v1 → v2" do
-    test "v1 checkpoint without children field gets default" do
-      v1_state = %{
+  describe "schema migration" do
+    test "v1 migrate is a no-op" do
+      state = %{
         module: Jido.Composer.Workflow.Strategy,
         status: :waiting,
         machine: %{status: :approval, context: %{}},
-        pending_suspension: %{id: "s1", reason: :human_input}
+        children: %{worker: %{status: :paused}},
+        checkpoint_status: :hibernated,
+        child_phases: %{}
       }
 
-      migrated = Checkpoint.migrate(v1_state, 1)
-
-      assert Map.get(migrated, :children, %{}) == %{}
-      assert migrated.status == :waiting
-    end
-
-    test "v2 checkpoint migrates to v3 with new fields" do
-      v2_state = %{
-        module: Jido.Composer.Workflow.Strategy,
-        status: :waiting,
-        machine: %{status: :approval, context: %{}},
-        children: %{worker: %{status: :paused}}
-      }
-
-      migrated = Checkpoint.migrate(v2_state, 2)
-      assert migrated.children == %{worker: %{status: :paused}}
-      assert migrated.checkpoint_status == :hibernated
-      assert migrated.child_phases == %{}
+      assert Checkpoint.migrate(state, 1) == state
     end
   end
 end

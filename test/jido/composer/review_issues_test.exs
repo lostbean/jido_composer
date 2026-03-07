@@ -147,20 +147,18 @@ defmodule Jido.Composer.ReviewIssuesTest do
   # ── Issue #4: Checkpoint.migrate/2 no catch-all for unknown versions ──
 
   describe "issue #4: Checkpoint.migrate handles unknown versions" do
-    test "migrate with version 3 does not crash" do
+    test "migrate with unknown version does not crash" do
       state = %{status: :running, children: %{}}
 
       # This should not raise FunctionClauseError
-      result = Checkpoint.migrate(state, 3)
-      # v3 → v4 migration adds :stream and removes :generation_mode
-      assert result.status == :running
-      assert result.stream == false
+      result = Checkpoint.migrate(state, 99)
+      assert result == state
     end
 
     test "migrate with version 0 does not crash" do
       state = %{status: :running}
       result = Checkpoint.migrate(state, 0)
-      assert result.status == :running
+      assert result == state
     end
   end
 

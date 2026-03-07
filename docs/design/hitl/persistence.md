@@ -143,8 +143,8 @@ A Composer checkpoint extends the base `Jido.Persist` format:
 
 | Field                  | Source       | Purpose                                                             |
 | ---------------------- | ------------ | ------------------------------------------------------------------- |
-| `version`              | Jido.Persist | Schema version for migration (current: 3)                           |
-| `checkpoint_schema`    | Composer     | `:composer_v3`                                                      |
+| `version`              | Jido.Persist | Schema version for migration (current: 1)                           |
+| `checkpoint_schema`    | Composer     | `:composer_v1`                                                      |
 | `agent_module`         | Jido.Persist | The agent's module                                                  |
 | `id`                   | Jido.Persist | The agent's unique ID                                               |
 | `status`               | Composer     | `:hibernated` \| `:resuming` \| `:resumed`                          |

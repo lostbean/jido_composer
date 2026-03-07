@@ -122,48 +122,28 @@ defmodule Jido.Composer.CheckpointTest do
   end
 
   describe "migrate/2" do
-    test "v1 → v2 adds :children field" do
-      v1_state = %{
+    test "v1 is a no-op for current version" do
+      state = %{
         module: Jido.Composer.Workflow.Strategy,
         status: :running,
-        machine: %{status: :process}
-      }
-
-      migrated = Checkpoint.migrate(v1_state, 1)
-      assert migrated.children == %{}
-      # Original fields preserved
-      assert migrated.module == Jido.Composer.Workflow.Strategy
-      assert migrated.status == :running
-      assert migrated.machine == %{status: :process}
-    end
-
-    test "v1 → v2 does not overwrite existing :children" do
-      v1_state = %{
-        status: :running,
-        children: %{child1: :ref}
-      }
-
-      migrated = Checkpoint.migrate(v1_state, 1)
-      assert migrated.children == %{child1: :ref}
-    end
-
-    test "v2 migrates to v3 (adds checkpoint_status and child_phases)" do
-      v2_state = %{
-        status: :running,
         children: %{},
-        machine: %{status: :done}
+        checkpoint_status: :hibernated,
+        child_phases: %{},
+        stream: false
       }
 
-      migrated = Checkpoint.migrate(v2_state, 2)
-      assert migrated.checkpoint_status == :hibernated
-      assert migrated.child_phases == %{}
-      assert migrated.children == %{}
+      assert Checkpoint.migrate(state, 1) == state
+    end
+
+    test "unknown version is a no-op" do
+      state = %{status: :running}
+      assert Checkpoint.migrate(state, 99) == state
     end
   end
 
   describe "checkpoint schema version" do
-    test "checkpoint schema version is :composer_v4" do
-      assert Checkpoint.schema_version() == :composer_v4
+    test "checkpoint schema version is :composer_v1" do
+      assert Checkpoint.schema_version() == :composer_v1
     end
   end
 
@@ -216,82 +196,18 @@ defmodule Jido.Composer.CheckpointTest do
     end
   end
 
-  describe "migrate/2 v2 -> v3" do
-    test "adds checkpoint_status and child_phases defaults" do
-      v2_state = %{
+  describe "migrate/2 preserves state" do
+    test "v1 preserves all fields" do
+      state = %{
         module: Jido.Composer.Workflow.Strategy,
-        status: :running,
-        children: %{}
-      }
-
-      migrated = Checkpoint.migrate(v2_state, 2)
-      assert migrated.checkpoint_status == :hibernated
-      assert migrated.child_phases == %{}
-    end
-
-    test "v2 -> v3 does not overwrite existing fields" do
-      v2_state = %{
         status: :running,
         children: %{child1: :ref},
         checkpoint_status: :resuming,
-        child_phases: %{child1: :awaiting_result}
-      }
-
-      migrated = Checkpoint.migrate(v2_state, 2)
-      assert migrated.checkpoint_status == :resuming
-      assert migrated.child_phases == %{child1: :awaiting_result}
-    end
-
-    test "v1 -> v3 migration chain adds all fields" do
-      v1_state = %{
-        module: Jido.Composer.Workflow.Strategy,
-        status: :running
-      }
-
-      migrated = Checkpoint.migrate(v1_state, 1)
-      assert migrated.children == %{}
-      assert migrated.checkpoint_status == :hibernated
-      assert migrated.child_phases == %{}
-    end
-
-    test "v3 migrates generation_mode to stream" do
-      v3_state = %{
-        status: :running,
-        children: %{},
-        checkpoint_status: :hibernated,
-        child_phases: %{},
-        generation_mode: :stream_text
-      }
-
-      migrated = Checkpoint.migrate(v3_state, 3)
-      assert migrated.stream == true
-      refute Map.has_key?(migrated, :generation_mode)
-    end
-
-    test "v3 defaults stream to false for non-streaming generation_mode" do
-      v3_state = %{
-        status: :running,
-        children: %{},
-        checkpoint_status: :hibernated,
-        child_phases: %{},
-        generation_mode: :generate_text
-      }
-
-      migrated = Checkpoint.migrate(v3_state, 3)
-      assert migrated.stream == false
-      refute Map.has_key?(migrated, :generation_mode)
-    end
-
-    test "v4 is a no-op for current version" do
-      v4_state = %{
-        status: :running,
-        children: %{},
-        checkpoint_status: :hibernated,
-        child_phases: %{},
+        child_phases: %{child1: :awaiting_result},
         stream: false
       }
 
-      assert Checkpoint.migrate(v4_state, 4) == v4_state
+      assert Checkpoint.migrate(state, 1) == state
     end
   end
 
