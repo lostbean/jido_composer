@@ -48,24 +48,62 @@ model), the strategy emits directives to checkpoint state via
 `Jido.Persist.hibernate/2` and stop the process. A shorter threshold saves
 memory at the cost of resume latency; a longer one favours responsiveness.
 
+### CheckpointAndStop Directive
+
+When a suspension timeout exceeds the configured `hibernate_after` threshold,
+the strategy appends a `CheckpointAndStop` directive. This directive bridges
+the strategy layer (pure) and the runtime (impure) — the strategy decides
+_when_ to checkpoint, and the directive handles the side effects.
+
+At runtime, the `DirectiveExec` protocol implementation:
+
+1. Resolves storage from the directive or the agent's lifecycle configuration
+2. Persists the checkpoint via `Jido.Persist.hibernate/2`
+3. Notifies the parent by sending a `"composer.child.hibernated"` signal
+4. Returns a stop tuple to terminate the process
+
+The directive struct carries three fields:
+
+| Field             | Type                        | Purpose                                            |
+| ----------------- | --------------------------- | -------------------------------------------------- |
+| `suspension`      | `Suspension.t()` (required) | The active suspension that triggered checkpointing |
+| `storage_config`  | `map()` \| nil              | Optional override for storage backend              |
+| `checkpoint_data` | `map()` \| nil              | Optional additional data to include in checkpoint  |
+
+### DirectiveExec Protocol
+
+Both `Suspend` and `CheckpointAndStop` implement the
+`Jido.AgentServer.DirectiveExec` protocol. This is the extension point that
+allows jido_composer to introduce custom directives without modifying jido
+core — the protocol uses `@fallback_to_any true`, so unknown directives are
+safely ignored.
+
+| Directive             | Behaviour                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Suspend**           | `hibernate: false` is a no-op. `hibernate: true` or `%{after: ms}` logs intent. Primary resource management uses CheckpointAndStop instead. |
+| **CheckpointAndStop** | Persists checkpoint, notifies parent via signal, stops the process.                                                                         |
+
 ## What Gets Checkpointed
 
 The entire agent state — including strategy state under `__strategy__` — is
 persisted via `Jido.Persist.hibernate/2`. The checkpoint captures the logical
 state of the computation at the moment of suspension.
 
-| Data                                        | Location                           | Serializable?                                                   |
-| ------------------------------------------- | ---------------------------------- | --------------------------------------------------------------- |
-| Machine status, context, history            | `__strategy__.machine`             | Yes (atoms, maps, timestamps)                                   |
-| Orchestrator conversation, tools, iteration | `__strategy__.*`                   | Yes (LLM module must ensure conversation state is serializable) |
-| Pending Suspension                          | `__strategy__.pending_suspension`  | Yes (no PIDs, no closures)                                      |
-| FanOut state (completed + suspended)        | `__strategy__.pending_fan_out`     | Yes (results, branch names, Suspension structs)                 |
-| Child references                            | `__strategy__.children`            | Yes (ChildRef structs with status, checkpoint keys)             |
-| Child communication phases                  | `__strategy__.child_phases`        | Yes (atoms)                                                     |
-| Fork functions                              | `Context.fork_fns`                 | Yes (MFA tuples by design)                                      |
-| Approval policy (closure)                   | Orchestrator state                 | **No** — stripped on checkpoint, reattached from DSL on restore |
-| Execution thread                            | Stored separately via Thread       | Yes (append-only log)                                           |
-| Child process PIDs                          | `__parent__`, AgentServer children | **No** — replaced by ChildRef                                   |
+| Data                                        | Location                           | Serializable?                                                         |
+| ------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------- |
+| Machine status, context, history            | `__strategy__.machine`             | Yes (atoms, maps, timestamps)                                         |
+| Orchestrator conversation, tools, iteration | `__strategy__.*`                   | Yes (LLM module must ensure conversation state is serializable)       |
+| Pending Suspension                          | `__strategy__.pending_suspension`  | Yes (no PIDs, no closures)                                            |
+| FanOut state (completed + suspended)        | `__strategy__.pending_fan_out`     | Yes (results, branch names, Suspension structs)                       |
+| Child references                            | `__strategy__.children`            | Yes (ChildRef structs with status, checkpoint keys)                   |
+| Child communication phases                  | `__strategy__.child_phases`        | Yes (atoms)                                                           |
+| Fork functions                              | `Context.fork_fns`                 | Yes (MFA tuples by design)                                            |
+| Approval policy (closure)                   | Orchestrator state                 | **No** — stripped on checkpoint, reattached from DSL on restore       |
+| Execution thread                            | Stored separately via Thread       | Yes (append-only log)                                                 |
+| Gated tool calls                            | `__strategy__.gated_calls`         | Yes (tool call structs + approval requests)                           |
+| Suspended tool calls                        | `__strategy__.suspended_calls`     | Yes (suspension + tool call data)                                     |
+| Orchestrator status                         | `__strategy__.status`              | Yes (atom — includes `:awaiting_tools_and_approval` for mixed states) |
+| Child process PIDs                          | `__parent__`, AgentServer children | **No** — replaced by ChildRef                                         |
 
 ## ParentRef PID Handling
 
@@ -85,14 +123,15 @@ references are replaced with serializable `ChildRef` structs. ChildRef is a
 top-level Composer concept (not HITL-specific) since any suspension reason
 requires serializable child tracking.
 
-| Field            | Type                | Purpose                                                               |
-| ---------------- | ------------------- | --------------------------------------------------------------------- |
-| `agent_module`   | `module()`          | The child's agent module (for re-spawning)                            |
-| `agent_id`       | `String.t()`        | The child's unique ID                                                 |
-| `tag`            | `term()`            | The tag used for parent-child tracking                                |
-| `checkpoint_key` | `term()`            | Storage key for the child's own checkpoint                            |
-| `suspension_id`  | `String.t()` \| nil | Links to the Suspension that caused this child to pause               |
-| `status`         | atom                | `:running` \| `:paused` \| `:hibernated` \| `:completed` \| `:failed` |
+| Field            | Type                                     | Purpose                                                               |
+| ---------------- | ---------------------------------------- | --------------------------------------------------------------------- |
+| `agent_module`   | `module()`                               | The child's agent module (for re-spawning)                            |
+| `agent_id`       | `String.t()`                             | The child's unique ID                                                 |
+| `tag`            | `term()`                                 | The tag used for parent-child tracking                                |
+| `checkpoint_key` | `term()`                                 | Storage key for the child's own checkpoint                            |
+| `suspension_id`  | `String.t()` \| nil                      | Links to the Suspension that caused this child to pause               |
+| `status`         | atom                                     | `:running` \| `:paused` \| `:hibernated` \| `:completed` \| `:failed` |
+| `phase`          | `:spawning` \| `:awaiting_result` \| nil | Tracks child communication lifecycle for replay on resume             |
 
 On resume, the strategy emits a SpawnAgent directive with the `checkpoint_key`,
 telling the runtime to restore the child from its checkpoint rather than
@@ -201,6 +240,16 @@ sequenceDiagram
    a HITL response, a rate-limit retry, or any other resume trigger)
 5. Results propagate upward through the normal `emit_to_parent` mechanism
 
+### Strategy Init Restoration
+
+When an AgentServer starts with a thawed agent, the strategy's `init/2`
+detects existing strategy state (by checking that the module matches and the
+status is not `:idle`) and rebuilds only runtime-derived fields — nodes, tools,
+name-to-atom mappings, closures — from `strategy_opts`. The checkpointed state
+(conversation, pending suspension, child refs, status) is preserved. Without
+this detection, starting an AgentServer with a restored agent would obliterate
+the checkpoint by reinitializing strategy state to defaults.
+
 ## Idempotent Resume
 
 To prevent duplicate resumption, checkpoints carry a `status` field:
@@ -254,6 +303,30 @@ replay on resume:
 | `:started`         | Re-send context signal              |
 | `:context_sent`    | Re-send context signal (idempotent) |
 | `:awaiting_result` | Re-spawn child from checkpoint      |
+
+### Replay Directives
+
+`Checkpoint.replay_directives/1` reconstructs the directives needed to resume
+in-flight operations from checkpoint state. It combines child phase replays
+with orchestrator operation replays into a single directive list.
+
+**Workflow replay** re-spawns children based on their `child_phases` map:
+`:spawning` entries produce `SpawnAgent` directives. For backward
+compatibility, if `child_phases` is empty, the function falls back to
+inspecting each `ChildRef.phase` field.
+
+**Orchestrator replay** inspects the strategy status:
+
+| Status                         | Replay Behaviour                                               |
+| ------------------------------ | -------------------------------------------------------------- |
+| `:awaiting_llm`                | Re-emit the LLM call from conversation state                   |
+| `:awaiting_tool`               | Re-dispatch the pending tool call from conversation history    |
+| `:awaiting_tools`              | Re-dispatch all pending tool calls                             |
+| `:awaiting_tools_and_approval` | Re-dispatch pending tool calls (gated calls await re-approval) |
+
+`Resume.resume/4` automatically prepends replay directives when it detects
+`checkpoint_status` in strategy state, ensuring in-flight operations are
+re-established without manual intervention.
 
 ## External Timeout Management
 

@@ -10,7 +10,7 @@ The strategy stores its state under `agent.state.__strategy__`:
 
 | Field                  | Type                        | Purpose                                                                                                                                   |
 | ---------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`               | atom                        | `:idle`, `:awaiting_llm`, `:awaiting_tools`, `:completed`, `:error`                                                                       |
+| `status`               | atom                        | `:idle`, `:awaiting_llm`, `:awaiting_tools`, `:awaiting_suspension`, `:awaiting_tools_and_suspension`, `:completed`, `:error`             |
 | `phase`                | atom                        | [Phase tracking](../hitl/persistence.md#handling-in-flight-operations) for resume replay (`:idle`, `:awaiting_llm`, `:dispatching_tools`) |
 | `nodes`                | `%{String.t() => Node.t()}` | Available nodes indexed by name                                                                                                           |
 | `model`                | `String.t()`                | req_llm model spec (e.g. `"anthropic:claude-sonnet-4-20250514"`)                                                                          |
@@ -34,6 +34,7 @@ The strategy stores its state under `agent.state.__strategy__`:
 | `approval_policy`      | MFA \| nil                  | Dynamic [approval gate](../hitl/strategy-integration.md#orchestrator-approval-gate) function                                              |
 | `pending_suspension`   | `nil \| Suspension.t()`     | Tracks any active [suspension](../hitl/README.md)                                                                                         |
 | `children`             | `%{tag => ChildRef.t()}`    | Serializable [child references](../hitl/persistence.md#childref-serializable-child-references) for checkpoint/thaw                        |
+| `hibernate_after`      | `pos_integer() \| nil`      | Delay (ms) before [checkpoint](../hitl/persistence.md) on suspension                                                                      |
 | `result`               | any                         | Final answer when complete (may be [NodeIO](../nodes/typed-io.md))                                                                        |
 
 ## Status Lifecycle
@@ -46,7 +47,11 @@ stateDiagram-v2
     awaiting_llm --> completed : final_answer returned
     awaiting_llm --> error : LLM error or max iterations
     awaiting_tools --> awaiting_llm : all tool results collected
+    awaiting_tools --> awaiting_suspension : running tools finish, suspended remain
+    awaiting_tools --> awaiting_tools_and_suspension : tool suspends while others run
     awaiting_tools --> error : tool execution error
+    awaiting_tools_and_suspension --> awaiting_suspension : running tools finish
+    awaiting_suspension --> awaiting_llm : all suspensions resumed
     completed --> [*]
     error --> [*]
 ```
@@ -75,6 +80,8 @@ stateDiagram-v2
 | `:orchestrator_child_result`  | Child agent signal (agent node)     | Same as tool_result for AgentNode                                                                    |
 | `:orchestrator_child_started` | SpawnAgent confirmation             | Send context to child                                                                                |
 | `:orchestrator_child_exit`    | Child process terminated            | Handle unexpected exit                                                                               |
+| `:suspend_resume`             | Resume signal for suspended tool    | Resume tool from `suspended_calls` — use provided data or re-dispatch                                |
+| `:suspend_timeout`            | Suspension timeout fires            | Convert to error tool result, clear `suspended_calls` entry, check completion                        |
 | `:child_hibernated`           | Child agent checkpointed            | Update [ChildRef](../hitl/persistence.md#childref-serializable-child-references) status to `:paused` |
 
 ## Execution Flow
@@ -228,3 +235,76 @@ returns several in a single turn. A configurable `max_tool_concurrency` limit
 controls how many tool calls execute simultaneously. When more tool calls are
 returned than the limit allows, excess calls are queued and dispatched as
 earlier ones complete.
+
+## Tool Suspension
+
+A tool may suspend for non-HITL reasons (rate limits, async external jobs,
+resource throttling). The strategy detects suspension through two paths:
+
+| Detection Path | Condition                                                     | Source                      |
+| -------------- | ------------------------------------------------------------- | --------------------------- |
+| Direct status  | `params[:status] == :suspend`                                 | Strategy-level tests        |
+| Effects-based  | `params[:status] == :ok` and `:suspend` in `params[:effects]` | Runtime DirectiveExec paths |
+
+Both paths route to `handle_tool_suspension`, which:
+
+1. Extracts or builds a `Suspension` struct from the tool result
+2. Removes the call from `pending_tool_calls`
+3. Stores `%{suspension: suspension, call: call}` in `suspended_calls` keyed
+   by `suspension.id`
+4. Emits a Suspend directive
+5. Calls `Checkpoint.maybe_add_checkpoint_and_stop/2` to append a
+   CheckpointAndStop directive when `hibernate_after` is configured
+
+When other tool calls are still in flight, the strategy remains in
+`:awaiting_tools_and_suspension`. When all running tools finish and only
+suspended calls remain, status transitions to `:awaiting_suspension`.
+
+### Tool Suspend Resume
+
+When `cmd(:suspend_resume, %{suspension_id: id})` arrives:
+
+| Condition                 | Behaviour                                                     |
+| ------------------------- | ------------------------------------------------------------- |
+| `data` provided in resume | Data is used directly as the tool result (no re-execution)    |
+| No `data` in resume       | Tool call is re-dispatched via a new RunInstruction directive |
+| Unknown `suspension_id`   | Error directive emitted                                       |
+
+In both success paths, the `suspended_calls` entry for the given ID is cleared.
+The strategy then calls `check_all_tools_done` to determine if all tool calls
+(pending, gated, and suspended) have resolved. If so, it transitions to
+`:awaiting_llm` and emits the next LLM call with all collected tool results.
+
+### Tool Suspend Timeout
+
+When `cmd(:suspend_timeout, %{suspension_id: id})` arrives and the suspension
+is still active, the strategy converts it to an error tool result, clears the
+entry from `suspended_calls`, and checks tool completion. If the suspension was
+already resumed, the timeout is a no-op.
+
+## Init Restoration
+
+The `init/2` callback supports two modes:
+
+| Mode       | Condition                                                      | Behaviour                                                        |
+| ---------- | -------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Fresh init | No existing strategy state, or status is `:idle`               | Builds full state from DSL options                               |
+| Restore    | Strategy state exists with matching module and non-idle status | Preserves checkpoint state; rebuilds runtime-derived fields only |
+
+Runtime-derived fields rebuilt during restore: `nodes`, `tools`, `name_atoms`,
+`gated_node_names`, `approval_policy`, `req_options`. All other fields
+(conversation, suspended_calls, pending_tool_calls, iteration, context, etc.)
+are preserved from the checkpoint.
+
+This enables the thaw-start-resume flow: an AgentServer starts with
+checkpointed state, `init/2` detects the restored state and avoids overwriting
+it, and the subsequent resume signal picks up where the flow left off.
+
+## Checkpoint Integration
+
+The strategy accepts `hibernate_after` in its DSL options and stores it in
+strategy state. Whenever a Suspend directive is emitted (from tool suspension,
+approval gate, or HITL), `Checkpoint.maybe_add_checkpoint_and_stop/2` inspects
+`hibernate_after` and appends a CheckpointAndStop directive if the suspension
+timeout exceeds the threshold. See [Persistence](../hitl/persistence.md) for
+the full checkpoint lifecycle.

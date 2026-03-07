@@ -51,6 +51,7 @@ graph TB
     subgraph "Layer 3 — System"
         CP["Cascading Checkpoint"]
         HR["Three-Tier Resource Management"]
+        CAS["CheckpointAndStop Directive"]
     end
 
     subgraph "Layer 2 — Strategy"
@@ -71,13 +72,14 @@ graph TB
     AG --> SS
     FO --> SS
     SS --> HR
+    CAS --> CP
 ```
 
-| Layer                               | Scope        | Purpose                                                                                               | Key Concepts                                                                   |
-| ----------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [Node](human-node.md)               | Leaf-level   | A Node that yields `:suspend` and constructs a Suspension or [ApprovalRequest](approval-lifecycle.md) | [HumanNode](human-node.md), Suspension, ApprovalRequest, ApprovalResponse      |
-| [Strategy](strategy-integration.md) | Flow-level   | Strategies recognize suspension, emit directives, and handle resume signals                           | Suspend directive, `:waiting` status, approval gate, FanOut partial completion |
-| [Persistence](persistence.md)       | System-level | Checkpoint and restore entire agent trees across long pauses                                          | ChildRef, three-tier lifecycle, top-down resume                                |
+| Layer                               | Scope        | Purpose                                                                                               | Key Concepts                                                                          |
+| ----------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [Node](human-node.md)               | Leaf-level   | A Node that yields `:suspend` and constructs a Suspension or [ApprovalRequest](approval-lifecycle.md) | [HumanNode](human-node.md), Suspension, ApprovalRequest, ApprovalResponse             |
+| [Strategy](strategy-integration.md) | Flow-level   | Strategies recognize suspension, emit directives, and handle resume signals                           | Suspend directive, `:waiting` status, approval gate, FanOut partial completion        |
+| [Persistence](persistence.md)       | System-level | Checkpoint and restore entire agent trees across long pauses                                          | ChildRef, three-tier lifecycle, CheckpointAndStop, top-down resume, replay directives |
 
 ## Design Principles
 

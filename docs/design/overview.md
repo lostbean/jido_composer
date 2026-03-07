@@ -187,23 +187,24 @@ the `pending_suspension` field.
 Strategies communicate with the runtime exclusively through directives. The
 directives most relevant to Composer are:
 
-| Directive       | Purpose                                                                                                              | Used By      |
-| --------------- | -------------------------------------------------------------------------------------------------------------------- | ------------ |
-| RunInstruction  | Execute an action and route result back to cmd/3                                                                     | Both         |
-| SpawnAgent      | Spawn a child agent with parent-child tracking                                                                       | Both         |
-| StopChild       | Stop a tracked child agent                                                                                           | Both         |
-| Emit            | Dispatch a signal via configured adapters                                                                            | Both         |
-| Schedule        | Schedule a delayed message                                                                                           | Orchestrator |
-| Suspend         | Pause flow for any reason, deliver [Suspension](hitl/README.md#generalized-suspension) metadata                      | Both         |
-| SuspendForHuman | Convenience wrapper — builds a Suspend with `reason: :human_input` and [ApprovalRequest](hitl/approval-lifecycle.md) | Both         |
-| FanOutBranch    | Execute a single [FanOutNode](nodes/README.md#fanoutnode) branch (contains RunInstruction or SpawnAgent)             | Workflow     |
-| Error           | Signal an error condition                                                                                            | Both         |
+| Directive         | Purpose                                                                                                              | Used By      |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------- | ------------ |
+| RunInstruction    | Execute an action and route result back to cmd/3                                                                     | Both         |
+| SpawnAgent        | Spawn a child agent with parent-child tracking                                                                       | Both         |
+| StopChild         | Stop a tracked child agent                                                                                           | Both         |
+| Emit              | Dispatch a signal via configured adapters                                                                            | Both         |
+| Schedule          | Schedule a delayed message                                                                                           | Orchestrator |
+| Suspend           | Pause flow for any reason, deliver [Suspension](hitl/README.md#generalized-suspension) metadata                      | Both         |
+| SuspendForHuman   | Convenience wrapper — builds a Suspend with `reason: :human_input` and [ApprovalRequest](hitl/approval-lifecycle.md) | Both         |
+| FanOutBranch      | Execute a single [FanOutNode](nodes/README.md#fanoutnode) branch (contains RunInstruction or SpawnAgent)             | Workflow     |
+| CheckpointAndStop | Checkpoint agent state to storage and stop the process; emits `composer.child.hibernated` to parent                  | Both         |
+| Error             | Signal an error condition                                                                                            | Both         |
 
-Suspend, SuspendForHuman, and FanOutBranch are custom directives introduced by
-Composer. The AgentServer's directive execution is protocol-based
-(`Jido.AgentServer.DirectiveExec`), so Composer implements this protocol for its
-custom directive structs. Unknown directives fall through to a no-op `Any`
-implementation.
+Suspend, SuspendForHuman, FanOutBranch, and CheckpointAndStop are custom
+directives introduced by Composer. The AgentServer's directive execution is
+protocol-based (`Jido.AgentServer.DirectiveExec`), so Composer implements this
+protocol for its custom directive structs. Unknown directives fall through to a
+no-op `Any` implementation.
 
 The RunInstruction directive is central to both patterns. It lets strategies
 remain pure by deferring action execution to the runtime. The runtime executes
