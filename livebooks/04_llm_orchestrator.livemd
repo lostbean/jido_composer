@@ -1,0 +1,385 @@
+# LLM Orchestrator: Tool-Using AI Agents
+
+```elixir
+Mix.install(
+  [
+    {:jido_composer, path: Path.join(__DIR__, "..")},
+    {:kino, "~> 0.14"}
+  ],
+  config: [
+    jido_action: [default_timeout: :timer.minutes(5)]
+  ]
+)
+```
+
+## Introduction
+
+While Workflows follow a predetermined FSM path, an **Orchestrator** uses an LLM to
+decide what to do at runtime. It operates in a **ReAct loop**:
+
+1. LLM receives the user query + descriptions of available tools
+2. LLM reasons and selects a tool with arguments
+3. Tool executes, result is fed back to the LLM
+4. LLM either calls another tool or produces a final answer
+
+This guide covers:
+
+1. **Basic Orchestrator** — LLM picks from simple tools
+2. **Workflow-as-Tool** — Wrapping a Workflow as a tool the LLM can invoke
+3. **AgentNode** — Nesting an Orchestrator inside a deterministic Workflow
+
+## Setup
+
+An **Anthropic API key** is required for all demos in this guide.
+
+```elixir
+api_key =
+  System.get_env("ANTHROPIC_API_KEY") ||
+    raise "Set ANTHROPIC_API_KEY in your environment or Livebook app settings."
+
+Application.put_env(:req_llm, :anthropic_api_key, api_key)
+
+IO.puts("API key configured.")
+```
+
+## Shared Actions
+
+```elixir
+defmodule Demo.AddAction do
+  use Jido.Action,
+    name: "add",
+    description: "Adds an amount to a value",
+    schema: [
+      value: [type: :float, required: true, doc: "The current value"],
+      amount: [type: :float, required: true, doc: "The amount to add"]
+    ]
+
+  def run(%{value: value, amount: amount}, _ctx) do
+    {:ok, %{result: value + amount}}
+  end
+end
+
+defmodule Demo.MultiplyAction do
+  use Jido.Action,
+    name: "multiply",
+    description: "Multiplies a value by an amount",
+    schema: [
+      value: [type: :float, required: true, doc: "The current value"],
+      amount: [type: :float, required: true, doc: "The multiplier"]
+    ]
+
+  def run(%{value: value, amount: amount}, _ctx) do
+    {:ok, %{result: value * amount}}
+  end
+end
+
+defmodule Demo.EchoAction do
+  use Jido.Action,
+    name: "echo",
+    description: "Echoes a message string",
+    schema: [
+      message: [type: :string, required: true, doc: "Message to echo"]
+    ]
+
+  def run(%{message: message}, _ctx) do
+    {:ok, %{echoed: message}}
+  end
+end
+
+defmodule Demo.ExtractAction do
+  use Jido.Action,
+    name: "extract",
+    description: "Extracts records from a data source",
+    schema: [
+      source: [type: :string, required: true, doc: "Data source identifier"]
+    ]
+
+  def run(%{source: source}, _ctx) do
+    {:ok, %{records: [%{id: 1, source: source}, %{id: 2, source: source}], count: 2}}
+  end
+end
+
+defmodule Demo.TransformAction do
+  use Jido.Action,
+    name: "transform",
+    description: "Uppercases source field in extracted records",
+    schema: [
+      extract: [type: :map, required: false, doc: "Results from extract step"]
+    ]
+
+  def run(params, _ctx) do
+    records = get_in(params, [:extract, :records]) || []
+    transformed = Enum.map(records, fn rec -> Map.update(rec, :source, "", &String.upcase/1) end)
+    {:ok, %{records: transformed, count: length(transformed)}}
+  end
+end
+
+defmodule Demo.LoadAction do
+  use Jido.Action,
+    name: "load",
+    description: "Loads records into storage",
+    schema: [
+      transform: [type: :map, required: false, doc: "Results from transform step"]
+    ]
+
+  def run(params, _ctx) do
+    records = get_in(params, [:transform, :records]) || []
+    {:ok, %{loaded: length(records), status: :complete}}
+  end
+end
+
+defmodule Demo.Helpers do
+  defmacro suppress_agent_doctests do
+    quote do
+      @doc false
+      def plugins, do: super()
+      @doc false
+      def capabilities, do: super()
+      @doc false
+      def signal_types, do: super()
+    end
+  end
+end
+
+IO.puts("Actions defined.")
+```
+
+## Part 1: Basic Orchestrator
+
+The simplest Orchestrator — give the LLM some tools and a question.
+
+```elixir
+defmodule Demo.MathAssistant do
+  @moduledoc false
+  use Jido.Composer.Orchestrator,
+    name: "math_assistant",
+    description: "A helpful assistant with math and echo tools",
+    model: "anthropic:claude-sonnet-4-20250514",
+    nodes: [Demo.AddAction, Demo.EchoAction],
+    system_prompt: """
+    You are a helpful assistant with access to math and echo tools.
+    Use the add tool for arithmetic. Use the echo tool to repeat messages.
+    Always use tools when they are relevant to the user's request.
+    """,
+    max_iterations: 5
+
+  require Demo.Helpers
+  Demo.Helpers.suppress_agent_doctests()
+end
+
+agent = Demo.MathAssistant.new()
+{:ok, answer} = Demo.MathAssistant.query_sync(agent, "What is 5 + 3?")
+
+IO.puts("=== Basic Orchestrator ===")
+IO.puts("Query:  What is 5 + 3?")
+IO.puts("Answer: #{answer}")
+IO.puts("\nThe LLM saw add and echo as tools, chose add(value: 5.0, amount: 3.0),")
+IO.puts("got back %{result: 8.0}, and produced the final answer.")
+```
+
+## Part 2: Workflow as an Orchestrator Tool
+
+You can wrap any Workflow as an Action, making it callable as a tool by an Orchestrator.
+The LLM sees it as a single tool. When invoked, the full FSM runs internally.
+
+```elixir
+# First, define the ETL workflow
+defmodule Demo.ETLWorkflow do
+  @moduledoc false
+  use Jido.Composer.Workflow,
+    name: "etl_pipeline",
+    description: "Extract, transform, load pipeline",
+    nodes: %{
+      extract: Demo.ExtractAction,
+      transform: Demo.TransformAction,
+      load: Demo.LoadAction
+    },
+    transitions: %{
+      {:extract, :ok} => :transform,
+      {:transform, :ok} => :load,
+      {:load, :ok} => :done,
+      {:_, :error} => :failed
+    },
+    initial: :extract
+
+  require Demo.Helpers
+  Demo.Helpers.suppress_agent_doctests()
+end
+
+# Wrap it as an Action the LLM can call
+defmodule Demo.ETLToolAction do
+  use Jido.Action,
+    name: "etl_pipeline",
+    description: "Runs an ETL pipeline: extracts data from a source, transforms records by uppercasing, and loads them. Returns the full pipeline results.",
+    schema: [
+      source: [type: :string, required: true, doc: "Data source identifier"]
+    ]
+
+  def run(%{source: source}, _ctx) do
+    agent = Demo.ETLWorkflow.new()
+
+    case Demo.ETLWorkflow.run_sync(agent, %{source: source}) do
+      {:ok, ctx} -> {:ok, ctx}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+end
+
+# Now the Orchestrator can call the entire ETL pipeline as a single tool
+defmodule Demo.DataAssistant do
+  @moduledoc false
+  use Jido.Composer.Orchestrator,
+    name: "data_assistant",
+    description: "An assistant that can run ETL pipelines and echo messages",
+    model: "anthropic:claude-sonnet-4-20250514",
+    nodes: [Demo.EchoAction, Demo.ETLToolAction],
+    system_prompt: """
+    You can run ETL pipelines and echo messages.
+    When asked to process data, use the etl_pipeline tool with a source parameter.
+    When asked to echo or repeat something, use the echo tool.
+    """,
+    max_iterations: 5
+
+  require Demo.Helpers
+  Demo.Helpers.suppress_agent_doctests()
+end
+
+agent = Demo.DataAssistant.new()
+
+{:ok, answer} =
+  Demo.DataAssistant.query_sync(
+    agent,
+    "Run the ETL pipeline on the orders database and tell me what happened."
+  )
+
+IO.puts("=== Workflow-as-Tool ===")
+IO.puts("Query:  Run the ETL pipeline on the orders database")
+IO.puts("Answer: #{answer}")
+IO.puts("\nThe LLM called etl_pipeline(source: \"orders\"), which internally ran")
+IO.puts("the 3-step FSM (extract -> transform -> load) and returned the results.")
+```
+
+## Part 3: Nesting an Orchestrator Inside a Workflow (AgentNode)
+
+**AgentNode** lets you drop an agent module directly into a Workflow's `nodes` map.
+The DSL detects it's a `Jido.Agent` and wraps it automatically — no Action wrapper needed.
+
+This combines the predictability of FSMs with the flexibility of LLM reasoning:
+deterministic steps bookend an LLM analysis step.
+
+```mermaid
+stateDiagram-v2
+    [*] --> gather_input
+    gather_input --> analyze : ok
+    analyze --> format_output : ok
+    format_output --> done : ok
+
+    note right of analyze
+        This step runs an LLM Orchestrator
+        as a native AgentNode
+    end note
+```
+
+```elixir
+defmodule Demo.GatherInputAction do
+  use Jido.Action,
+    name: "gather_input",
+    description: "Gathers and validates input data for analysis",
+    schema: [
+      topic: [type: :string, required: true, doc: "Topic to analyze"],
+      depth: [type: :string, required: false, doc: "Analysis depth: brief or detailed"]
+    ]
+
+  def run(%{topic: topic} = params, _ctx) do
+    depth = Map.get(params, :depth, "brief")
+    {:ok, %{topic: topic, depth: depth, gathered_at: DateTime.utc_now() |> to_string()}}
+  end
+end
+
+defmodule Demo.FormatOutputAction do
+  use Jido.Action,
+    name: "format_output",
+    description: "Formats analysis results into a structured report",
+    schema: [
+      analyze: [type: :map, required: false, doc: "Results from the analysis step"]
+    ]
+
+  def run(params, _ctx) do
+    analysis = params[:analyze] || %{}
+    {:ok, %{report: "## Analysis Report\n\n#{inspect(analysis, pretty: true)}", formatted: true}}
+  end
+end
+
+# The inner orchestrator — will be used as a native AgentNode
+defmodule Demo.AnalysisOrchestrator do
+  @moduledoc false
+  use Jido.Composer.Orchestrator,
+    name: "analysis_agent",
+    description: "Analyzes a topic using available tools",
+    model: "anthropic:claude-sonnet-4-20250514",
+    nodes: [Demo.AddAction, Demo.EchoAction],
+    system_prompt: """
+    You are an analysis assistant. When given a topic, provide a brief analysis.
+    Use the echo tool to record your key findings.
+    Be concise and provide your final answer as a structured summary.
+    """,
+    max_iterations: 5
+
+  require Demo.Helpers
+  Demo.Helpers.suppress_agent_doctests()
+end
+
+# The outer workflow — drops the orchestrator directly into nodes map
+defmodule Demo.AnalysisWorkflow do
+  @moduledoc false
+  use Jido.Composer.Workflow,
+    name: "analysis_pipeline",
+    description: "Deterministic pipeline with LLM analysis step via native AgentNode",
+    nodes: %{
+      gather_input: Demo.GatherInputAction,
+      analyze: Demo.AnalysisOrchestrator,
+      format_output: Demo.FormatOutputAction
+    },
+    transitions: %{
+      {:gather_input, :ok} => :analyze,
+      {:analyze, :ok} => :format_output,
+      {:format_output, :ok} => :done,
+      {:_, :error} => :failed
+    },
+    initial: :gather_input
+
+  require Demo.Helpers
+  Demo.Helpers.suppress_agent_doctests()
+end
+
+topic = "composable agent architectures"
+agent = Demo.AnalysisWorkflow.new()
+
+{:ok, ctx} =
+  Demo.AnalysisWorkflow.run_sync(agent, %{
+    topic: topic,
+    depth: "brief",
+    query: "Analyze the topic '#{topic}' at brief depth. Provide key points."
+  })
+
+IO.puts("=== Native AgentNode ===")
+IO.puts("\nStep 1 - Gather Input (deterministic):")
+IO.inspect(ctx[:gather_input], pretty: true)
+
+IO.puts("\nStep 2 - LLM Analysis (orchestrator ran as native AgentNode):")
+IO.inspect(ctx[:analyze], pretty: true)
+
+IO.puts("\nStep 3 - Format Output (deterministic):")
+IO.puts("  formatted: #{ctx[:format_output][:formatted]}")
+```
+
+## Next Steps
+
+You've learned how to:
+
+- Build LLM-driven orchestrators with tool selection
+- Wrap workflows as tools for orchestrators
+- Nest orchestrators inside workflows with native AgentNode
+
+Next guide: **Multi-Agent Pipeline** — coordinate multiple specialist agents with
+FanOut, HITL approval, and checkpoint/restore in a single complex pipeline.

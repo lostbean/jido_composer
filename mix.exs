@@ -163,8 +163,11 @@ defmodule JidoComposer.MixProject do
         "guides/orchestrators.md",
         "guides/advanced.md",
         # Livebooks
-        "livebooks/composer_demo.livemd",
-        "livebooks/native_composition_demo.livemd",
+        "livebooks/01_etl_pipeline.livemd",
+        "livebooks/02_branching_and_parallel.livemd",
+        "livebooks/03_approval_workflow.livemd",
+        "livebooks/04_llm_orchestrator.livemd",
+        "livebooks/05_multi_agent_pipeline.livemd",
         # Design: Architecture
         "docs/design/README.md",
         "docs/design/overview.md",
@@ -208,8 +211,11 @@ defmodule JidoComposer.MixProject do
           "guides/advanced.md"
         ],
         Livebooks: [
-          "livebooks/composer_demo.livemd",
-          "livebooks/native_composition_demo.livemd"
+          "livebooks/01_etl_pipeline.livemd",
+          "livebooks/02_branching_and_parallel.livemd",
+          "livebooks/03_approval_workflow.livemd",
+          "livebooks/04_llm_orchestrator.livemd",
+          "livebooks/05_multi_agent_pipeline.livemd"
         ],
         "Design: Architecture": [
           "docs/design/README.md",
@@ -242,16 +248,6 @@ defmodule JidoComposer.MixProject do
           "docs/design/hitl/strategy-integration.md",
           "docs/design/hitl/persistence.md",
           "docs/design/hitl/nested-propagation.md"
-        ],
-        "Design: Testing": [
-          "docs/design/testing.md"
-        ],
-        "Design: Limitations": [
-          "docs/design/limitations/parent-ref-pid-stripping.md",
-          "docs/design/limitations/otp-hibernate-support.md"
-        ],
-        Reference: [
-          "PLAN.md"
         ]
       ],
       before_closing_body_tag: &before_closing_body_tag/1

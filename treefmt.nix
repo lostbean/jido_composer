@@ -30,6 +30,7 @@
     enable = true;
     includes = [
       "*.md"
+      "*.livemd"
       "*.json"
     ];
     excludes = [

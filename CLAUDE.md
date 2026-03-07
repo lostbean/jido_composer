@@ -77,11 +77,36 @@ Use `npx openspec <args>` to use openspec.
 - Prefer explicit errors over silent fallbacks
 - Never use `String.to_atom/1` on untrusted input
 
+## Livebooks
+
+Livebooks in `livebooks/` serve as runnable demos, ordered by complexity:
+
+1. `01_etl_pipeline` — Linear workflow (no API key)
+2. `02_branching_and_parallel` — Custom outcomes + FanOut (no API key)
+3. `03_approval_workflow` — HITL suspend/resume + checkpoint (no API key)
+4. `04_llm_orchestrator` — Orchestrator, workflow-as-tool, AgentNode (API key)
+5. `05_multi_agent_pipeline` — Full stack: FanOut + agents + HITL + checkpoint (API key)
+
+**Verify livebooks run correctly:**
+
+- `mix run scripts/run_livemd.exs livebooks/01_etl_pipeline.livemd` — single file
+- `mix run scripts/run_livemd.exs livebooks/0[1-3]*.livemd` — non-LLM only
+- `mix run scripts/run_livemd.exs livebooks/*.livemd` — all (needs `ANTHROPIC_API_KEY`)
+
+**Guidelines:**
+
+- Each livebook is one focused use case, not a feature catalog
+- Use `IO.puts`/`IO.inspect` for output; Kino widgets are optional (script skips them)
+- Use full module paths inside `defmodule` bodies (aliases don't cross module boundaries in Livebook)
+- Always verify after editing: `mix run scripts/run_livemd.exs livebooks/<file>.livemd`
+
 ## File Organization
 
 - **lib/**: Source code (will contain `jido/composer/` modules)
 - **test/**: Tests mirroring lib structure
 - **test/support/**: Shared test helpers and fixtures
+- **livebooks/**: Runnable demo guides (included in hex docs)
+- **scripts/**: Dev-only scripts (not part of the library)
 
 ## Common Pitfalls
 
