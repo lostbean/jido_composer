@@ -152,7 +152,9 @@ defmodule Jido.Composer.ReviewIssuesTest do
 
       # This should not raise FunctionClauseError
       result = Checkpoint.migrate(state, 3)
-      assert result == state
+      # v3 → v4 migration adds :stream and removes :generation_mode
+      assert result.status == :running
+      assert result.stream == false
     end
 
     test "migrate with version 0 does not crash" do

@@ -88,7 +88,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         system_prompt: opts[:system_prompt],
         temperature: opts[:temperature],
         max_tokens: opts[:max_tokens],
-        generation_mode: opts[:generation_mode] || :generate_text,
+        stream: opts[:stream] || false,
         output_schema: opts[:output_schema],
         llm_opts: opts[:llm_opts] || [],
         conversation: nil,
@@ -766,7 +766,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         system_prompt: state.system_prompt,
         temperature: state.temperature,
         max_tokens: state.max_tokens,
-        generation_mode: state.generation_mode,
+        stream: state.stream,
         output_schema: state.output_schema,
         llm_opts: state.llm_opts,
         req_options: state.req_options

@@ -27,7 +27,7 @@ defmodule Jido.Composer.Orchestrator.DSL do
     max_iterations = Keyword.get(opts, :max_iterations, 10)
     temperature = Keyword.get(opts, :temperature, nil)
     max_tokens = Keyword.get(opts, :max_tokens, nil)
-    generation_mode = Keyword.get(opts, :generation_mode, :generate_text)
+    stream = Keyword.get(opts, :stream, false)
     output_schema = Keyword.get(opts, :output_schema, nil)
     llm_opts = Keyword.get(opts, :llm_opts, [])
     req_options = Keyword.get(opts, :req_options, [])
@@ -54,7 +54,7 @@ defmodule Jido.Composer.Orchestrator.DSL do
                                 max_iterations: unquote(max_iterations),
                                 temperature: unquote(temperature),
                                 max_tokens: unquote(max_tokens),
-                                generation_mode: unquote(generation_mode),
+                                stream: unquote(stream),
                                 output_schema: unquote(Macro.escape(output_schema)),
                                 llm_opts: unquote(llm_opts),
                                 req_options: unquote(req_options)

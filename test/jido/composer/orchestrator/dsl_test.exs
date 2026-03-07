@@ -74,9 +74,9 @@ defmodule Jido.Composer.Orchestrator.DSLTest do
       assert opts[:req_options] == []
     end
 
-    test "generation_mode defaults to :generate_text" do
+    test "stream defaults to false" do
       opts = MinimalOrchestrator.strategy_opts()
-      assert opts[:generation_mode] == :generate_text
+      assert opts[:stream] == false
     end
 
     test "llm_opts defaults to empty list" do
@@ -237,7 +237,7 @@ defmodule Jido.Composer.Orchestrator.DSLTest do
         nodes: [Jido.Composer.TestActions.AddAction],
         temperature: 0.2,
         max_tokens: 4096,
-        generation_mode: :generate_text,
+        stream: false,
         llm_opts: [top_p: 0.95]
     end
 
@@ -251,9 +251,9 @@ defmodule Jido.Composer.Orchestrator.DSLTest do
       assert opts[:max_tokens] == 4096
     end
 
-    test "generation_mode is passed to strategy opts" do
+    test "stream is passed to strategy opts" do
       opts = CustomLLMOrchestrator.strategy_opts()
-      assert opts[:generation_mode] == :generate_text
+      assert opts[:stream] == false
     end
 
     test "llm_opts are passed to strategy opts" do

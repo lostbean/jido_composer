@@ -8,14 +8,15 @@ defmodule Jido.Composer.Checkpoint do
 
   ## Schema Version
 
-  Current checkpoint schema is `:composer_v3`. Migrations:
+  Current checkpoint schema is `:composer_v4`. Migrations:
   - v1 → v2: adds `children` field (empty map default)
   - v2 → v3: adds `checkpoint_status` and `child_phases` fields
+  - v3 → v4: replaces `generation_mode` with `stream` boolean
   """
 
   alias Jido.Agent.Directive
 
-  @schema_version :composer_v3
+  @schema_version :composer_v4
 
   @valid_transitions %{
     hibernated: [:resuming],
@@ -174,7 +175,7 @@ defmodule Jido.Composer.Checkpoint do
             system_prompt: Map.get(state, :system_prompt),
             temperature: Map.get(state, :temperature),
             max_tokens: Map.get(state, :max_tokens),
-            generation_mode: Map.get(state, :generation_mode, :generate_text),
+            stream: Map.get(state, :stream, false),
             output_schema: Map.get(state, :output_schema),
             llm_opts: Map.get(state, :llm_opts, []),
             req_options: Map.get(state, :req_options, [])
@@ -326,7 +327,20 @@ defmodule Jido.Composer.Checkpoint do
     |> migrate(3)
   end
 
-  def migrate(state, 3), do: state
+  def migrate(state, 3) do
+    stream =
+      case Map.get(state, :generation_mode) do
+        mode when mode in [:stream_text, :stream_object] -> true
+        _ -> false
+      end
+
+    state
+    |> Map.put_new(:stream, stream)
+    |> Map.delete(:generation_mode)
+    |> migrate(4)
+  end
+
+  def migrate(state, 4), do: state
 
   def migrate(state, _version), do: state
 end

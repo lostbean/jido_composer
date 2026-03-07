@@ -56,27 +56,28 @@ LLMAction performs three steps:
    calls, it appends tool result messages via `ReqLLM.Context.tool_result/3`.
 
 2. **Call req_llm** -- Invokes the appropriate ReqLLM function based on the
-   `generation_mode` parameter.
+   `stream` and `output_schema` parameters.
 
 3. **Classify response** -- For text modes, uses `ReqLLM.Response.classify/1`
    to determine whether the response contains tool calls or a final answer. For
    object modes, wraps the parsed object as a final answer directly.
 
-## Generation Modes
+## Streaming and Structured Output
 
-LLMAction supports four generation modes, selected via the `generation_mode`
-parameter:
+LLMAction dispatches to the appropriate ReqLLM function based on two orthogonal
+parameters: `stream` (boolean, default `false`) and `output_schema` (map or nil,
+default `nil`):
 
-| Mode               | ReqLLM Function            | Response Handling                          | Use Case                      |
-| ------------------ | -------------------------- | ------------------------------------------ | ----------------------------- |
-| `:generate_text`   | `ReqLLM.generate_text/3`   | Classify into tool_calls or final_answer   | Standard ReAct loop (default) |
-| `:generate_object` | `ReqLLM.generate_object/4` | Return parsed object as final_answer       | Structured output extraction  |
-| `:stream_text`     | `ReqLLM.stream_text/3`     | Collect stream, then classify final chunk  | Streaming text generation     |
-| `:stream_object`   | `ReqLLM.stream_object/4`   | Collect stream, return final parsed object | Streaming structured output   |
+| `stream` | `output_schema` | ReqLLM Function            | Response Handling                          | Use Case                      |
+| -------- | --------------- | -------------------------- | ------------------------------------------ | ----------------------------- |
+| `false`  | `nil`           | `ReqLLM.generate_text/3`   | Classify into tool_calls or final_answer   | Standard ReAct loop (default) |
+| `false`  | `%{...}`        | `ReqLLM.generate_object/4` | Return parsed object as final_answer       | Structured output extraction  |
+| `true`   | `nil`           | `ReqLLM.stream_text/3`     | Collect stream, then classify final chunk  | Streaming text generation     |
+| `true`   | `%{...}`        | `ReqLLM.stream_object/4`   | Collect stream, return final parsed object | Streaming structured output   |
 
-Object modes require an `output_schema` parameter. Stream modes collect
-internally and return the final result -- the strategy sees no difference from
-non-streaming modes.
+When `output_schema` is set, the schema is passed to the ReqLLM object
+generation function. Stream modes collect internally and return the final result
+-- the strategy sees no difference from non-streaming modes.
 
 ## Parameter Flow: DSL to Strategy State to LLMAction
 
@@ -98,32 +99,32 @@ flowchart LR
 
 ### DSL Options
 
-| Option            | Type                | Default          | Description                                                                   |
-| ----------------- | ------------------- | ---------------- | ----------------------------------------------------------------------------- |
-| `model`           | `String.t()`        | `nil`            | req_llm model spec (e.g. `"anthropic:claude-sonnet-4-20250514"`)              |
-| `temperature`     | `float \| nil`      | `nil`            | Sampling temperature                                                          |
-| `max_tokens`      | `integer \| nil`    | `nil`            | Maximum tokens in response                                                    |
-| `generation_mode` | atom                | `:generate_text` | One of `:generate_text`, `:generate_object`, `:stream_text`, `:stream_object` |
-| `output_schema`   | map \| nil          | `nil`            | JSON Schema for object generation modes                                       |
-| `llm_opts`        | keyword             | `[]`             | Additional options passed through to req_llm (e.g. `:top_p`)                  |
-| `req_options`     | keyword             | `[]`             | Opaque Req HTTP options (e.g. `plug:` for cassette testing)                   |
-| `system_prompt`   | `String.t() \| nil` | `nil`            | System instructions for the LLM                                               |
-| `nodes`           | list                | (required)       | Available nodes (actions and agents)                                          |
-| `max_iterations`  | integer             | `10`             | Safety limit on the ReAct loop                                                |
+| Option           | Type                | Default    | Description                                                      |
+| ---------------- | ------------------- | ---------- | ---------------------------------------------------------------- |
+| `model`          | `String.t()`        | `nil`      | req_llm model spec (e.g. `"anthropic:claude-sonnet-4-20250514"`) |
+| `temperature`    | `float \| nil`      | `nil`      | Sampling temperature                                             |
+| `max_tokens`     | `integer \| nil`    | `nil`      | Maximum tokens in response                                       |
+| `stream`         | boolean             | `false`    | Whether to use streaming generation                              |
+| `output_schema`  | map \| nil          | `nil`      | JSON Schema for structured output (enables object generation)    |
+| `llm_opts`       | keyword             | `[]`       | Additional options passed through to req_llm (e.g. `:top_p`)     |
+| `req_options`    | keyword             | `[]`       | Opaque Req HTTP options (e.g. `plug:` for cassette testing)      |
+| `system_prompt`  | `String.t() \| nil` | `nil`      | System instructions for the LLM                                  |
+| `nodes`          | list                | (required) | Available nodes (actions and agents)                             |
+| `max_iterations` | integer             | `10`       | Safety limit on the ReAct loop                                   |
 
 ### Strategy State Fields (LLM-related)
 
-| Field             | Type                 | Source                 |
-| ----------------- | -------------------- | ---------------------- |
-| `model`           | `String.t()`         | DSL `model:`           |
-| `temperature`     | `float \| nil`       | DSL `temperature:`     |
-| `max_tokens`      | `integer \| nil`     | DSL `max_tokens:`      |
-| `generation_mode` | atom                 | DSL `generation_mode:` |
-| `output_schema`   | map \| nil           | DSL `output_schema:`   |
-| `llm_opts`        | keyword              | DSL `llm_opts:`        |
-| `req_options`     | keyword              | DSL `req_options:`     |
-| `system_prompt`   | `String.t() \| nil`  | DSL `system_prompt:`   |
-| `conversation`    | `ReqLLM.Context.t()` | Managed at runtime     |
+| Field           | Type                 | Source               |
+| --------------- | -------------------- | -------------------- |
+| `model`         | `String.t()`         | DSL `model:`         |
+| `temperature`   | `float \| nil`       | DSL `temperature:`   |
+| `max_tokens`    | `integer \| nil`     | DSL `max_tokens:`    |
+| `stream`        | boolean              | DSL `stream:`        |
+| `output_schema` | map \| nil           | DSL `output_schema:` |
+| `llm_opts`      | keyword              | DSL `llm_opts:`      |
+| `req_options`   | keyword              | DSL `req_options:`   |
+| `system_prompt` | `String.t() \| nil`  | DSL `system_prompt:` |
+| `conversation`  | `ReqLLM.Context.t()` | Managed at runtime   |
 
 ### LLMAction Instruction Params
 
@@ -139,7 +140,7 @@ The strategy's `emit_llm_call/1` builds a flat params map from its state:
   system_prompt: state.system_prompt,
   temperature: state.temperature,
   max_tokens: state.max_tokens,
-  generation_mode: state.generation_mode,
+  stream: state.stream,
   output_schema: state.output_schema,
   llm_opts: state.llm_opts,
   req_options: state.req_options
@@ -152,7 +153,7 @@ req_llm's `req_http_options` key.
 
 ## Response Classification (generate_text mode)
 
-For `:generate_text` and `:stream_text` modes, LLMAction uses
+For text modes (no `output_schema`), LLMAction uses
 `ReqLLM.Response.classify/1` to determine the response type:
 
 | Classified Type                | LLMAction Return                                           | Strategy Interpretation             |
@@ -167,7 +168,7 @@ content blocks in the same response; OpenAI typically returns `content: null`
 when making tool calls. The strategy may log or discard this text -- it does not
 affect execution flow.
 
-For `:generate_object` and `:stream_object` modes, the response is always
+For object modes (with `output_schema`), the response is always
 `{:final_answer, parsed_object}` -- no classification is needed since object
 modes do not support tool calling.
 

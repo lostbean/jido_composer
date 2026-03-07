@@ -337,5 +337,5 @@ result = LLMStub.execute(params)  # pops from queue
 ### Key Testing Notes
 
 - **Retry handling**: `LLMAction` retries once by default. Error stubs need 2+ responses.
-- **Streaming**: Streaming uses Finch directly, bypassing Req plugs. Use `generation_mode: :generate_text` with cassettes/stubs.
+- **Streaming**: Streaming uses Finch directly, bypassing Req plugs. Set `stream: false` (the default) with cassettes/stubs.
 - **req_options propagation**: Pass `req_options: [plug: plug]` in the orchestrator DSL or inject via strategy state for test-time HTTP interception.

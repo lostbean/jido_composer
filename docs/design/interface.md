@@ -121,8 +121,8 @@ use Jido.Composer.Orchestrator,
   max_iterations:  integer       — ReAct loop safety limit (default: 10)
   temperature:     float         — sampling temperature (default: nil)
   max_tokens:      integer       — maximum tokens in response (default: nil)
-  generation_mode: atom          — :generate_text | :generate_object | :stream_text | :stream_object
-  output_schema:   map           — JSON Schema for object generation modes (default: nil)
+  stream:          boolean       — whether to use streaming generation (default: false)
+  output_schema:   map           — JSON Schema for structured output (default: nil)
   llm_opts:        keyword       — additional options passed through to req_llm (default: [])
   req_options:     keyword       — opaque Req HTTP options forwarded to LLMAction (default: [])
   ambient:         list(atom)    — context keys extracted into the ambient layer

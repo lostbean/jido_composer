@@ -555,7 +555,7 @@ defmodule Jido.Composer.Integration.PersistenceCascadeTest do
         tools: [],
         temperature: nil,
         max_tokens: nil,
-        generation_mode: :generate_text,
+        stream: false,
         output_schema: nil,
         llm_opts: [],
         req_options: []

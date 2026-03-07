@@ -1,8 +1,8 @@
 defmodule Jido.Composer.Orchestrator.LLMAction do
   @moduledoc false
   # Internal action for executing LLM calls via RunInstruction.
-  # Calls ReqLLM directly — no facade module. Supports all four generation modes:
-  # :generate_text, :generate_object, :stream_text, :stream_object.
+  # Calls ReqLLM directly — no facade module. Dispatches based on
+  # `stream` (boolean) and `output_schema` (nil | map).
 
   use Jido.Action,
     name: "orchestrator_llm_generate",
@@ -15,24 +15,24 @@ defmodule Jido.Composer.Orchestrator.LLMAction do
     conversation = params[:conversation]
     tool_results = params[:tool_results] || []
     tools = params[:tools] || []
-    generation_mode = params[:generation_mode] || :generate_text
+    stream = !!params[:stream]
     output_schema = params[:output_schema]
 
     context = build_context(conversation, tool_results, params)
     req_llm_opts = build_req_llm_opts(tools, params)
 
-    case generation_mode do
-      :generate_text ->
+    case {stream, output_schema} do
+      {false, nil} ->
         do_generate_text(model, context, req_llm_opts)
 
-      :generate_object ->
-        do_generate_object(model, context, output_schema, req_llm_opts)
+      {false, schema} ->
+        do_generate_object(model, context, schema, req_llm_opts)
 
-      :stream_text ->
+      {true, nil} ->
         do_stream_text(model, context, req_llm_opts)
 
-      :stream_object ->
-        do_stream_object(model, context, output_schema, req_llm_opts)
+      {true, schema} ->
+        do_stream_object(model, context, schema, req_llm_opts)
     end
   end
 

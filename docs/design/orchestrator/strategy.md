@@ -17,8 +17,8 @@ The strategy stores its state under `agent.state.__strategy__`:
 | `system_prompt`        | `String.t()`                | System instructions for the LLM                                                                                                           |
 | `temperature`          | `float \| nil`              | Sampling temperature                                                                                                                      |
 | `max_tokens`           | `integer \| nil`            | Maximum tokens in response                                                                                                                |
-| `generation_mode`      | atom                        | `:generate_text`, `:generate_object`, `:stream_text`, `:stream_object`                                                                    |
-| `output_schema`        | `map \| nil`                | JSON Schema for object generation modes                                                                                                   |
+| `stream`               | boolean                     | Whether to use streaming generation (default: `false`)                                                                                    |
+| `output_schema`        | `map \| nil`                | JSON Schema for structured output (enables object generation)                                                                             |
 | `llm_opts`             | keyword                     | Additional options passed through to req_llm                                                                                              |
 | `conversation`         | `ReqLLM.Context.t()`        | Conversation history managed by req_llm                                                                                                   |
 | `tools`                | `[ReqLLM.Tool.t()]`         | Tool descriptions as `ReqLLM.Tool` structs derived from nodes                                                                             |
@@ -133,10 +133,10 @@ The strategy never calls ReqLLM directly. Instead, it builds a
 `Jido.Instruction` targeting `LLMAction` and emits a RunInstruction directive.
 The instruction params contain all LLM-related state as flat keys:
 `conversation`, `tool_results`, `tools`, `model`, `query`, `system_prompt`,
-`temperature`, `max_tokens`, `generation_mode`, `output_schema`, `llm_opts`,
+`temperature`, `max_tokens`, `stream`, `output_schema`, `llm_opts`,
 and `req_options`.
 
-LLMAction calls the appropriate ReqLLM function based on `generation_mode` and
+LLMAction calls the appropriate ReqLLM function based on `stream`/`output_schema` and
 returns `{response, updated_conversation}` as an instruction result. The result
 is routed back to `cmd/3` as `:orchestrator_llm_result`. This keeps the strategy
 pure and testable. The strategy stores the updated `ReqLLM.Context` in its state

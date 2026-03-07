@@ -162,8 +162,8 @@ defmodule Jido.Composer.CheckpointTest do
   end
 
   describe "checkpoint schema version" do
-    test "checkpoint schema version is :composer_v3" do
-      assert Checkpoint.schema_version() == :composer_v3
+    test "checkpoint schema version is :composer_v4" do
+      assert Checkpoint.schema_version() == :composer_v4
     end
   end
 
@@ -254,15 +254,44 @@ defmodule Jido.Composer.CheckpointTest do
       assert migrated.child_phases == %{}
     end
 
-    test "v3 is a no-op for current version" do
+    test "v3 migrates generation_mode to stream" do
       v3_state = %{
         status: :running,
         children: %{},
         checkpoint_status: :hibernated,
-        child_phases: %{}
+        child_phases: %{},
+        generation_mode: :stream_text
       }
 
-      assert Checkpoint.migrate(v3_state, 3) == v3_state
+      migrated = Checkpoint.migrate(v3_state, 3)
+      assert migrated.stream == true
+      refute Map.has_key?(migrated, :generation_mode)
+    end
+
+    test "v3 defaults stream to false for non-streaming generation_mode" do
+      v3_state = %{
+        status: :running,
+        children: %{},
+        checkpoint_status: :hibernated,
+        child_phases: %{},
+        generation_mode: :generate_text
+      }
+
+      migrated = Checkpoint.migrate(v3_state, 3)
+      assert migrated.stream == false
+      refute Map.has_key?(migrated, :generation_mode)
+    end
+
+    test "v4 is a no-op for current version" do
+      v4_state = %{
+        status: :running,
+        children: %{},
+        checkpoint_status: :hibernated,
+        child_phases: %{},
+        stream: false
+      }
+
+      assert Checkpoint.migrate(v4_state, 4) == v4_state
     end
   end
 

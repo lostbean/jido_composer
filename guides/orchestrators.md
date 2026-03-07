@@ -19,25 +19,25 @@ The orchestrator sends the user's query to the LLM along with available tool def
 
 ## DSL Options
 
-| Option                 | Type      | Required | Default                   | Description                                                                   |
-| ---------------------- | --------- | -------- | ------------------------- | ----------------------------------------------------------------------------- |
-| `name`                 | `string`  | yes      | —                         | Unique orchestrator identifier                                                |
-| `description`          | `string`  | no       | `"Orchestrator: #{name}"` | Documentation text                                                            |
-| `schema`               | `keyword` | no       | `[]`                      | Input validation schema                                                       |
-| `nodes`                | `list`    | yes      | —                         | List of action/agent modules or `{module, opts}` tuples                       |
-| `model`                | `string`  | no       | `nil`                     | LLM model identifier (e.g., `"anthropic:claude-sonnet-4-20250514"`)           |
-| `system_prompt`        | `string`  | no       | `nil`                     | System message for the LLM                                                    |
-| `max_iterations`       | `integer` | no       | `10`                      | Maximum ReAct loop iterations                                                 |
-| `temperature`          | `float`   | no       | `nil`                     | LLM temperature parameter                                                     |
-| `max_tokens`           | `integer` | no       | `nil`                     | Token budget for LLM responses                                                |
-| `generation_mode`      | `atom`    | no       | `:generate_text`          | One of `:generate_text`, `:generate_object`, `:stream_text`, `:stream_object` |
-| `output_schema`        | `map`     | no       | `nil`                     | JSON Schema for structured output (object modes)                              |
-| `llm_opts`             | `keyword` | no       | `[]`                      | Additional options passed to ReqLLM                                           |
-| `req_options`          | `keyword` | no       | `[]`                      | HTTP options for Req (useful for testing)                                     |
-| `rejection_policy`     | `atom`    | no       | `:continue_siblings`      | Behavior when a gated tool is rejected                                        |
-| `ambient`              | `[atom]`  | no       | `[]`                      | Read-only context keys                                                        |
-| `fork_fns`             | `map`     | no       | `%{}`                     | Context transformation at child boundaries                                    |
-| `max_tool_concurrency` | `integer` | no       | unlimited                 | Backpressure limit for concurrent tool execution                              |
+| Option                 | Type      | Required | Default                   | Description                                                         |
+| ---------------------- | --------- | -------- | ------------------------- | ------------------------------------------------------------------- |
+| `name`                 | `string`  | yes      | —                         | Unique orchestrator identifier                                      |
+| `description`          | `string`  | no       | `"Orchestrator: #{name}"` | Documentation text                                                  |
+| `schema`               | `keyword` | no       | `[]`                      | Input validation schema                                             |
+| `nodes`                | `list`    | yes      | —                         | List of action/agent modules or `{module, opts}` tuples             |
+| `model`                | `string`  | no       | `nil`                     | LLM model identifier (e.g., `"anthropic:claude-sonnet-4-20250514"`) |
+| `system_prompt`        | `string`  | no       | `nil`                     | System message for the LLM                                          |
+| `max_iterations`       | `integer` | no       | `10`                      | Maximum ReAct loop iterations                                       |
+| `temperature`          | `float`   | no       | `nil`                     | LLM temperature parameter                                           |
+| `max_tokens`           | `integer` | no       | `nil`                     | Token budget for LLM responses                                      |
+| `stream`               | `boolean` | no       | `false`                   | Whether to use streaming generation                                 |
+| `output_schema`        | `map`     | no       | `nil`                     | JSON Schema for structured output (object modes)                    |
+| `llm_opts`             | `keyword` | no       | `[]`                      | Additional options passed to ReqLLM                                 |
+| `req_options`          | `keyword` | no       | `[]`                      | HTTP options for Req (useful for testing)                           |
+| `rejection_policy`     | `atom`    | no       | `:continue_siblings`      | Behavior when a gated tool is rejected                              |
+| `ambient`              | `[atom]`  | no       | `[]`                      | Read-only context keys                                              |
+| `fork_fns`             | `map`     | no       | `%{}`                     | Context transformation at child boundaries                          |
+| `max_tool_concurrency` | `integer` | no       | unlimited                 | Backpressure limit for concurrent tool execution                    |
 
 ## Model Format
 
@@ -69,18 +69,17 @@ When the LLM calls a tool, the orchestrator:
 3. Converts the result to a tool result message
 4. Adds it to the conversation for the next LLM call
 
-## Generation Modes
+## Streaming and Structured Output
 
-| Mode               | Description                                       |
-| ------------------ | ------------------------------------------------- |
-| `:generate_text`   | Standard text generation (default)                |
-| `:generate_object` | Structured output conforming to `output_schema`   |
-| `:stream_text`     | Streaming text (collect-then-return internally)   |
-| `:stream_object`   | Streaming structured output (collect-then-return) |
+Two orthogonal options control how the LLM is called:
+
+| Option          | Default | Effect                                                                  |
+| --------------- | ------- | ----------------------------------------------------------------------- |
+| `stream`        | `false` | When `true`, uses streaming generation (collect-then-return internally) |
+| `output_schema` | `nil`   | When set, produces structured output conforming to the schema           |
 
 ```elixir
 use Jido.Composer.Orchestrator,
-  generation_mode: :generate_object,
   output_schema: %{
     "type" => "object",
     "properties" => %{
@@ -91,7 +90,7 @@ use Jido.Composer.Orchestrator,
   }
 ```
 
-> **Note:** Streaming modes use Finch directly, bypassing Req plugs. When using cassette/stub testing, disable streaming via `generation_mode: :generate_text`.
+> **Note:** Streaming uses Finch directly, bypassing Req plugs. When using cassette/stub testing, set `stream: false` (the default).
 
 ## Running Orchestrators
 
