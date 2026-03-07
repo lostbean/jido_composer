@@ -162,7 +162,7 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
       strat = StratState.get(agent)
       assert strat.status == :completed
       assert strat.result.value == "5 + 3 = 8.0"
-      assert strat.context[:add][:result] == 8.0
+      assert strat.context.working[:add][:result] == 8.0
     end
 
     test "rejected gated tool call injects synthetic result" do
@@ -223,7 +223,7 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
       strat = StratState.get(agent)
 
       # Echo was executed (its tool result is in completed list)
-      assert strat.context[:echo][:echoed] == "hello"
+      assert strat.context.working[:echo][:echoed] == "hello"
 
       # Add is gated
       assert map_size(strat.gated_calls) == 1
@@ -264,8 +264,8 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.context[:add][:result] == 8.0
-      assert strat.context[:echo][:echoed] == "hello"
+      assert strat.context.working[:add][:result] == 8.0
+      assert strat.context.working[:echo][:echoed] == "hello"
     end
   end
 

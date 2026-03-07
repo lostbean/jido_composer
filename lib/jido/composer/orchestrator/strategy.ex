@@ -13,6 +13,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   alias Jido.Agent.Directive
   alias Jido.Agent.Strategy.State, as: StratState
   alias Jido.Composer.Checkpoint
+  alias Jido.Composer.Context
   alias Jido.Composer.Directive.Suspend, as: SuspendDirective
   alias Jido.Composer.Directive.SuspendForHuman
   alias Jido.Composer.HITL.{ApprovalRequest, ApprovalResponse}
@@ -38,6 +39,8 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
     gated_node_names = MapSet.new(opts[:gated_nodes] || [])
     approval_policy = opts[:approval_policy]
+    ambient_keys = opts[:ambient] || []
+    fork_fns = opts[:fork_fns] || %{}
 
     agent =
       StratState.put(agent, %{
@@ -55,7 +58,8 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         tools: tools,
         pending_tool_calls: [],
         completed_tool_results: [],
-        context: %{},
+        context: Context.new(fork_fns: fork_fns),
+        ambient_keys: ambient_keys,
         iteration: 0,
         max_iterations: opts[:max_iterations] || 10,
         req_options: opts[:req_options] || [],
@@ -78,10 +82,12 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   @impl true
   def cmd(agent, [%Jido.Instruction{action: :orchestrator_start} = instr | _], _ctx) do
     query = instr.params[:query] || instr.params["query"]
+    params = Map.drop(instr.params, [:query, "query"])
 
     agent =
       StratState.update(agent, fn s ->
-        %{s | status: :awaiting_llm, query: query, iteration: 0}
+        new_context = build_start_context(s.context, params, s)
+        %{s | status: :awaiting_llm, query: query, iteration: 0, context: new_context}
       end)
 
     emit_llm_call(agent)
@@ -145,7 +151,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
           StratState.update(agent, fn s ->
             new_pending = List.delete(s.pending_tool_calls, call_id)
             new_completed = s.completed_tool_results ++ [tool_result]
-            new_context = deep_merge(s.context, %{scope_key => scoped_result})
+            new_context = Context.apply_result(s.context, scope_key, scoped_result)
 
             %{
               s
@@ -204,7 +210,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       StratState.update(agent, fn s ->
         new_pending = List.delete(s.pending_tool_calls, call_id)
         new_completed = s.completed_tool_results ++ [tool_result]
-        new_context = deep_merge(s.context, %{scope_key => scoped_result})
+        new_context = Context.apply_result(s.context, scope_key, scoped_result)
 
         %{
           s
@@ -312,7 +318,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
             StratState.update(agent, fn s ->
               new_suspended = Map.delete(s.suspended_calls, suspension_id)
               new_completed = s.completed_tool_results ++ [tool_result]
-              new_context = deep_merge(s.context, %{scope_key => data})
+              new_context = Context.apply_result(s.context, scope_key, data)
 
               %{
                 s
@@ -333,7 +339,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
             end)
 
           state = StratState.get(agent)
-          directive = build_tool_directive(call, state.nodes)
+          directive = build_tool_directive(call, state.nodes, state.context)
           {agent, [directive]}
         end
     end
@@ -360,7 +366,9 @@ defmodule Jido.Composer.Orchestrator.Strategy do
           StratState.update(agent, fn s ->
             new_suspended = Map.delete(s.suspended_calls, suspension_id)
             new_completed = s.completed_tool_results ++ [tool_result]
-            new_context = deep_merge(s.context, %{scope_key => %{error: "suspension_timeout"}})
+
+            new_context =
+              Context.apply_result(s.context, scope_key, %{error: "suspension_timeout"})
 
             %{
               s
@@ -415,7 +423,11 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
     details = %{
       iteration: Map.get(strat, :iteration, 0),
-      context: Map.get(strat, :context, %{})
+      context:
+        case Map.get(strat, :context) do
+          %Context{} = ctx -> Context.to_flat_map(ctx)
+          other -> other || %{}
+        end
     }
 
     details =
@@ -549,7 +561,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
           # Build directives for ungated calls
           ungated_directives =
             Enum.map(ungated, fn call ->
-              build_tool_directive(call, state.nodes)
+              build_tool_directive(call, state.nodes, state.context)
             end)
 
           # Build SuspendForHuman directives for gated calls
@@ -566,15 +578,17 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     end
   end
 
-  defp build_tool_directive(call, nodes) do
-    node = nodes[call.name]
-    context = AgentTool.to_context(call)
+  defp build_tool_directive(call, nodes, %Context{} = ctx) do
+    tool_args = AgentTool.to_context(call)
 
-    case node do
+    case nodes[call.name] do
       %ActionNode{action_module: action_module} ->
+        merged_ctx = %{ctx | working: Map.merge(ctx.working, tool_args)}
+        flat = Context.to_flat_map(merged_ctx)
+
         instruction = %Jido.Instruction{
           action: action_module,
-          params: context
+          params: flat
         }
 
         %Directive.RunInstruction{
@@ -584,10 +598,14 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         }
 
       %AgentNode{agent_module: agent_module, opts: opts} ->
+        child_ctx = Context.fork_for_child(ctx)
+        child_flat = Context.to_flat_map(child_ctx)
+        merged = Map.merge(child_flat, tool_args)
+
         %Directive.SpawnAgent{
           tag: {:tool_call, call.id, call.name},
           agent: agent_module,
-          opts: Map.new(opts) |> Map.put(:context, context)
+          opts: Map.new(opts) |> Map.put(:context, merged)
         }
     end
   end
@@ -644,7 +662,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
             %{s | gated_calls: new_gated, pending_tool_calls: new_pending, status: new_status}
           end)
 
-        directive = build_tool_directive(call, state.nodes)
+        directive = build_tool_directive(call, state.nodes, state.context)
         {agent, [directive]}
 
       :rejected ->
@@ -697,7 +715,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
           StratState.update(agent, fn s ->
             new_gated = Map.delete(s.gated_calls, request_id)
             new_completed = s.completed_tool_results ++ cancel_results ++ [rejection_result]
-            new_context = deep_merge(s.context, %{scope_key => rejection_data})
+            new_context = Context.apply_result(s.context, scope_key, rejection_data)
 
             %{
               s
@@ -727,7 +745,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
           StratState.update(agent, fn s ->
             new_gated = Map.delete(s.gated_calls, request_id)
             new_completed = s.completed_tool_results ++ [tool_result]
-            new_context = deep_merge(s.context, %{scope_key => rejection_data})
+            new_context = Context.apply_result(s.context, scope_key, rejection_data)
 
             %{
               s
@@ -785,7 +803,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
           StratState.update(agent, fn s ->
             new_pending = List.delete(s.pending_tool_calls, call_id)
             new_completed = s.completed_tool_results ++ [tool_result]
-            new_context = deep_merge(s.context, %{scope_key => %{error: reason}})
+            new_context = Context.apply_result(s.context, scope_key, %{error: reason})
 
             %{
               s
@@ -842,8 +860,11 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     else
       # Dynamic policy function
       case state.approval_policy do
-        nil -> false
-        policy when is_function(policy, 2) -> policy.(call, state.context) == :require_approval
+        nil ->
+          false
+
+        policy when is_function(policy, 2) ->
+          policy.(call, Context.to_flat_map(state.context)) == :require_approval
       end
     end
   end
@@ -906,7 +927,28 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     end)
   end
 
-  defp deep_merge(left, right) when is_map(left) and is_map(right) do
-    DeepMerge.deep_merge(left, right)
+  defp build_start_context(%Context{} = current_ctx, params, strat) do
+    ambient_keys = Map.get(strat, :ambient_keys, [])
+
+    # If parent sent __ambient__ (from Context.to_flat_map), merge it
+    {inherited_ambient, params} =
+      case Map.pop(params, :__ambient__) do
+        {nil, params} -> {%{}, params}
+        {ambient_map, params} -> {ambient_map, params}
+      end
+
+    if ambient_keys == [] and inherited_ambient == %{} do
+      %{current_ctx | working: Map.merge(current_ctx.working, params)}
+    else
+      {ambient_vals, working_vals} = Map.split(params, ambient_keys)
+      ambient = current_ctx.ambient |> Map.merge(inherited_ambient) |> Map.merge(ambient_vals)
+      working = Map.merge(current_ctx.working, working_vals)
+
+      %Context{
+        ambient: ambient,
+        working: working,
+        fork_fns: Map.merge(current_ctx.fork_fns, Map.get(strat, :fork_fns, %{}))
+      }
+    end
   end
 end

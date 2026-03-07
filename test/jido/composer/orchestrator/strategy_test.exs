@@ -2,6 +2,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
   use ExUnit.Case, async: true
 
   alias Jido.Agent.Strategy.State, as: StratState
+  alias Jido.Composer.Context
   alias Jido.Composer.NodeIO
   alias Jido.Composer.Orchestrator.Strategy
   alias Jido.Composer.TestActions.{AddAction, EchoAction}
@@ -16,16 +17,16 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
 
   defp init_agent(opts \\ []) do
     nodes = Keyword.get(opts, :nodes, [AddAction, EchoAction])
-    max_iterations = Keyword.get(opts, :max_iterations, 10)
-    system_prompt = Keyword.get(opts, :system_prompt, "You are a test assistant.")
+    extra = Keyword.drop(opts, [:nodes])
 
-    strategy_opts = [
-      nodes: nodes,
-      model: "stub:test-model",
-      system_prompt: system_prompt,
-      max_iterations: max_iterations,
-      req_options: []
-    ]
+    strategy_opts =
+      [
+        nodes: nodes,
+        model: "stub:test-model",
+        system_prompt: Keyword.get(opts, :system_prompt, "You are a test assistant."),
+        max_iterations: Keyword.get(opts, :max_iterations, 10),
+        req_options: []
+      ] ++ Keyword.drop(extra, [:system_prompt, :max_iterations])
 
     agent = TestOrchestratorAgent.new()
     ctx = %{strategy_opts: strategy_opts}
@@ -51,7 +52,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       assert state.max_iterations == 10
       assert state.iteration == 0
       assert state.conversation == nil
-      assert state.context == %{}
+      assert %Context{} = state.context
       assert state.pending_tool_calls == []
       assert state.completed_tool_results == []
       assert state.result == nil
@@ -357,7 +358,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
         )
 
       state = get_state(agent)
-      assert state.context == %{add: %{result: 8.0}}
+      assert state.context.working == %{add: %{result: 8.0}}
     end
   end
 
@@ -496,7 +497,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
 
       state = get_state(agent)
       # The rejection context should be scoped under the :add atom key (via scope_atom)
-      assert %{add: %{error: "REJECTED: Not allowed"}} = state.context
+      assert %{add: %{error: "REJECTED: Not allowed"}} = state.context.working
       assert state.gated_calls == %{}
     end
 
@@ -543,7 +544,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
         )
 
       state = get_state(agent)
-      assert %{add: %{error: "REJECTED: Denied"}} = state.context
+      assert %{add: %{error: "REJECTED: Denied"}} = state.context.working
       assert state.gated_calls == %{}
     end
   end
@@ -639,28 +640,206 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
     end
   end
 
-  describe "ambient context in orchestrator" do
-    test "ambient context available via __ambient__ key when passed in start params" do
-      LLMStub.setup([{:final_answer, "Done"}])
+  describe "Context integration" do
+    test "init/2 builds Context struct with empty fields by default" do
       agent = init_agent()
+      state = get_state(agent)
 
-      # Pass ambient context as __ambient__ key (as workflow would via Context.to_flat_map)
-      start_params = %{query: "Test", __ambient__: %{org_id: "acme", user_id: "alice"}}
+      assert %Context{ambient: %{}, working: %{}, fork_fns: %{}} = state.context
+    end
+
+    test "init/2 stores ambient_keys and fork_fns from options" do
+      fork_fns = %{depth: {Kernel, :put_in, []}}
+      agent = init_agent(ambient: [:org_id, :trace_id], fork_fns: fork_fns)
+      state = get_state(agent)
+
+      assert state.ambient_keys == [:org_id, :trace_id]
+      assert state.context.fork_fns == %{depth: {Kernel, :put_in, []}}
+    end
+
+    test "orchestrator_start extracts ambient keys from params" do
+      LLMStub.setup([{:final_answer, "Done"}])
+      agent = init_agent(ambient: [:org_id])
+
+      start_params = %{query: "Hi", org_id: "acme", data: "x"}
 
       {agent, [llm_directive]} =
         Strategy.cmd(agent, [make_instruction(:orchestrator_start, start_params)], ctx())
 
-      # The query should be extracted
       state = get_state(agent)
-      assert state.query == "Test"
+      assert state.context.ambient == %{org_id: "acme"}
+      assert state.context.working == %{data: "x"}
+      assert state.query == "Hi"
 
       llm_result = execute_llm_directive(llm_directive)
 
       {agent, _} =
         Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
 
+      assert get_state(agent).status == :completed
+    end
+
+    test "orchestrator_start inherits __ambient__ from parent" do
+      LLMStub.setup([{:final_answer, "Done"}])
+      agent = init_agent(ambient: [:org_id])
+
+      start_params = %{
+        query: "Hi",
+        __ambient__: %{parent_trace: "abc"},
+        org_id: "acme"
+      }
+
+      {agent, _} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, start_params)], ctx())
+
       state = get_state(agent)
-      assert state.status == :completed
+      # Both inherited and local ambient should be present
+      assert state.context.ambient == %{parent_trace: "abc", org_id: "acme"}
+    end
+
+    test "tool results accumulate in context.working with ambient unchanged" do
+      tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 5.0, "amount" => 3.0}}
+
+      LLMStub.setup([
+        {:tool_calls, [tool_call]},
+        {:final_answer, "8.0"}
+      ])
+
+      agent = init_agent(ambient: [:org_id])
+
+      start_params = %{query: "Add", org_id: "acme"}
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, start_params)], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {agent, [tool_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [
+            make_instruction(:orchestrator_tool_result, %{
+              status: :ok,
+              result: %{result: 8.0},
+              meta: tool_dir.meta
+            })
+          ],
+          ctx()
+        )
+
+      state = get_state(agent)
+      assert state.context.working == %{add: %{result: 8.0}}
+      assert state.context.ambient == %{org_id: "acme"}
+    end
+
+    test "ActionNode directive includes __ambient__ in params" do
+      tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 5.0, "amount" => 3.0}}
+      LLMStub.setup([{:tool_calls, [tool_call]}])
+      agent = init_agent(ambient: [:org_id])
+
+      start_params = %{query: "Add", org_id: "acme"}
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, start_params)], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {_agent, [directive]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      assert %Jido.Agent.Directive.RunInstruction{instruction: instr} = directive
+      assert instr.params[:__ambient__] == %{org_id: "acme"}
+    end
+
+    test "snapshot returns flat map context" do
+      LLMStub.setup([{:final_answer, "Done"}])
+      agent = init_agent(ambient: [:org_id])
+
+      start_params = %{query: "Hi", org_id: "acme"}
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, start_params)], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {agent, _} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      snap = Strategy.snapshot(agent, ctx())
+      # Should be a flat map, not a Context struct
+      refute match?(%Context{}, snap.details.context)
+      assert is_map(snap.details.context)
+      assert snap.details.context[:__ambient__] == %{org_id: "acme"}
+    end
+
+    test "backward compatible: init without ambient/fork_fns works identically" do
+      tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 5.0, "amount" => 3.0}}
+
+      LLMStub.setup([
+        {:tool_calls, [tool_call]},
+        {:final_answer, "8.0"}
+      ])
+
+      agent = init_agent()
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Add"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {agent, [tool_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [
+            make_instruction(:orchestrator_tool_result, %{
+              status: :ok,
+              result: %{result: 8.0},
+              meta: tool_dir.meta
+            })
+          ],
+          ctx()
+        )
+
+      state = get_state(agent)
+      assert state.context.working == %{add: %{result: 8.0}}
+      assert state.context.ambient == %{}
+
+      # Snapshot returns flat map with empty ambient
+      snap = Strategy.snapshot(agent, ctx())
+      assert snap.details.context[:__ambient__] == %{}
+    end
+
+    test "approval_policy receives flat map with __ambient__" do
+      tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 100.0, "amount" => 50.0}}
+      LLMStub.setup([{:tool_calls, [tool_call]}])
+
+      received_context = :ets.new(:received_context, [:set, :public])
+
+      policy = fn _call, context ->
+        :ets.insert(received_context, {:context, context})
+        :proceed
+      end
+
+      agent = init_agent(ambient: [:org_id], approval_policy: policy)
+
+      start_params = %{query: "Add big", org_id: "acme"}
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, start_params)], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+      Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      [{:context, ctx_received}] = :ets.lookup(received_context, :context)
+      :ets.delete(received_context)
+
+      assert ctx_received[:__ambient__] == %{org_id: "acme"}
     end
   end
 
@@ -788,7 +967,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       state = get_state(agent)
       assert state.status == :awaiting_llm
       assert state.suspended_calls == %{}
-      assert state.context == %{add: %{result: 8.0}}
+      assert state.context.working == %{add: %{result: 8.0}}
 
       # Complete the loop — LLM returns final answer
       llm_result2 = execute_llm_directive(llm_dir2)

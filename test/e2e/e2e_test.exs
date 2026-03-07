@@ -407,7 +407,7 @@ defmodule Jido.Composer.E2E.E2ETest do
           assert is_binary(strat.result.value)
           assert strat.result.value != ""
           assert strat.iteration == 1
-          assert strat.context == %{}
+          assert %Jido.Composer.Context{} = strat.context
         end
       )
     end
@@ -426,7 +426,7 @@ defmodule Jido.Composer.E2E.E2ETest do
           assert strat.status == :completed
           assert strat.result.value =~ "8"
           assert strat.iteration >= 2
-          assert strat.context[:add][:result] in [8, 8.0]
+          assert strat.context.working[:add][:result] in [8, 8.0]
         end
       )
     end
@@ -448,8 +448,8 @@ defmodule Jido.Composer.E2E.E2ETest do
 
           strat = StratState.get(agent)
           assert strat.status == :completed
-          assert strat.context[:add][:result] in [15, 15.0]
-          assert strat.context[:echo][:echoed] == "hello world"
+          assert strat.context.working[:add][:result] in [15, 15.0]
+          assert strat.context.working[:echo][:echoed] == "hello world"
         end
       )
     end

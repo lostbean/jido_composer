@@ -201,7 +201,7 @@ defmodule Jido.Composer.Integration.CompositionTest do
       assert strat.result.value =~ "ETL complete"
 
       # Workflow result should be scoped in context
-      assert strat.context[:etl_workflow] != nil
+      assert strat.context.working[:etl_workflow] != nil
     end
 
     test "orchestrator mixes action tools and workflow tools" do
@@ -227,8 +227,8 @@ defmodule Jido.Composer.Integration.CompositionTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.context[:echo][:echoed] == "starting ETL"
-      assert strat.context[:etl_workflow] != nil
+      assert strat.context.working[:echo][:echoed] == "starting ETL"
+      assert strat.context.working[:etl_workflow] != nil
     end
   end
 
@@ -283,7 +283,7 @@ defmodule Jido.Composer.Integration.CompositionTest do
       assert strat.status == :completed
 
       # Verify full context flow: orchestrator -> workflow -> actions
-      etl_ctx = strat.context[:etl_workflow]
+      etl_ctx = strat.context.working[:etl_workflow]
       assert etl_ctx != nil
 
       # The workflow ran extract -> transform -> load internally

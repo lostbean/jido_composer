@@ -124,7 +124,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
       assert strat.iteration == 2
 
       # Context should have the tool result scoped under the tool name
-      assert strat.context[:add][:result] == 8.0
+      assert strat.context.working[:add][:result] == 8.0
     end
   end
 
@@ -146,8 +146,8 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
 
       strat = StratState.get(agent)
       assert strat.status == :completed
-      assert strat.context[:add][:result] == 15.0
-      assert strat.context[:echo][:echoed] == "hello world"
+      assert strat.context.working[:add][:result] == 15.0
+      assert strat.context.working[:echo][:echoed] == "hello world"
     end
   end
 
@@ -171,7 +171,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
       assert strat.iteration == 3
 
       # Second call's result overwrites first under same scope key
-      assert strat.context[:add][:result] == 7.0
+      assert strat.context.working[:add][:result] == 7.0
     end
   end
 
@@ -244,8 +244,8 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
       agent = execute_orchestrator(ToolOrchestrator, agent, directives)
 
       strat = StratState.get(agent)
-      assert strat.context[:add] == %{result: 5.0}
-      assert strat.context[:echo] == %{echoed: "test"}
+      assert strat.context.working[:add] == %{result: 5.0}
+      assert strat.context.working[:echo] == %{echoed: "test"}
     end
   end
 
@@ -353,7 +353,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
         assert strat.iteration >= 2
 
         # Tool result scoped under tool name
-        assert strat.context[:add][:result] in [8, 8.0]
+        assert strat.context.working[:add][:result] in [8, 8.0]
       end)
     end
   end
@@ -372,8 +372,8 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
 
         strat = StratState.get(agent)
         assert strat.status == :completed
-        assert strat.context[:add][:result] in [15, 15.0]
-        assert strat.context[:echo][:echoed] == "hello world"
+        assert strat.context.working[:add][:result] in [15, 15.0]
+        assert strat.context.working[:echo][:echoed] == "hello world"
       end)
     end
   end
@@ -415,7 +415,7 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
           assert is_binary(strat.result.value)
           assert String.length(strat.result.value) > 0
           assert strat.iteration == 1
-          assert strat.context == %{}
+          assert %Jido.Composer.Context{} = strat.context
         end
       )
     end
