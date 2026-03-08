@@ -637,24 +637,14 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         tc = state.tool_concurrency
         {to_dispatch, to_queue} = ToolConcurrency.split_for_dispatch(tc, ungated)
         dispatched_ids = Enum.map(to_dispatch, & &1.id)
-        has_gated = gated_entries != %{}
 
         agent =
           StratState.update(agent, fn s ->
-            new_status =
-              cond do
-                not has_gated -> :awaiting_tools
-                ungated == [] -> :awaiting_approval
-                true -> :awaiting_tools_and_approval
-              end
+            new_tc = ToolConcurrency.dispatch(s.tool_concurrency, dispatched_ids, to_queue)
+            new_ag = ApprovalGate.gate_calls(s.approval_gate, gated_entries)
+            new_status = StatusComputer.compute(new_tc, new_ag, s.suspended_calls)
 
-            %{
-              s
-              | status: new_status,
-                tool_concurrency:
-                  ToolConcurrency.dispatch(s.tool_concurrency, dispatched_ids, to_queue),
-                approval_gate: ApprovalGate.gate_calls(s.approval_gate, gated_entries)
-            }
+            %{s | status: new_status, tool_concurrency: new_tc, approval_gate: new_ag}
           end)
 
         # Build directives for dispatched (ungated, within concurrency limit) calls
@@ -763,18 +753,10 @@ defmodule Jido.Composer.Orchestrator.Strategy do
           agent =
             StratState.update(agent, fn s ->
               new_ag = ApprovalGate.remove(s.approval_gate, request_id)
+              new_tc = ToolConcurrency.enqueue(s.tool_concurrency, call)
+              new_status = StatusComputer.compute(new_tc, new_ag, s.suspended_calls)
 
-              new_status =
-                if ApprovalGate.has_pending?(new_ag),
-                  do: :awaiting_tools_and_approval,
-                  else: :awaiting_tools
-
-              %{
-                s
-                | approval_gate: new_ag,
-                  tool_concurrency: ToolConcurrency.enqueue(s.tool_concurrency, call),
-                  status: new_status
-              }
+              %{s | approval_gate: new_ag, tool_concurrency: new_tc, status: new_status}
             end)
 
           {agent, []}
@@ -783,21 +765,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
             StratState.update(agent, fn s ->
               new_ag = ApprovalGate.remove(s.approval_gate, request_id)
               new_tc = ToolConcurrency.add_pending(s.tool_concurrency, call.id)
-
-              new_status =
-                cond do
-                  not ApprovalGate.has_pending?(new_ag) and new_tc.pending != [] ->
-                    :awaiting_tools
-
-                  not ApprovalGate.has_pending?(new_ag) ->
-                    :awaiting_tools
-
-                  new_tc.pending != [] ->
-                    :awaiting_tools_and_approval
-
-                  true ->
-                    :awaiting_approval
-                end
+              new_status = StatusComputer.compute(new_tc, new_ag, s.suspended_calls)
 
               %{s | approval_gate: new_ag, tool_concurrency: new_tc, status: new_status}
             end)
@@ -914,26 +882,14 @@ defmodule Jido.Composer.Orchestrator.Strategy do
             new_suspended =
               Map.put(s.suspended_calls, suspension.id, %{suspension: suspension, call: call})
 
-            %{s | tool_concurrency: new_tc, suspended_calls: new_suspended}
+            new_status = StatusComputer.compute(new_tc, s.approval_gate, new_suspended)
+            %{s | tool_concurrency: new_tc, suspended_calls: new_suspended, status: new_status}
           end)
 
         directive = %SuspendDirective{suspension: suspension}
-
-        # Check if other tools are still pending
         state = StratState.get(agent)
-
-        if not ToolConcurrency.has_pending?(state.tool_concurrency) and
-             not ApprovalGate.has_pending?(state.approval_gate) do
-          agent = StratState.update(agent, fn s -> %{s | status: :awaiting_suspension} end)
-
-          directives =
-            Checkpoint.maybe_add_checkpoint_and_stop([directive], StratState.get(agent))
-
-          {agent, directives}
-        else
-          directives = Checkpoint.maybe_add_checkpoint_and_stop([directive], state)
-          {agent, directives}
-        end
+        directives = Checkpoint.maybe_add_checkpoint_and_stop([directive], state)
+        {agent, directives}
 
       {:error, reason} ->
         # Treat as error result for the tool call
@@ -1060,7 +1016,13 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       :awaiting_llm ->
         replay_awaiting_llm(state)
 
-      status when status in [:awaiting_tool, :awaiting_tools, :awaiting_tools_and_approval] ->
+      status
+      when status in [
+             :awaiting_tool,
+             :awaiting_tools,
+             :awaiting_tools_and_approval,
+             :awaiting_tools_and_suspension
+           ] ->
         replay_awaiting_tools(state)
 
       _ ->
