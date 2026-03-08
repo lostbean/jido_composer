@@ -716,10 +716,8 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   defp emit_llm_call(agent) do
     state = StratState.get(agent)
 
-    # Build an internal instruction for the LLM call
-    instruction = %Jido.Instruction{
-      action: Jido.Composer.Orchestrator.LLMAction,
-      params: %{
+    directive =
+      build_llm_instruction(%{
         conversation: state.conversation,
         tool_results: state.tool_concurrency.completed,
         tools: state.tools,
@@ -731,15 +729,19 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         stream: state.stream,
         llm_opts: state.llm_opts,
         req_options: state.req_options
-      }
-    }
-
-    directive = %Directive.RunInstruction{
-      instruction: instruction,
-      result_action: :orchestrator_llm_result
-    }
+      })
 
     {agent, [directive]}
+  end
+
+  defp build_llm_instruction(params) do
+    %Directive.RunInstruction{
+      instruction: %Jido.Instruction{
+        action: Jido.Composer.Orchestrator.LLMAction,
+        params: params
+      },
+      result_action: :orchestrator_llm_result
+    }
   end
 
   defp handle_approval_decision(agent, request_id, response, call) do
@@ -1038,25 +1040,19 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       end
 
     [
-      %Directive.RunInstruction{
-        instruction: %Jido.Instruction{
-          action: Jido.Composer.Orchestrator.LLMAction,
-          params: %{
-            conversation: Map.get(state, :conversation),
-            tool_results: tool_results,
-            tools: Map.get(state, :tools, []),
-            model: Map.get(state, :model),
-            query: Map.get(state, :query),
-            system_prompt: Map.get(state, :system_prompt),
-            temperature: Map.get(state, :temperature),
-            max_tokens: Map.get(state, :max_tokens),
-            stream: Map.get(state, :stream, false),
-            llm_opts: Map.get(state, :llm_opts, []),
-            req_options: Map.get(state, :req_options, [])
-          }
-        },
-        result_action: :orchestrator_llm_result
-      }
+      build_llm_instruction(%{
+        conversation: Map.get(state, :conversation),
+        tool_results: tool_results,
+        tools: Map.get(state, :tools, []),
+        model: Map.get(state, :model),
+        query: Map.get(state, :query),
+        system_prompt: Map.get(state, :system_prompt),
+        temperature: Map.get(state, :temperature),
+        max_tokens: Map.get(state, :max_tokens),
+        stream: Map.get(state, :stream, false),
+        llm_opts: Map.get(state, :llm_opts, []),
+        req_options: Map.get(state, :req_options, [])
+      })
     ]
   end
 
@@ -1099,33 +1095,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   end
 
   defp replay_build_tool_directive(call, nodes, %Context{} = ctx) do
-    tool_args = AgentTool.to_context(call)
-
-    case nodes[call.name] do
-      %ActionNode{action_module: action_module} ->
-        merged_ctx = %{ctx | working: Map.merge(ctx.working, tool_args)}
-        flat = Context.to_flat_map(merged_ctx)
-
-        %Directive.RunInstruction{
-          instruction: %Jido.Instruction{action: action_module, params: flat},
-          result_action: :orchestrator_tool_result,
-          meta: %{call_id: call.id, tool_name: call.name}
-        }
-
-      %AgentNode{agent_module: agent_module, opts: opts} ->
-        child_ctx = Context.fork_for_child(ctx)
-        child_flat = Context.to_flat_map(child_ctx)
-        merged = Map.merge(child_flat, tool_args)
-
-        %Directive.SpawnAgent{
-          tag: {:tool_call, call.id, call.name},
-          agent: agent_module,
-          opts: Map.new(opts) |> Map.put(:context, merged)
-        }
-
-      _ ->
-        nil
-    end
+    if nodes[call.name], do: build_tool_directive(call, nodes, ctx), else: nil
   end
 
   defp replay_build_tool_directive(call, _nodes, _ctx) do

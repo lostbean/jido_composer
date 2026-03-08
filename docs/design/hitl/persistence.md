@@ -315,9 +315,10 @@ with orchestrator operation replays into a single directive list.
 directives. For backward compatibility, if `phases` is empty, the function
 falls back to inspecting each `ChildRef.phase` field.
 
-**Orchestrator replay** delegates to `Orchestrator.Strategy.replay_directives_from_state/1`
-via `function_exported?/3`. This keeps replay logic co-located with the strategy
-that owns the state shape. It inspects the strategy status:
+**Strategy-specific replay** delegates to the strategy module's `replay_directives_from_state/1`
+callback via `function_exported?/3` (see "Strategy Checkpoint Protocol" in `Checkpoint` moduledoc).
+This keeps replay logic co-located with the strategy that owns the state shape.
+For `Orchestrator.Strategy`, it inspects the strategy status:
 
 | Status                         | Replay Behaviour                                               |
 | ------------------------------ | -------------------------------------------------------------- |

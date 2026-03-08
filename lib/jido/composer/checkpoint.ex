@@ -6,6 +6,22 @@ defmodule Jido.Composer.Checkpoint do
   cannot be serialized. On restore, they are reattached from the agent
   module's DSL configuration (`strategy_opts`).
 
+  ## Strategy Checkpoint Protocol
+
+  Strategies may implement the following optional callbacks to integrate with
+  the checkpoint lifecycle. These are discovered at runtime via
+  `function_exported?/3` — no behaviour is required.
+
+  - `replay_directives_from_state/1` — Given deserialized strategy state,
+    returns a list of directives needed to resume in-flight operations
+    (e.g. re-issue an LLM call or re-dispatch pending tool calls).
+
+  - `prepare_for_checkpoint/1` — Prepares the agent for hibernation by
+    stripping non-serializable data. Called before persisting.
+
+  - `reattach_runtime_config/2` — Restores runtime closures and transient
+    state from `strategy_opts` after deserialization.
+
   ## Schema Version
 
   Current checkpoint schema is `:composer_v1`.
@@ -105,14 +121,14 @@ defmodule Jido.Composer.Checkpoint do
   @doc """
   Returns directives needed to replay in-flight operations after checkpoint restore.
 
-  Replays workflow child spawning phases directly, and delegates orchestrator
+  Replays workflow child spawning phases directly, and delegates strategy-specific
   replay to the strategy module's `replay_directives_from_state/1` callback.
   """
   @spec replay_directives(map()) :: [struct()]
   def replay_directives(strategy_state) do
     child_replays = replay_child_phases(strategy_state)
-    orchestrator_replays = replay_orchestrator_ops(strategy_state)
-    child_replays ++ orchestrator_replays
+    strategy_replays = replay_strategy_directives(strategy_state)
+    child_replays ++ strategy_replays
   end
 
   defp replay_child_phases(state) do
@@ -181,7 +197,7 @@ defmodule Jido.Composer.Checkpoint do
     end)
   end
 
-  defp replay_orchestrator_ops(state) do
+  defp replay_strategy_directives(state) do
     module = Map.get(state, :module)
 
     if is_atom(module) and module != nil and
