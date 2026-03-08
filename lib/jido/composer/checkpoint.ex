@@ -13,7 +13,6 @@ defmodule Jido.Composer.Checkpoint do
 
   alias Jido.Agent.Directive
   alias Jido.Composer.Children
-  alias Jido.Composer.ToolConcurrency
 
   @schema_version :composer_v1
 
@@ -106,11 +105,8 @@ defmodule Jido.Composer.Checkpoint do
   @doc """
   Returns directives needed to replay in-flight operations after checkpoint restore.
 
-  Handles both workflow child spawning phases and orchestrator in-flight operations:
-  - For workflow states with `child_phases` in `:spawning`, emits `SpawnAgent` directives
-  - For orchestrator states with `status: :awaiting_tool` and pending tool calls,
-    emits `RunInstruction` directives to re-dispatch those tool calls
-  - For orchestrator states with `status: :awaiting_llm`, emits an LLM call directive
+  Replays workflow child spawning phases directly, and delegates orchestrator
+  replay to the strategy module's `replay_directives_from_state/1` callback.
   """
   @spec replay_directives(map()) :: [struct()]
   def replay_directives(strategy_state) do
@@ -188,129 +184,12 @@ defmodule Jido.Composer.Checkpoint do
   defp replay_orchestrator_ops(state) do
     module = Map.get(state, :module)
 
-    cond do
-      is_atom(module) and module != nil and
-          function_exported?(module, :replay_directives_from_state, 1) ->
-        module.replay_directives_from_state(state)
-
-      module == Jido.Composer.Orchestrator.Strategy ->
-        replay_orchestrator_status(state, Map.get(state, :status))
-
-      true ->
-        []
+    if is_atom(module) and module != nil and
+         function_exported?(module, :replay_directives_from_state, 1) do
+      module.replay_directives_from_state(state)
+    else
+      []
     end
-  end
-
-  defp replay_orchestrator_status(state, :awaiting_llm) do
-    # Re-emit the LLM call from the current conversation state
-    tool_results = extract_completed_tool_results(state)
-
-    [
-      %Directive.RunInstruction{
-        instruction: %Jido.Instruction{
-          action: Jido.Composer.Orchestrator.LLMAction,
-          params: %{
-            conversation: Map.get(state, :conversation),
-            tool_results: tool_results,
-            tools: Map.get(state, :tools, []),
-            model: Map.get(state, :model),
-            query: Map.get(state, :query),
-            system_prompt: Map.get(state, :system_prompt),
-            temperature: Map.get(state, :temperature),
-            max_tokens: Map.get(state, :max_tokens),
-            stream: Map.get(state, :stream, false),
-            llm_opts: Map.get(state, :llm_opts, []),
-            req_options: Map.get(state, :req_options, [])
-          }
-        },
-        result_action: :orchestrator_llm_result
-      }
-    ]
-  end
-
-  defp replay_orchestrator_status(state, status)
-       when status in [:awaiting_tool, :awaiting_tools, :awaiting_tools_and_approval] do
-    # Re-dispatch RunInstruction directives for pending tool calls
-    pending = extract_pending_tool_calls(state)
-    nodes = Map.get(state, :nodes, %{})
-    context = Map.get(state, :context)
-    conversation = Map.get(state, :conversation, [])
-
-    # Extract tool calls from the last assistant message in conversation
-    tool_calls_from_conversation =
-      conversation
-      |> Enum.reverse()
-      |> Enum.find_value([], fn
-        %{role: "assistant", tool_calls: calls} when is_list(calls) -> calls
-        _ -> false
-      end)
-
-    # Only re-dispatch calls that are still pending
-    pending_set = MapSet.new(pending)
-
-    tool_calls_from_conversation
-    |> Enum.filter(fn call -> MapSet.member?(pending_set, call[:id] || call.id) end)
-    |> Enum.map(fn call ->
-      call = to_tool_call_map(call)
-      build_tool_replay_directive(call, nodes, context)
-    end)
-  end
-
-  defp replay_orchestrator_status(_state, _status), do: []
-
-  defp to_tool_call_map(call) when is_map(call) do
-    %{
-      id: call[:id] || Map.get(call, "id"),
-      name: call[:name] || Map.get(call, "name"),
-      arguments: call[:arguments] || Map.get(call, "arguments", %{})
-    }
-  end
-
-  defp build_tool_replay_directive(call, nodes, %Jido.Composer.Context{} = ctx) do
-    alias Jido.Composer.Node.ActionNode
-    alias Jido.Composer.Node.AgentNode
-    alias Jido.Composer.Orchestrator.AgentTool
-
-    tool_args = AgentTool.to_context(call)
-
-    case nodes[call.name] do
-      %ActionNode{action_module: action_module} ->
-        merged_ctx = %{ctx | working: Map.merge(ctx.working, tool_args)}
-        flat = Jido.Composer.Context.to_flat_map(merged_ctx)
-
-        %Directive.RunInstruction{
-          instruction: %Jido.Instruction{action: action_module, params: flat},
-          result_action: :orchestrator_tool_result,
-          meta: %{call_id: call.id, tool_name: call.name}
-        }
-
-      %AgentNode{agent_module: agent_module, opts: opts} ->
-        child_ctx = Jido.Composer.Context.fork_for_child(ctx)
-        child_flat = Jido.Composer.Context.to_flat_map(child_ctx)
-        merged = Map.merge(child_flat, tool_args)
-
-        %Directive.SpawnAgent{
-          tag: {:tool_call, call.id, call.name},
-          agent: agent_module,
-          opts: Map.new(opts) |> Map.put(:context, merged)
-        }
-
-      _ ->
-        # Unknown node — skip
-        nil
-    end
-  end
-
-  defp build_tool_replay_directive(call, _nodes, _ctx) do
-    # Context is not a Context struct (e.g., nil or bare map) — emit a basic directive
-    %Directive.RunInstruction{
-      instruction: %Jido.Instruction{
-        action: :unknown,
-        params: %{call_id: call.id, tool_name: call.name}
-      },
-      result_action: :orchestrator_tool_result,
-      meta: %{call_id: call.id, tool_name: call.name}
-    }
   end
 
   @doc """
@@ -352,20 +231,4 @@ defmodule Jido.Composer.Checkpoint do
   @spec migrate(map(), non_neg_integer()) :: map()
   def migrate(state, 1), do: state
   def migrate(state, _version), do: state
-
-  # -- Private helpers for ToolConcurrency struct / legacy flat map compat --
-
-  defp extract_pending_tool_calls(state) do
-    case Map.get(state, :tool_concurrency) do
-      %ToolConcurrency{pending: pending} -> pending
-      _ -> Map.get(state, :pending_tool_calls, [])
-    end
-  end
-
-  defp extract_completed_tool_results(state) do
-    case Map.get(state, :tool_concurrency) do
-      %ToolConcurrency{completed: completed} -> completed
-      _ -> Map.get(state, :completed_tool_results, [])
-    end
-  end
 end
