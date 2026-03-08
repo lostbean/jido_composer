@@ -45,28 +45,48 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
   Converts tool call arguments to a context map for node execution.
 
   Atomizes string keys so that the resulting map matches the keyword-style
-  keys nodes expect.
+  keys nodes expect. When `valid_keys` is provided, only keys in the set
+  are accepted; otherwise falls back to `String.to_existing_atom/1`.
   """
-  @spec to_context(map()) :: map()
-  def to_context(%{arguments: arguments}) do
+  @spec to_context(map(), MapSet.t(atom()) | nil) :: map()
+  def to_context(call, valid_keys \\ nil)
+
+  def to_context(%{arguments: arguments}, valid_keys) do
     Map.new(arguments, fn
       {k, v} when is_binary(k) ->
-        # Tool call keys are bounded by tool schemas (from Node definitions),
-        # not arbitrary user input. Try existing atom first; fall back for
-        # schema-defined keys not yet loaded as atoms in the VM.
-        key =
-          try do
-            String.to_existing_atom(k)
-          rescue
-            # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
-            ArgumentError -> String.to_atom(k)
-          end
-
+        key = atomize_key(k, valid_keys)
         {key, v}
 
       {k, v} when is_atom(k) ->
         {k, v}
     end)
+  end
+
+  defp atomize_key(k, nil) do
+    try do
+      String.to_existing_atom(k)
+    rescue
+      ArgumentError ->
+        raise ArgumentError, "unknown tool argument key #{inspect(k)} — not a recognized atom"
+    end
+  end
+
+  defp atomize_key(k, valid_keys) do
+    atom =
+      try do
+        String.to_existing_atom(k)
+      rescue
+        ArgumentError ->
+          raise ArgumentError,
+                "unknown tool argument key #{inspect(k)} — valid keys: #{inspect(MapSet.to_list(valid_keys))}"
+      end
+
+    if MapSet.member?(valid_keys, atom) do
+      atom
+    else
+      raise ArgumentError,
+            "tool argument key #{inspect(k)} not in schema — valid keys: #{inspect(MapSet.to_list(valid_keys))}"
+    end
   end
 
   @doc """

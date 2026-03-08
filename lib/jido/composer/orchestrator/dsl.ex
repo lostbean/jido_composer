@@ -125,16 +125,40 @@ defmodule Jido.Composer.Orchestrator.DSL do
 
   @doc false
   def __query_sync_loop__(module, agent, directives) do
-    run_orch_directives(module, agent, directives)
+    case run_orch_directives(module, agent, directives) do
+      {:ok, result} ->
+        {:ok, result}
+
+      {:error, reason} ->
+        {:error, reason}
+
+      {:suspend, agent, directive} ->
+        strat = Jido.Agent.Strategy.State.get(agent)
+        {:error, {:suspended, strat.pending_suspension || directive.suspension}}
+    end
   end
 
   defp run_orch_directives(_module, agent, []) do
     strat = Jido.Agent.Strategy.State.get(agent)
 
     case strat.status do
-      :completed -> {:ok, unwrap_result(strat.result)}
-      :error -> {:error, strat.result}
-      _ -> {:error, :unexpected_state}
+      :completed ->
+        {:ok, unwrap_result(strat.result)}
+
+      :error ->
+        {:error, strat.result}
+
+      s
+      when s in [
+             :awaiting_approval,
+             :awaiting_suspension,
+             :awaiting_tools_and_suspension,
+             :awaiting_tools_and_approval
+           ] ->
+        {:error, {:suspended, strat.pending_suspension}}
+
+      _ ->
+        {:error, :unexpected_state}
     end
   end
 
@@ -156,6 +180,9 @@ defmodule Jido.Composer.Orchestrator.DSL do
           module.cmd(agent, {:orchestrator_child_result, %{tag: tag, result: payload}})
 
         run_orch_directives(module, agent, new_directives ++ rest)
+
+      %Jido.Composer.Directive.Suspend{} = suspend ->
+        {:suspend, agent, suspend}
 
       _other ->
         run_orch_directives(module, agent, rest)

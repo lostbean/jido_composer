@@ -1,6 +1,7 @@
 defmodule Jido.Composer.Workflow.StrategyTest do
   use ExUnit.Case, async: true
 
+  alias Jido.Composer.Context
   alias Jido.Composer.Workflow.Strategy
   alias Jido.Composer.Workflow.Machine
   alias Jido.Agent.Strategy.State, as: StratState
@@ -432,7 +433,7 @@ defmodule Jido.Composer.Workflow.StrategyTest do
   end
 
   describe "Context integration" do
-    test "dispatch passes flat map with __ambient__ to ActionNode" do
+    test "dispatch passes flat map with ambient key to ActionNode" do
       {agent, ctx} = init_agent()
 
       instructions = [
@@ -442,8 +443,8 @@ defmodule Jido.Composer.Workflow.StrategyTest do
       {_agent, directives} = Strategy.cmd(agent, instructions, ctx)
 
       assert [%Directive.RunInstruction{instruction: instr}] = directives
-      # ActionNode should receive flat map with __ambient__ key
-      assert Map.has_key?(instr.params, :__ambient__)
+      # ActionNode should receive flat map with ambient key
+      assert Map.has_key?(instr.params, Context.ambient_key())
       assert instr.params[:value] == 1.0
     end
 
@@ -493,8 +494,8 @@ defmodule Jido.Composer.Workflow.StrategyTest do
         )
 
       assert [%Directive.SpawnAgent{} = spawn] = directives
-      # Child receives a flat map context with __ambient__
-      assert Map.has_key?(spawn.opts[:context], :__ambient__)
+      # Child receives a flat map context with ambient key
+      assert Map.has_key?(spawn.opts[:context], Context.ambient_key())
     end
   end
 

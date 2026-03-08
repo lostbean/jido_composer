@@ -124,7 +124,8 @@ defmodule Jido.Composer.Node.FanOutNode do
             branch_name,
             branch_node,
             flat_context,
-            structured_context
+            structured_context,
+            node.timeout
           )
 
         {branch_name, directive}
@@ -151,7 +152,8 @@ defmodule Jido.Composer.Node.FanOutNode do
          branch_name,
          branch_node,
          flat_context,
-         structured_context
+         structured_context,
+         timeout
        ) do
     alias Jido.Composer.Directive.FanOutBranch
 
@@ -164,7 +166,8 @@ defmodule Jido.Composer.Node.FanOutNode do
             action: action_module,
             params: flat_context
           },
-          result_action: :fan_out_branch_result
+          result_action: :fan_out_branch_result,
+          timeout: timeout
         }
 
       %Jido.Composer.Node.AgentNode{agent_module: agent_module, opts: opts} ->
@@ -184,7 +187,8 @@ defmodule Jido.Composer.Node.FanOutNode do
             agent: agent_module,
             opts: Map.new(opts) |> Map.put(:context, child_flat)
           },
-          result_action: :fan_out_branch_result
+          result_action: :fan_out_branch_result,
+          timeout: timeout
         }
 
       fun when is_function(fun, 1) ->
@@ -192,7 +196,8 @@ defmodule Jido.Composer.Node.FanOutNode do
           fan_out_id: fan_out_id,
           branch_name: branch_name,
           instruction: {:function, fun, flat_context},
-          result_action: :fan_out_branch_result
+          result_action: :fan_out_branch_result,
+          timeout: timeout
         }
     end
   end

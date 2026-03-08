@@ -70,6 +70,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       |> Map.put(:nodes, nodes)
       |> Map.put(:tools, tools)
       |> Map.put(:name_atoms, name_atoms)
+      |> Map.put(:schema_keys, extract_all_schema_keys(nodes))
       |> Map.put(:approval_gate, ag)
       |> Map.put(:req_options, opts[:req_options] || existing[:req_options] || [])
       |> Map.put(:tool_concurrency, tc)
@@ -92,6 +93,8 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     ambient_keys = opts[:ambient] || []
     fork_fns = opts[:fork_fns] || %{}
 
+    schema_keys = extract_all_schema_keys(nodes)
+
     {tools, name_atoms, term_name, term_mod} =
       build_termination_tool(opts[:termination_tool], tools, name_atoms)
 
@@ -100,6 +103,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         module: __MODULE__,
         status: :idle,
         nodes: nodes,
+        schema_keys: schema_keys,
         model: opts[:model],
         system_prompt: opts[:system_prompt],
         temperature: opts[:temperature],
@@ -354,7 +358,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
             end)
 
           state = StratState.get(agent)
-          directive = build_tool_directive(call, state.nodes, state.context)
+          directive = build_tool_directive(call, state.nodes, state.context, state.schema_keys)
           {agent, [directive]}
         end
 
@@ -595,7 +599,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         # Build directives for dispatched (ungated, within concurrency limit) calls
         ungated_directives =
           Enum.map(to_dispatch, fn call ->
-            build_tool_directive(call, state.nodes, state.context)
+            build_tool_directive(call, state.nodes, state.context, state.schema_keys)
           end)
 
         # Track spawning phase for AgentNode tool calls
@@ -626,8 +630,20 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     end
   end
 
-  defp build_tool_directive(call, nodes, %Context{} = ctx) do
-    tool_args = AgentTool.to_context(call)
+  defp build_tool_directive(call, nodes, %Context{} = ctx, schema_keys \\ nil) do
+    keys_for_call =
+      case schema_keys do
+        %{} ->
+          case Map.get(schema_keys, call.name) do
+            %MapSet{} = s -> if MapSet.size(s) == 0, do: nil, else: s
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    tool_args = AgentTool.to_context(call, keys_for_call)
     node = nodes[call.name]
 
     # ActionNode gets tool args merged into context; AgentNode handles via :tool_args opt
@@ -728,16 +744,37 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
         if ToolConcurrency.at_capacity?(state.tool_concurrency) do
           # At capacity — queue instead of dispatching
-          agent =
-            StratState.update(agent, fn s ->
-              new_ag = ApprovalGate.remove(s.approval_gate, request_id)
-              new_tc = ToolConcurrency.enqueue(s.tool_concurrency, call)
-              new_status = StatusComputer.compute(new_tc, new_ag, s.suspended_calls)
+          case ToolConcurrency.enqueue(state.tool_concurrency, call) do
+            {:ok, new_tc} ->
+              agent =
+                StratState.update(agent, fn s ->
+                  new_ag = ApprovalGate.remove(s.approval_gate, request_id)
+                  new_status = StatusComputer.compute(new_tc, new_ag, s.suspended_calls)
 
-              %{s | approval_gate: new_ag, tool_concurrency: new_tc, status: new_status}
-            end)
+                  %{s | approval_gate: new_ag, tool_concurrency: new_tc, status: new_status}
+                end)
 
-          {agent, []}
+              {agent, []}
+
+            {:error, :queue_full} ->
+              tool_result =
+                AgentTool.to_tool_result(call.id, call.name, {:error, "Tool queue is full"})
+
+              agent =
+                StratState.update(agent, fn s ->
+                  new_ag = ApprovalGate.remove(s.approval_gate, request_id)
+
+                  new_tc = %{
+                    s.tool_concurrency
+                    | completed: s.tool_concurrency.completed ++ [tool_result]
+                  }
+
+                  new_status = StatusComputer.compute(new_tc, new_ag, s.suspended_calls)
+                  %{s | approval_gate: new_ag, tool_concurrency: new_tc, status: new_status}
+                end)
+
+              check_all_tools_done(agent)
+          end
         else
           agent =
             StratState.update(agent, fn s ->
@@ -748,7 +785,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
               %{s | approval_gate: new_ag, tool_concurrency: new_tc, status: new_status}
             end)
 
-          directive = build_tool_directive(call, state.nodes, state.context)
+          directive = build_tool_directive(call, state.nodes, state.context, state.schema_keys)
           {agent, [directive]}
         end
 
@@ -913,7 +950,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     else
       directives =
         Enum.map(to_dispatch, fn call ->
-          build_tool_directive(call, state.nodes, state.context)
+          build_tool_directive(call, state.nodes, state.context, state.schema_keys)
         end)
 
       spawn_phases =
@@ -1092,6 +1129,27 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     StratState.put(agent, cleaned)
   end
 
+  @doc """
+  Strategy-specific closure stripping for checkpoint serialization.
+
+  Called by `Checkpoint.prepare_for_checkpoint/1` via delegation.
+  Strips closures from nested structures (e.g., `approval_gate.approval_policy`)
+  in addition to top-level function values.
+  """
+  @spec strip_for_checkpoint(map()) :: map()
+  def strip_for_checkpoint(state) do
+    Map.new(state, fn
+      {:approval_gate, %{approval_policy: _} = gate} ->
+        {:approval_gate, %{gate | approval_policy: nil}}
+
+      {k, v} when is_function(v) ->
+        {k, nil}
+
+      kv ->
+        kv
+    end)
+  end
+
   @doc false
   def reattach_runtime_config(agent, strategy_opts) do
     strat = StratState.get(agent)
@@ -1130,9 +1188,9 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   defp build_start_context(%Context{} = current_ctx, params, strat) do
     ambient_keys = Map.get(strat, :ambient_keys, [])
 
-    # If parent sent __ambient__ (from Context.to_flat_map), merge it
+    # If parent sent ambient data (from Context.to_flat_map), merge it
     {inherited_ambient, params} =
-      case Map.pop(params, :__ambient__) do
+      case Map.pop(params, Context.ambient_key()) do
         {nil, params} -> {%{}, params}
         {ambient_map, params} -> {ambient_map, params}
       end
@@ -1174,7 +1232,13 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   end
 
   defp handle_termination(agent, call, state) do
-    args = AgentTool.to_context(call)
+    term_keys =
+      case Map.get(state, :schema_keys, %{})[call.name] do
+        %MapSet{} = s -> if MapSet.size(s) == 0, do: nil, else: s
+        _ -> nil
+      end
+
+    args = AgentTool.to_context(call, term_keys)
 
     case Jido.Exec.run(state.termination_tool_mod, args, %{}) do
       {:ok, result} ->
@@ -1195,5 +1259,26 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
         emit_llm_call(agent)
     end
+  end
+
+  defp extract_all_schema_keys(nodes) do
+    Map.new(nodes, fn {name, node} ->
+      schema = node.__struct__.schema(node)
+
+      keys =
+        case schema do
+          list when is_list(list) ->
+            Enum.map(list, fn
+              {key, _opts} when is_atom(key) -> key
+              key when is_atom(key) -> key
+            end)
+            |> MapSet.new()
+
+          _ ->
+            MapSet.new()
+        end
+
+      {name, keys}
+    end)
   end
 end

@@ -11,20 +11,23 @@ defmodule Jido.Composer.ToolConcurrency do
   defstruct pending: [],
             completed: [],
             queued: [],
-            max_concurrency: nil
+            max_concurrency: nil,
+            max_queue_depth: nil
 
   @type t :: %__MODULE__{
           pending: [String.t()],
           completed: [map()],
           queued: [map()],
-          max_concurrency: non_neg_integer() | nil
+          max_concurrency: non_neg_integer() | nil,
+          max_queue_depth: non_neg_integer() | nil
         }
 
   @doc "Creates a new ToolConcurrency state."
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     %__MODULE__{
-      max_concurrency: Keyword.get(opts, :max_concurrency)
+      max_concurrency: Keyword.get(opts, :max_concurrency),
+      max_queue_depth: Keyword.get(opts, :max_queue_depth)
     }
   end
 
@@ -73,10 +76,18 @@ defmodule Jido.Composer.ToolConcurrency do
 
   @doc """
   Adds a call to the queue (e.g., when approved but at capacity).
+
+  Returns `{:ok, state}` on success, or `{:error, :queue_full}` if the queue
+  has reached `max_queue_depth`.
   """
-  @spec enqueue(t(), map()) :: t()
+  @spec enqueue(t(), map()) :: {:ok, t()} | {:error, :queue_full}
+  def enqueue(%__MODULE__{max_queue_depth: max} = state, _call)
+      when is_integer(max) and length(state.queued) >= max do
+    {:error, :queue_full}
+  end
+
   def enqueue(%__MODULE__{} = state, call) do
-    %{state | queued: state.queued ++ [call]}
+    {:ok, %{state | queued: state.queued ++ [call]}}
   end
 
   @doc """

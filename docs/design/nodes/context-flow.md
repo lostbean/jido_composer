@@ -198,20 +198,22 @@ Fork functions use MFA tuples (not closures) for serializability. They receive
 
 Nodes still receive a flat `map()`. The Node behaviour does not change. The
 composition layer flattens the layered context before passing it to a node,
-placing ambient data under the reserved key `__ambient__`:
+placing ambient data under the key returned by `Jido.Composer.Context.ambient_key/0`
+(a tuple `{Jido.Composer.Context, :ambient}`):
 
 ```
 %{
-  __ambient__: %{org_id: "acme", trace_id: "abc"},
+  {Jido.Composer.Context, :ambient} => %{org_id: "acme", trace_id: "abc"},
   extract: %{records: [...]},
   transform: %{cleaned: [...]}
 }
 ```
 
-Nodes that need ambient data access it via `context.__ambient__.org_id`. A
-node's result returning `%{__ambient__: modified}` is scoped under its state
-name (`%{my_state: %{__ambient__: modified}}`), leaving the real ambient
-untouched.
+Nodes that need ambient data access it via
+`context[Jido.Composer.Context.ambient_key()][:org_id]`. Because the key is a
+tuple (not a plain atom), a node cannot accidentally overwrite ambient data by
+returning a same-named key — the scoping makes collisions structurally
+impossible.
 
 For the categorical treatment of context layers, see
 [Foundations — Environment Propagation](../foundations.md#environment-propagation-as-reader-monad).

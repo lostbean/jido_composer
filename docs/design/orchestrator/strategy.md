@@ -201,7 +201,7 @@ three layers:
 - **Ambient** — read-only data (e.g., `org_id`, `trace_id`) extracted from
   start params using the `ambient_keys` list declared in the DSL. Ambient is
   also inherited from a parent composition when the orchestrator runs as a
-  child agent (via the `__ambient__` key in the flattened context).
+  child agent (via `Context.ambient_key()` in the flattened context).
 - **Working** — mutable tool results accumulated under scoped keys via
   `Context.apply_result/3`.
 - **Fork functions** — MFA tuples applied at SpawnAgent boundaries when the
@@ -222,7 +222,8 @@ When building directives for tool calls, the strategy uses the context layers:
 
 - **ActionNode tools** — The strategy merges tool call arguments into the
   working layer, then passes `Context.to_flat_map/1` as the instruction params.
-  The action receives the full accumulated context including `__ambient__`.
+  The action receives the full accumulated context including ambient data
+  under `Context.ambient_key()`.
 - **AgentNode tools** — The strategy calls `Context.fork_for_child/1` to run
   fork functions (e.g., OTel span creation), then serializes the forked
   context into the SpawnAgent directive's opts.

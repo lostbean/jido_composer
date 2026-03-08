@@ -68,7 +68,11 @@ defmodule Jido.Composer.Node do
         child_module.query_sync(child_agent, query, context)
 
       true ->
-        {:error, :agent_not_sync_runnable}
+        {:error,
+         Jido.Composer.Error.execution_error(
+           "Agent module does not export run_sync/2 or query_sync/3",
+           node: inspect(child_module)
+         )}
     end
   end
 end

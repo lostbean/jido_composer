@@ -63,7 +63,8 @@ defmodule Jido.Composer.Workflow.Strategy do
         children: Children.new(),
         hibernate_after: opts[:hibernate_after],
         agent_id: agent.id,
-        agent_module: ctx[:agent_module]
+        agent_module: ctx[:agent_module],
+        success_states: opts[:success_states] || [:done]
       })
 
     {agent, []}
@@ -400,7 +401,8 @@ defmodule Jido.Composer.Workflow.Strategy do
     strat = StratState.get(agent)
 
     if Machine.terminal?(strat.machine) do
-      status = if strat.machine.status == :done, do: :success, else: :failure
+      success_states = Map.get(strat, :success_states, [:done])
+      status = if strat.machine.status in success_states, do: :success, else: :failure
       agent = StratState.set_status(agent, status)
       {agent, []}
     else
@@ -810,7 +812,8 @@ defmodule Jido.Composer.Workflow.Strategy do
     strat = StratState.get(agent)
 
     if Machine.terminal?(strat.machine) do
-      status = if strat.machine.status == :done, do: :success, else: :failure
+      success_states = Map.get(strat, :success_states, [:done])
+      status = if strat.machine.status in success_states, do: :success, else: :failure
       agent = StratState.set_status(agent, status)
       {agent, extra_directives}
     else
@@ -830,6 +833,20 @@ defmodule Jido.Composer.Workflow.Strategy do
     strat = StratState.get(agent)
     cleaned = Checkpoint.prepare_for_checkpoint(strat)
     StratState.put(agent, cleaned)
+  end
+
+  @doc """
+  Strategy-specific closure stripping for checkpoint serialization.
+
+  Called by `Checkpoint.prepare_for_checkpoint/1` via delegation.
+  Workflows have no nested closures, so this just strips top-level functions.
+  """
+  @spec strip_for_checkpoint(map()) :: map()
+  def strip_for_checkpoint(state) do
+    Map.new(state, fn
+      {k, v} when is_function(v) -> {k, nil}
+      kv -> kv
+    end)
   end
 
   @doc false

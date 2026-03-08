@@ -9,13 +9,14 @@ defmodule Jido.Composer.Directive.FanOutBranch do
   """
 
   @enforce_keys [:fan_out_id, :branch_name]
-  defstruct [:fan_out_id, :branch_name, :instruction, :spawn_agent, :result_action]
+  defstruct [:fan_out_id, :branch_name, :instruction, :spawn_agent, :result_action, :timeout]
 
   @type t :: %__MODULE__{
           fan_out_id: String.t(),
           branch_name: atom(),
           instruction: Jido.Instruction.t() | nil,
           spawn_agent: map() | nil,
-          result_action: atom() | nil
+          result_action: atom() | nil,
+          timeout: pos_integer() | nil
         }
 end

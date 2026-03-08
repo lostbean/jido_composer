@@ -70,6 +70,26 @@ defmodule Jido.Composer.CheckpointTest do
       assert cleaned.some_other_fn == nil
       assert cleaned.data == "keep me"
     end
+
+    test "orchestrator strategy strips nested approval_gate.approval_policy" do
+      approval_policy = fn _call, _ctx -> :require_approval end
+
+      strategy_state = %{
+        module: Jido.Composer.Orchestrator.Strategy,
+        status: :awaiting_approval,
+        approval_gate: %{
+          approval_policy: approval_policy,
+          gated_node_names: MapSet.new(["tool_a"]),
+          gated_calls: %{}
+        },
+        data: "keep me"
+      }
+
+      cleaned = Checkpoint.prepare_for_checkpoint(strategy_state)
+      assert cleaned.approval_gate.approval_policy == nil
+      assert cleaned.approval_gate.gated_node_names == MapSet.new(["tool_a"])
+      assert cleaned.data == "keep me"
+    end
   end
 
   describe "reattach_runtime_config/2" do
@@ -157,18 +177,45 @@ defmodule Jido.Composer.CheckpointTest do
     end
 
     test "resumed -> resuming is invalid" do
-      assert {:error, {:invalid_transition, :resumed, :resuming}} =
+      assert {:error, {:invalid_transition, :resumed, :resuming, []}} =
                Checkpoint.transition_status(:resumed, :resuming)
     end
 
     test "hibernated -> resumed is invalid (must go through resuming)" do
-      assert {:error, {:invalid_transition, :hibernated, :resumed}} =
+      assert {:error, {:invalid_transition, :hibernated, :resumed, [:resuming]}} =
                Checkpoint.transition_status(:hibernated, :resumed)
     end
 
     test "unknown status returns error" do
-      assert {:error, {:invalid_transition, :bogus, :resuming}} =
+      assert {:error, {:invalid_transition, :bogus, :resuming, []}} =
                Checkpoint.transition_status(:bogus, :resuming)
+    end
+  end
+
+  describe "valid_statuses/0" do
+    test "returns all checkpoint statuses" do
+      statuses = Checkpoint.valid_statuses()
+      assert :hibernated in statuses
+      assert :resuming in statuses
+      assert :resumed in statuses
+    end
+  end
+
+  describe "valid_transitions_from/1" do
+    test "returns valid transitions from hibernated" do
+      assert Checkpoint.valid_transitions_from(:hibernated) == [:resuming]
+    end
+
+    test "returns valid transitions from resuming" do
+      assert Checkpoint.valid_transitions_from(:resuming) == [:resumed]
+    end
+
+    test "returns empty list for resumed" do
+      assert Checkpoint.valid_transitions_from(:resumed) == []
+    end
+
+    test "returns empty list for unknown status" do
+      assert Checkpoint.valid_transitions_from(:bogus) == []
     end
   end
 

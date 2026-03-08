@@ -128,19 +128,35 @@ defmodule Jido.Composer.ContextTest do
       forked = Context.fork_for_child(ctx)
       assert forked.ambient == %{org_id: "acme"}
     end
+
+    test "raises ArgumentError when fork function returns a non-map" do
+      defmodule BadFork do
+        def bad_fork(_ambient, _working), do: :not_a_map
+      end
+
+      ctx =
+        Context.new(
+          ambient: %{org_id: "acme"},
+          fork_fns: %{bad: {BadFork, :bad_fork, []}}
+        )
+
+      assert_raise ArgumentError, ~r/must return a map/, fn ->
+        Context.fork_for_child(ctx)
+      end
+    end
   end
 
   describe "to_flat_map/1" do
-    test "puts ambient under __ambient__ key in working" do
+    test "puts ambient under ambient_key in working" do
       ctx = Context.new(ambient: %{org_id: "acme"}, working: %{data: 1})
       flat = Context.to_flat_map(ctx)
-      assert flat == %{data: 1, __ambient__: %{org_id: "acme"}}
+      assert flat == Map.put(%{data: 1}, Context.ambient_key(), %{org_id: "acme"})
     end
 
-    test "empty ambient produces empty __ambient__ map" do
+    test "empty ambient produces empty ambient_key map" do
       ctx = Context.new(working: %{data: 1})
       flat = Context.to_flat_map(ctx)
-      assert flat == %{data: 1, __ambient__: %{}}
+      assert flat == Map.put(%{data: 1}, Context.ambient_key(), %{})
     end
   end
 

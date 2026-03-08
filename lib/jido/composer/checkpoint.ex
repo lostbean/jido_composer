@@ -6,6 +6,10 @@ defmodule Jido.Composer.Checkpoint do
   cannot be serialized. On restore, they are reattached from the agent
   module's DSL configuration (`strategy_opts`).
 
+  ## Status Transitions
+
+      hibernated → resuming → resumed
+
   ## Strategy Checkpoint Protocol
 
   Strategies may implement the following optional callbacks to integrate with
@@ -16,8 +20,13 @@ defmodule Jido.Composer.Checkpoint do
     returns a list of directives needed to resume in-flight operations
     (e.g. re-issue an LLM call or re-dispatch pending tool calls).
 
-  - `prepare_for_checkpoint/1` — Prepares the agent for hibernation by
-    stripping non-serializable data. Called before persisting.
+  - `prepare_for_checkpoint/1` — Agent-level hook that prepares the agent
+    for hibernation. Called before persisting.
+
+  - `strip_for_checkpoint/1` — Strategy-specific closure stripping callback.
+    Receives the strategy state map and returns a cleaned version. Called by
+    `prepare_for_checkpoint/1` when available; otherwise falls back to
+    blanket top-level function stripping.
 
   - `reattach_runtime_config/2` — Restores runtime closures and transient
     state from `strategy_opts` after deserialization.
@@ -47,30 +56,53 @@ defmodule Jido.Composer.Checkpoint do
   @doc """
   Validates a checkpoint status transition.
   """
-  @spec transition_status(atom(), atom()) :: :ok | {:error, {:invalid_transition, atom(), atom()}}
+  @spec transition_status(atom(), atom()) ::
+          :ok | {:error, {:invalid_transition, atom(), atom(), [atom()]}}
   def transition_status(current, target) do
-    if target in Map.get(@valid_transitions, current, []) do
+    valid = Map.get(@valid_transitions, current, [])
+
+    if target in valid do
       :ok
     else
-      {:error, {:invalid_transition, current, target}}
+      {:error, {:invalid_transition, current, target, valid}}
     end
   end
 
+  @doc "Returns the list of valid checkpoint statuses."
+  @spec valid_statuses() :: [atom()]
+  def valid_statuses, do: Map.keys(@valid_transitions)
+
+  @doc "Returns the list of valid transitions from a given status."
+  @spec valid_transitions_from(atom()) :: [atom()]
+  def valid_transitions_from(status), do: Map.get(@valid_transitions, status, [])
+
   @doc """
   Prepares strategy state for checkpoint by stripping non-serializable
-  values (closures/functions) from top-level fields and setting checkpoint status.
+  values (closures/functions) and setting checkpoint status.
+
+  Delegates to the strategy module's `prepare_for_checkpoint/1` callback
+  if available, otherwise falls back to blanket top-level function stripping.
   """
   @spec prepare_for_checkpoint(map()) :: map()
   def prepare_for_checkpoint(strategy_state) when is_map(strategy_state) do
     strategy_state
-    |> Map.new(fn {key, value} ->
-      if is_function(value) do
-        {key, nil}
-      else
-        {key, value}
-      end
-    end)
+    |> maybe_delegate_prepare()
     |> Map.put_new(:checkpoint_status, :hibernated)
+  end
+
+  defp maybe_delegate_prepare(state) do
+    module = Map.get(state, :module)
+
+    if is_atom(module) and module != nil and
+         function_exported?(module, :strip_for_checkpoint, 1) do
+      module.strip_for_checkpoint(state)
+    else
+      # Legacy fallback: strip top-level functions
+      Map.new(state, fn
+        {k, v} when is_function(v) -> {k, nil}
+        kv -> kv
+      end)
+    end
   end
 
   @doc """

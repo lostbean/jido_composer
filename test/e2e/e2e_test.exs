@@ -896,8 +896,8 @@ defmodule Jido.Composer.E2E.E2ETest do
           context = Map.get(spawn_opts, :context, %{})
 
           # Verify forked ambient has incremented depth
-          assert context[:__ambient__][:depth] == 1
-          assert context[:__ambient__][:org_id] == "acme"
+          assert context[Jido.Composer.Context.ambient_key()][:depth] == 1
+          assert context[Jido.Composer.Context.ambient_key()][:org_id] == "acme"
 
           result = run_child_with_context(child_module, context, plug)
 

@@ -409,7 +409,7 @@ IO.puts("  Prepare: #{ctx[:prepare][:count]} documents gathered")
 IO.puts("  Extract branch: #{inspect(ctx[:parallel][:extract][:count])} docs extracted")
 IO.puts("  Analyze branch: #{inspect(ctx[:parallel][:analyze][:load][:loaded])} docs analyzed")
 IO.puts("  Validate branch: all valid? #{inspect(ctx[:parallel][:validate][:all_valid])}")
-IO.puts("  Ambient org_id: #{inspect(ctx[:__ambient__][:org_id])}")
+IO.puts("  Ambient org_id: #{inspect(ctx[Jido.Composer.Context.ambient_key()][:org_id])}")
 ```
 
 ## Phase 2: Checkpoint the Suspended Pipeline
@@ -478,7 +478,7 @@ case Demo.DirectiveRunner.run_until_done(Demo.DocumentReviewPipeline, resumed_ag
     IO.puts("  Reviewer: #{final_ctx[:publish][:reviewer]}")
     IO.puts("  Decision: #{inspect(final_ctx[:hitl_response][:decision])}")
     IO.puts("  Comment: #{final_ctx[:hitl_response][:comment]}")
-    IO.puts("  Ambient org_id: #{final_ctx[:__ambient__][:org_id]}")
+    IO.puts("  Ambient org_id: #{final_ctx[Jido.Composer.Context.ambient_key()][:org_id]}")
     IO.puts("\nLifecycle:")
     IO.puts("  Define -> Run -> FanOut(3 branches, 1 nested agent) -> Suspend(HITL)")
     IO.puts("  -> Checkpoint -> Serialize -> Thaw -> Resume -> Publish -> Done")

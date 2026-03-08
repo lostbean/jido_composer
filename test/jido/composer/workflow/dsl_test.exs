@@ -125,6 +125,31 @@ defmodule Jido.Composer.Workflow.DSLTest do
       assert warnings =~ "unreachable"
     end
 
+    test "warns when :suspend is used as a transition outcome" do
+      warnings =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          defmodule SuspendOutcomeWorkflow do
+            use Jido.Composer.Workflow,
+              name: "suspend_outcome",
+              nodes: %{
+                step_a: AddAction,
+                step_b: MultiplyAction
+              },
+              transitions: %{
+                {:step_a, :ok} => :step_b,
+                {:step_a, :suspend} => :step_b,
+                {:step_b, :ok} => :done,
+                {:_, :error} => :failed
+              },
+              initial: :step_a
+          end
+        end)
+
+      assert warnings =~ "unreachable"
+      assert warnings =~ ":suspend"
+      assert warnings =~ "reserved outcome"
+    end
+
     test "warns about non-terminal states with no outgoing transitions" do
       warnings =
         ExUnit.CaptureIO.capture_io(:stderr, fn ->
@@ -213,6 +238,33 @@ defmodule Jido.Composer.Workflow.DSLTest do
       # Results should be merged and scoped under :compute
       assert result[:compute][:add][:result] == 3.0
       assert result[:compute][:echo][:echoed] == "hello"
+    end
+  end
+
+  describe "custom terminal states" do
+    defmodule CustomTerminalWorkflow do
+      use Jido.Composer.Workflow,
+        name: "custom_terminal",
+        nodes: %{
+          step_a: AddAction,
+          step_b: MultiplyAction
+        },
+        transitions: %{
+          {:step_a, :ok} => :step_b,
+          {:step_b, :ok} => :complete,
+          {:_, :error} => :failed
+        },
+        initial: :step_a,
+        terminal_states: [:complete, :failed]
+    end
+
+    test "custom terminal state :complete is classified as success" do
+      agent = CustomTerminalWorkflow.new()
+
+      assert {:ok, result} =
+               CustomTerminalWorkflow.run_sync(agent, %{value: 1.0, amount: 2.0})
+
+      assert is_map(result)
     end
   end
 

@@ -207,14 +207,16 @@ This scoping prevents key collisions between nodes. Downstream nodes can read up
 
 ### Ambient Context
 
-Keys listed in `:ambient` are read-only and visible to all nodes via `context[:__ambient__]`:
+Keys listed in `:ambient` are read-only and visible to all nodes via
+`context[Jido.Composer.Context.ambient_key()]`:
 
 ```elixir
 use Jido.Composer.Workflow,
   ambient: [:api_key, :config],
   # ...
 
-# All nodes receive: params[:__ambient__][:api_key]
+# All nodes receive ambient data under a tuple key:
+# params[Jido.Composer.Context.ambient_key()][:api_key]
 ```
 
 ### Fork Functions

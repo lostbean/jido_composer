@@ -196,19 +196,22 @@ defmodule Jido.Composer.Node.AgentNodeTest do
       assert {:error, _reason} = result
     end
 
-    test "run/3 returns {:error, {:not_directly_runnable, :async}} for async mode" do
+    test "run/3 returns ExecutionError for async mode" do
       {:ok, node} = AgentNode.new(EchoAgent, mode: :async)
-      assert {:error, {:not_directly_runnable, :async}} = AgentNode.run(node, %{}, [])
+      assert {:error, %Jido.Composer.Error.ExecutionError{} = err} = AgentNode.run(node, %{}, [])
+      assert err.msg =~ "not directly runnable"
     end
 
-    test "run/3 returns {:error, {:not_directly_runnable, :streaming}} for streaming mode" do
+    test "run/3 returns ExecutionError for streaming mode" do
       {:ok, node} = AgentNode.new(EchoAgent, mode: :streaming)
-      assert {:error, {:not_directly_runnable, :streaming}} = AgentNode.run(node, %{}, [])
+      assert {:error, %Jido.Composer.Error.ExecutionError{} = err} = AgentNode.run(node, %{}, [])
+      assert err.msg =~ "not directly runnable"
     end
 
-    test "run/3 returns error for agents without sync entry point" do
+    test "run/3 returns ExecutionError for agents without sync entry point" do
       {:ok, node} = AgentNode.new(EchoAgent)
-      assert {:error, :agent_not_sync_runnable} = AgentNode.run(node, %{}, [])
+      assert {:error, %Jido.Composer.Error.ExecutionError{} = err} = AgentNode.run(node, %{}, [])
+      assert err.msg =~ "does not export run_sync/2 or query_sync/3"
     end
   end
 

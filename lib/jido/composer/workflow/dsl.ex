@@ -69,7 +69,10 @@ defmodule Jido.Composer.Workflow.DSL do
                               fork_fns: unquote(Macro.escape(fork_fns))
                             ] ++
                               if(@__wf_terminal_states__,
-                                do: [terminal_states: @__wf_terminal_states__],
+                                do: [
+                                  terminal_states: @__wf_terminal_states__,
+                                  success_states: @__wf_terminal_states__ -- [:failed]
+                                ],
                                 else: []
                               )
 
@@ -162,13 +165,19 @@ defmodule Jido.Composer.Workflow.DSL do
   end
 
   defp execute_fan_out_branches(fan_out_directives) do
+    timeout =
+      case List.first(fan_out_directives) do
+        %{timeout: t} when is_integer(t) -> t
+        _ -> 30_000
+      end
+
     fan_out_directives
     |> Task.async_stream(
       fn %Jido.Composer.Directive.FanOutBranch{} = branch ->
         result = execute_fan_out_branch(branch)
         {branch.branch_name, result}
       end,
-      timeout: 30_000,
+      timeout: timeout,
       on_timeout: :kill_task,
       ordered: true,
       max_concurrency: length(fan_out_directives)
@@ -245,6 +254,8 @@ defmodule Jido.Composer.Workflow.DSL do
     end)
   end
 
+  @reserved_outcomes [:suspend]
+
   @doc false
   def __validate__!(nodes, transitions, initial, terminal_states) do
     node_states = Map.keys(nodes)
@@ -298,6 +309,24 @@ defmodule Jido.Composer.Workflow.DSL do
           "Workflow state #{inspect(state)} has no outgoing transitions and is not a terminal state"
         )
       end
+    end
+
+    # Warn about reserved outcomes used in transitions
+    for {{state, outcome}, target} <- transitions, outcome in @reserved_outcomes do
+      IO.warn(
+        "Workflow transition {#{inspect(state)}, #{inspect(outcome)}} => #{inspect(target)} " <>
+          "is unreachable — #{inspect(outcome)} is a reserved outcome intercepted by the strategy"
+      )
+    end
+
+    # Warn if no transitions lead to any terminal state
+    targets_set = MapSet.new(transition_targets)
+
+    if MapSet.disjoint?(targets_set, terminals) do
+      IO.warn(
+        "No transitions target terminal states #{inspect(MapSet.to_list(terminals))}. " <>
+          "Workflow will never complete. Specify terminal_states: [...] if using custom names."
+      )
     end
 
     :ok

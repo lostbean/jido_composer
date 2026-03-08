@@ -14,6 +14,8 @@ defmodule Jido.Composer.Node.AgentNode do
   layer (Machine/Strategy), not the node.
   """
 
+  alias Jido.Composer.Error
+
   @behaviour Jido.Composer.Node
 
   @valid_modes [:sync, :async, :streaming]
@@ -78,12 +80,20 @@ defmodule Jido.Composer.Node.AgentNode do
         end
 
       true ->
-        {:error, :agent_not_sync_runnable}
+        {:error,
+         Error.execution_error(
+           "Agent module does not export run_sync/2 or query_sync/3",
+           node: inspect(node.agent_module)
+         )}
     end
   end
 
   def run(%__MODULE__{mode: mode}, _context, _opts) when mode in [:async, :streaming] do
-    {:error, {:not_directly_runnable, mode}}
+    {:error,
+     Error.execution_error(
+       "AgentNode mode #{inspect(mode)} is not directly runnable — use directive-based execution",
+       details: %{mode: mode}
+     )}
   end
 
   @impl true

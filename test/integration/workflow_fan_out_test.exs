@@ -561,13 +561,13 @@ defmodule Jido.Composer.Integration.WorkflowFanOutTest do
 
       # Action branch gets flat context (no fork applied)
       assert action_branch.instruction != nil
-      assert action_branch.instruction.params[:__ambient__][:depth] == 0
+      assert action_branch.instruction.params[Context.ambient_key()][:depth] == 0
 
       # Agent branch gets forked context (fork applied, depth incremented)
       assert agent_branch.spawn_agent != nil
       agent_ctx = agent_branch.spawn_agent.opts[:context]
-      assert agent_ctx[:__ambient__][:depth] == 1
-      assert agent_ctx[:__ambient__][:org_id] == "acme"
+      assert agent_ctx[Context.ambient_key()][:depth] == 1
+      assert agent_ctx[Context.ambient_key()][:org_id] == "acme"
     end
   end
 end

@@ -692,15 +692,12 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       assert get_state(agent).status == :completed
     end
 
-    test "orchestrator_start inherits __ambient__ from parent" do
+    test "orchestrator_start inherits ambient from parent" do
       LLMStub.setup([{:final_answer, "Done"}])
       agent = init_agent(ambient: [:org_id])
 
-      start_params = %{
-        query: "Hi",
-        __ambient__: %{parent_trace: "abc"},
-        org_id: "acme"
-      }
+      start_params =
+        Map.put(%{query: "Hi", org_id: "acme"}, Context.ambient_key(), %{parent_trace: "abc"})
 
       {agent, _} =
         Strategy.cmd(agent, [make_instruction(:orchestrator_start, start_params)], ctx())
@@ -748,7 +745,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       assert state.context.ambient == %{org_id: "acme"}
     end
 
-    test "ActionNode directive includes __ambient__ in params" do
+    test "ActionNode directive includes ambient key in params" do
       tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 5.0, "amount" => 3.0}}
       LLMStub.setup([{:tool_calls, [tool_call]}])
       agent = init_agent(ambient: [:org_id])
@@ -764,7 +761,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
         Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
 
       assert %Jido.Agent.Directive.RunInstruction{instruction: instr} = directive
-      assert instr.params[:__ambient__] == %{org_id: "acme"}
+      assert instr.params[Context.ambient_key()] == %{org_id: "acme"}
     end
 
     test "snapshot returns flat map context" do
@@ -785,7 +782,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       # Should be a flat map, not a Context struct
       refute match?(%Context{}, snap.details.context)
       assert is_map(snap.details.context)
-      assert snap.details.context[:__ambient__] == %{org_id: "acme"}
+      assert snap.details.context[Context.ambient_key()] == %{org_id: "acme"}
     end
 
     test "backward compatible: init without ambient/fork_fns works identically" do
@@ -825,10 +822,10 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
 
       # Snapshot returns flat map with empty ambient
       snap = Strategy.snapshot(agent, ctx())
-      assert snap.details.context[:__ambient__] == %{}
+      assert snap.details.context[Context.ambient_key()] == %{}
     end
 
-    test "approval_policy receives flat map with __ambient__" do
+    test "approval_policy receives flat map with ambient key" do
       tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 100.0, "amount" => 50.0}}
       LLMStub.setup([{:tool_calls, [tool_call]}])
 
@@ -852,7 +849,7 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       [{:context, ctx_received}] = :ets.lookup(received_context, :context)
       :ets.delete(received_context)
 
-      assert ctx_received[:__ambient__] == %{org_id: "acme"}
+      assert ctx_received[Context.ambient_key()] == %{org_id: "acme"}
     end
   end
 

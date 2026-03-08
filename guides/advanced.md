@@ -275,11 +275,11 @@ Checkpoints include a schema version (current: `:composer_v1`). `Checkpoint.migr
 
 Context has three layers:
 
-| Layer        | Mutability | Scope                                           |
-| ------------ | ---------- | ----------------------------------------------- |
-| **Ambient**  | Read-only  | Visible to all nodes via `params[:__ambient__]` |
-| **Working**  | Mutable    | Scoped per node under state/tool name           |
-| **Fork Fns** | Transform  | Applied at agent boundaries when nesting        |
+| Layer        | Mutability | Scope                                                    |
+| ------------ | ---------- | -------------------------------------------------------- |
+| **Ambient**  | Read-only  | Visible to all nodes via `params[Context.ambient_key()]` |
+| **Working**  | Mutable    | Scoped per node under state/tool name                    |
+| **Fork Fns** | Transform  | Applied at agent boundaries when nesting                 |
 
 ```elixir
 ctx = Jido.Composer.Context.new(
@@ -290,7 +290,7 @@ ctx = Jido.Composer.Context.new(
 
 # Access in a node:
 def run(params, _ctx) do
-  api_key = params[:__ambient__][:api_key]
+  api_key = params[Jido.Composer.Context.ambient_key()][:api_key]
   upstream = params[:extract][:records]
   {:ok, %{processed: true}}
 end

@@ -446,45 +446,47 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       agent = ETLWorkflow.new()
 
       assert {:ok, result} =
-               ETLWorkflow.run_sync(agent, %{
-                 source: "ambient_test",
-                 __ambient__: %{org_id: "acme"}
-               })
+               ETLWorkflow.run_sync(
+                 agent,
+                 Map.put(%{source: "ambient_test"}, Jido.Composer.Context.ambient_key(), %{
+                   org_id: "acme"
+                 })
+               )
 
       # The result from run_sync is a flat map (via to_flat_map)
-      # Ambient key __ambient__ is populated even though we passed it as initial param
+      # Ambient key is populated even though we passed it as initial param
       # (it ends up in working since DSL doesn't extract ambient keys yet)
       assert result[:extract][:records] != nil
       assert result[:load][:status] == :complete
     end
 
-    test "ambient context is present as __ambient__ in every action's params" do
-      # Use the directive loop to verify __ambient__ is included at every step
+    test "ambient context is present as ambient key in every action's params" do
+      # Use the directive loop to verify ambient key is included at every step
       alias Jido.Composer.Context
 
       agent = ETLWorkflow.new()
       {agent, directives} = ETLWorkflow.run(agent, %{source: "ambient_verify"})
 
-      # Run the workflow step-by-step, checking __ambient__ in each instruction
+      # Run the workflow step-by-step, checking ambient key in each instruction
       assert [%Directive.RunInstruction{instruction: instr}] = directives
-      # First instruction params should contain __ambient__
-      assert Map.has_key?(instr.params, :__ambient__)
-      assert instr.params[:__ambient__] == %{}
+      # First instruction params should contain ambient key
+      assert Map.has_key?(instr.params, Context.ambient_key())
+      assert instr.params[Context.ambient_key()] == %{}
 
       # Execute step 1 (extract)
       payload = execute_instruction(instr)
       {agent, directives} = ETLWorkflow.cmd(agent, {:workflow_node_result, payload})
       assert [%Directive.RunInstruction{instruction: instr}] = directives
-      # Second instruction params should also contain __ambient__
-      assert Map.has_key?(instr.params, :__ambient__)
+      # Second instruction params should also contain ambient key
+      assert Map.has_key?(instr.params, Context.ambient_key())
       assert instr.params[:source] == "ambient_verify"
 
       # Execute step 2 (transform)
       payload = execute_instruction(instr)
       {agent, directives} = ETLWorkflow.cmd(agent, {:workflow_node_result, payload})
       assert [%Directive.RunInstruction{instruction: instr}] = directives
-      # Third instruction params should also contain __ambient__
-      assert Map.has_key?(instr.params, :__ambient__)
+      # Third instruction params should also contain ambient key
+      assert Map.has_key?(instr.params, Context.ambient_key())
 
       # Execute step 3 (load) -> done
       payload = execute_instruction(instr)
@@ -532,13 +534,13 @@ defmodule Jido.Composer.Integration.WorkflowTest do
 
       assert [%Directive.RunInstruction{instruction: instr}] = directives
 
-      # Ambient keys should be in __ambient__, not in the working context params
-      assert instr.params[:__ambient__][:org_id] == "acme"
-      assert instr.params[:__ambient__][:region] == "us-east"
+      # Ambient keys should be in the ambient key, not in the working context params
+      assert instr.params[Context.ambient_key()][:org_id] == "acme"
+      assert instr.params[Context.ambient_key()][:region] == "us-east"
       # Working data should be there too
       assert instr.params[:data] == "payload"
       # Ambient keys should NOT be in working (they go to ambient layer)
-      refute Map.has_key?(Map.delete(instr.params, :__ambient__), :org_id)
+      refute Map.has_key?(Map.delete(instr.params, Context.ambient_key()), :org_id)
     end
 
     test "fork functions are NOT applied for ActionNode dispatch" do
@@ -602,7 +604,7 @@ defmodule Jido.Composer.Integration.WorkflowTest do
 
       # ActionNode should get flat map — fork should NOT have been applied
       assert [%Directive.RunInstruction{instruction: instr}] = directives
-      assert instr.params[:__ambient__][:fork_count] == 0
+      assert instr.params[Context.ambient_key()][:fork_count] == 0
     end
 
     test "fork functions run at agent boundaries" do
@@ -684,8 +686,8 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       # SpawnAgent should have forked context with depth incremented
       assert [%Jido.Agent.Directive.SpawnAgent{} = spawn] = directives
       child_ctx = spawn.opts[:context]
-      assert child_ctx[:__ambient__][:depth] == 1
-      assert child_ctx[:__ambient__][:org_id] == "acme"
+      assert child_ctx[Context.ambient_key()][:depth] == 1
+      assert child_ctx[Context.ambient_key()][:org_id] == "acme"
     end
 
     test "multiple fork functions are applied in sequence" do
@@ -772,8 +774,8 @@ defmodule Jido.Composer.Integration.WorkflowTest do
       child_ctx = spawn.opts[:context]
 
       # Both fork functions should have been applied
-      assert child_ctx[:__ambient__][:depth] == 1
-      assert "fork" in child_ctx[:__ambient__][:trace]
+      assert child_ctx[Context.ambient_key()][:depth] == 1
+      assert "fork" in child_ctx[Context.ambient_key()][:trace]
     end
   end
 

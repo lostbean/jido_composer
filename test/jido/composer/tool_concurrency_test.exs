@@ -74,8 +74,22 @@ defmodule Jido.Composer.ToolConcurrencyTest do
   describe "enqueue/2" do
     test "appends call to queued" do
       tc = ToolConcurrency.new()
-      tc = ToolConcurrency.enqueue(tc, %{id: "x"})
+      assert {:ok, tc} = ToolConcurrency.enqueue(tc, %{id: "x"})
       assert tc.queued == [%{id: "x"}]
+    end
+
+    test "returns error when queue is full" do
+      tc = ToolConcurrency.new(max_queue_depth: 2)
+      assert {:ok, tc} = ToolConcurrency.enqueue(tc, %{id: "a"})
+      assert {:ok, tc} = ToolConcurrency.enqueue(tc, %{id: "b"})
+      assert {:error, :queue_full} = ToolConcurrency.enqueue(tc, %{id: "c"})
+    end
+
+    test "allows enqueue when no max_queue_depth" do
+      tc = ToolConcurrency.new()
+      assert {:ok, tc} = ToolConcurrency.enqueue(tc, %{id: "a"})
+      assert {:ok, tc} = ToolConcurrency.enqueue(tc, %{id: "b"})
+      assert {:ok, _tc} = ToolConcurrency.enqueue(tc, %{id: "c"})
     end
   end
 

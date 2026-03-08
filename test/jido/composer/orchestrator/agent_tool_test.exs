@@ -81,9 +81,7 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
       assert context == %{}
     end
 
-    test "handles LLM-generated string keys that don't match existing atoms" do
-      # LLM might generate arbitrary argument names not pre-loaded as atoms
-      # Use a key guaranteed to not exist as an atom yet
+    test "raises for unknown string key without valid_keys" do
       novel_key = "xyzzy_#{System.unique_integer([:positive])}_novel"
 
       tool_call = %{
@@ -92,10 +90,26 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
         arguments: %{novel_key => "value"}
       }
 
-      # Should not crash with ArgumentError
-      context = AgentTool.to_context(tool_call)
-      # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
-      assert context[String.to_atom(novel_key)] == "value"
+      assert_raise ArgumentError, ~r/unknown tool argument key/, fn ->
+        AgentTool.to_context(tool_call)
+      end
+    end
+
+    test "validates against valid_keys when provided" do
+      valid = MapSet.new([:value, :amount])
+      tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 1.0, "amount" => 2.0}}
+      context = AgentTool.to_context(tool_call, valid)
+      assert context[:value] == 1.0
+      assert context[:amount] == 2.0
+    end
+
+    test "rejects key not in valid_keys" do
+      valid = MapSet.new([:value])
+      tool_call = %{id: "call_1", name: "add", arguments: %{"value" => 1.0, "amount" => 2.0}}
+
+      assert_raise ArgumentError, ~r/not in schema/, fn ->
+        AgentTool.to_context(tool_call, valid)
+      end
     end
   end
 
