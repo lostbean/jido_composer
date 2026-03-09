@@ -51,7 +51,7 @@ defmodule JidoComposer.MixProject do
       {:req_llm, "~> 1.6"},
 
       # Observability (optional — used by livebooks and when configured)
-      {:agent_obs, path: "../agent_obs", optional: true},
+      {:agent_obs, github: "lostbean/agent_obs", branch: "feat/jido", optional: true},
       {:opentelemetry, "~> 1.3", optional: true},
       {:opentelemetry_api, "~> 1.2", optional: true},
       {:opentelemetry_exporter, "~> 1.6", optional: true},
