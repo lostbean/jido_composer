@@ -105,7 +105,8 @@ defmodule JidoComposer.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/lostbean/jido_composer"}
+      links: %{"GitHub" => "https://github.com/lostbean/jido_composer"},
+      files: ~w(lib .formatter.exs mix.exs README.md LICENSE usage-rules.md)
     ]
   end
 
