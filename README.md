@@ -129,8 +129,10 @@ end
 - [Getting Started](guides/getting-started.md) — First workflow in 5 minutes
 - [Workflows Guide](guides/workflows.md) — All DSL options, fan-out, custom outcomes
 - [Orchestrators Guide](guides/orchestrators.md) — LLM config, tool approval, streaming
-- [Advanced Features](guides/advanced.md) — Nesting, HITL, suspension, persistence, testing
-- [Design Documentation](docs/design/README.md) — Architecture and design decisions
+- [Composition & Nesting](guides/composition.md) — Nesting patterns, context flow, control spectrum
+- [Human-in-the-Loop](guides/hitl.md) — HumanNode, approval gates, suspension, persistence
+- [Observability](guides/observability.md) — OTel spans, tracer setup, span hierarchy
+- [Testing](guides/testing.md) — ReqCassette, LLMStub, test layers
 - Interactive demos in `livebooks/`
 
 ## License

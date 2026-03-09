@@ -69,6 +69,9 @@ defmodule Jido.Composer do
   - [Getting Started](getting-started.md)
   - [Workflows](workflows.md)
   - [Orchestrators](orchestrators.md)
-  - [Advanced Features](advanced.md)
+  - [Composition & Nesting](composition.md)
+  - [Human-in-the-Loop](hitl.md)
+  - [Observability](observability.md)
+  - [Testing](testing.md)
   """
 end

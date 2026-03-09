@@ -1,4 +1,4 @@
-# Orchestrators Guide
+# Orchestrators
 
 Orchestrators use an LLM to dynamically compose available tools (actions and agents) at runtime via a ReAct-style loop.
 
@@ -52,6 +52,8 @@ model: "google:gemini-2.0-flash"
 ## Tools
 
 Actions and agents listed in `nodes` are automatically converted to LLM tool definitions. The tool name comes from the action's `name/0` callback, the description from `description/0`, and parameters from `schema/0`.
+
+> **Tip:** Write clear, specific `description` strings for your tools — the LLM uses them to decide which tool to call. A vague description like "process data" leads to poor tool selection. Prefer "Search the product catalog by name or SKU and return matching items with prices."
 
 ```elixir
 use Jido.Composer.Orchestrator,
@@ -172,6 +174,8 @@ use Jido.Composer.Orchestrator,
 ```
 
 When the LLM requests more tool calls than the concurrency limit, excess calls are queued and executed as slots become available.
+
+> Orchestrators sit at the **adaptive** end of the control spectrum — the LLM decides which tools to call and in what order. For fully deterministic pipelines, see [Workflows](workflows.md). For mixing both patterns, see [Composition & Nesting](composition.md).
 
 ## Context Accumulation
 

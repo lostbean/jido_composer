@@ -1,4 +1,4 @@
-# Workflows Guide
+# Workflows
 
 Workflows are deterministic FSM pipelines where each state binds to a node (action, agent, fan-out, or human gate) and transitions are fully determined by outcomes.
 
@@ -204,6 +204,10 @@ Each node's result is deep-merged into the context under its state name:
 ```
 
 This scoping prevents key collisions between nodes. Downstream nodes can read upstream results via their state names.
+
+**Deep merge semantics:** Maps are merged recursively — nested keys are combined rather than overwritten. If two maps share the same nested path, the later value wins at the leaf level. Because each node's output is scoped under its state name, collisions between different nodes are impossible.
+
+> Workflows sit at the **fully deterministic** end of the control spectrum — every transition is explicitly defined at compile time, with no runtime decision-making. For adaptive behavior, see [Orchestrators](orchestrators.md). For mixing both, see [Composition & Nesting](composition.md).
 
 ### Ambient Context
 

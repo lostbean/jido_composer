@@ -1,4 +1,4 @@
-# Observability: Tracing Agent Execution
+# Observability Demo
 
 ```elixir
 Mix.install(

@@ -1,4 +1,4 @@
-# Multi-Agent Pipeline: The Full Stack
+# Multi-Agent Pipeline
 
 ```elixir
 Mix.install(

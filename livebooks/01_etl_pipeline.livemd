@@ -1,4 +1,4 @@
-# Building an ETL Pipeline with Jido Composer
+# ETL Pipeline
 
 ```elixir
 Mix.install(

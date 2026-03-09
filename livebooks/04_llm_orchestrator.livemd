@@ -1,4 +1,4 @@
-# LLM Orchestrator: Tool-Using AI Agents
+# LLM Orchestrator
 
 ```elixir
 Mix.install(

@@ -167,54 +167,27 @@ defmodule JidoComposer.MixProject do
         "guides/getting-started.md",
         "guides/workflows.md",
         "guides/orchestrators.md",
-        "guides/advanced.md",
+        "guides/composition.md",
+        "guides/hitl.md",
+        "guides/observability.md",
+        "guides/testing.md",
         # Livebooks
         "livebooks/01_etl_pipeline.livemd",
         "livebooks/02_branching_and_parallel.livemd",
         "livebooks/03_approval_workflow.livemd",
         "livebooks/04_llm_orchestrator.livemd",
         "livebooks/05_multi_agent_pipeline.livemd",
-        "livebooks/06_observability.livemd",
-        # Design: Architecture
-        "docs/design/README.md",
-        "docs/design/overview.md",
-        "docs/design/foundations.md",
-        "docs/design/composition.md",
-        "docs/design/interface.md",
-        "docs/design/use-cases.md",
-        "docs/design/glossary.md",
-        # Design: Nodes
-        "docs/design/nodes/README.md",
-        "docs/design/nodes/context-flow.md",
-        "docs/design/nodes/typed-io.md",
-        # Design: Workflow
-        "docs/design/workflow/README.md",
-        "docs/design/workflow/state-machine.md",
-        "docs/design/workflow/strategy.md",
-        # Design: Orchestrator
-        "docs/design/orchestrator/README.md",
-        "docs/design/orchestrator/strategy.md",
-        "docs/design/orchestrator/llm-integration.md",
-        # Design: Suspension & HITL
-        "docs/design/hitl/README.md",
-        "docs/design/hitl/human-node.md",
-        "docs/design/hitl/approval-lifecycle.md",
-        "docs/design/hitl/strategy-integration.md",
-        "docs/design/hitl/persistence.md",
-        "docs/design/hitl/nested-propagation.md",
-        # Design: Observability
-        "docs/design/observability.md",
-        # Design: Testing
-        "docs/design/testing.md",
-        # Reference
-        "PLAN.md"
+        "livebooks/06_observability.livemd"
       ],
       groups_for_extras: [
         Guides: [
           "guides/getting-started.md",
           "guides/workflows.md",
           "guides/orchestrators.md",
-          "guides/advanced.md"
+          "guides/composition.md",
+          "guides/hitl.md",
+          "guides/observability.md",
+          "guides/testing.md"
         ],
         Livebooks: [
           "livebooks/01_etl_pipeline.livemd",
@@ -223,41 +196,6 @@ defmodule JidoComposer.MixProject do
           "livebooks/04_llm_orchestrator.livemd",
           "livebooks/05_multi_agent_pipeline.livemd",
           "livebooks/06_observability.livemd"
-        ],
-        "Design: Architecture": [
-          "docs/design/README.md",
-          "docs/design/overview.md",
-          "docs/design/foundations.md",
-          "docs/design/composition.md",
-          "docs/design/interface.md",
-          "docs/design/use-cases.md",
-          "docs/design/glossary.md"
-        ],
-        "Design: Nodes": [
-          "docs/design/nodes/README.md",
-          "docs/design/nodes/context-flow.md",
-          "docs/design/nodes/typed-io.md"
-        ],
-        "Design: Workflow": [
-          "docs/design/workflow/README.md",
-          "docs/design/workflow/state-machine.md",
-          "docs/design/workflow/strategy.md"
-        ],
-        "Design: Orchestrator": [
-          "docs/design/orchestrator/README.md",
-          "docs/design/orchestrator/strategy.md",
-          "docs/design/orchestrator/llm-integration.md"
-        ],
-        "Design: Observability": [
-          "docs/design/observability.md"
-        ],
-        "Design: Suspension & HITL": [
-          "docs/design/hitl/README.md",
-          "docs/design/hitl/human-node.md",
-          "docs/design/hitl/approval-lifecycle.md",
-          "docs/design/hitl/strategy-integration.md",
-          "docs/design/hitl/persistence.md",
-          "docs/design/hitl/nested-propagation.md"
         ]
       ],
       before_closing_body_tag: &before_closing_body_tag/1

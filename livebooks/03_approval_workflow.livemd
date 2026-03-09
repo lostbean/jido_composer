@@ -1,4 +1,4 @@
-# Approval Workflows: Suspend, Resume, and Checkpoint
+# Approval & Suspend
 
 ```elixir
 Mix.install(

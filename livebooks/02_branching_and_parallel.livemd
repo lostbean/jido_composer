@@ -1,4 +1,4 @@
-# Branching Workflows and Parallel Execution
+# Branching & Parallel
 
 ```elixir
 Mix.install(

@@ -158,13 +158,24 @@ The orchestrator automatically:
 
 ## Key Concepts
 
-- **Nodes** are the uniform `context -> context` interface. Actions, agents, fan-out branches, and human gates are all nodes.
-- **Context** accumulates results across states. Each node's output is scoped under its state/tool name via deep merge.
-- **Transitions** map `{state, outcome}` pairs to next states. Use `{:_, :error}` as a wildcard catch-all.
-- **Directives** are the side-effect descriptions emitted by strategies. `run_sync` and `query_sync` handle them automatically.
+| Term                | Description                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Node**            | The uniform `context -> context` interface. Actions, agents, fan-out branches, and human gates are all nodes.      |
+| **Context**         | Accumulates results across states. Each node's output is scoped under its state/tool name via deep merge.          |
+| **Directive**       | A side-effect description emitted by strategies. `run_sync` and `query_sync` handle them automatically.            |
+| **Outcome**         | An atom (`:ok`, `:error`, or custom) returned by a node that determines which transition fires.                    |
+| **Transition**      | A `{state, outcome} => next_state` mapping. Use `{:_, :error}` as a wildcard catch-all.                            |
+| **Terminal State**  | A state that ends the flow (default: `:done`, `:failed`). No outgoing transitions.                                 |
+| **Suspension**      | A pause in execution — for human input, rate limits, async jobs, or custom reasons.                                |
+| **Deep Merge**      | How node results accumulate: maps merge recursively, scoped under the node's state name to prevent key collisions. |
+| **Ambient Context** | Read-only keys visible to all nodes. Configured via the `ambient:` DSL option.                                     |
+| **Fork Functions**  | MFA tuples that transform ambient values at agent boundaries when nesting.                                         |
 
 ## Next Steps
 
 - [Workflows Guide](workflows.md) — All DSL options, fan-out, custom outcomes, compile-time validation
 - [Orchestrators Guide](orchestrators.md) — LLM config, tool approval gates, streaming, backpressure
-- [Advanced Features](advanced.md) — Nesting, HITL, suspension, persistence, testing
+- [Composition & Nesting](composition.md) — Nesting patterns, context flow, control spectrum
+- [Human-in-the-Loop](hitl.md) — HumanNode, approval gates, suspension, persistence
+- [Observability](observability.md) — OTel spans, tracer setup, span hierarchy
+- [Testing](testing.md) — ReqCassette, LLMStub, test layers
