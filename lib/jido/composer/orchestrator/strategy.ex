@@ -695,7 +695,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       end
 
     tool_args = AgentTool.to_context(call, keys_for_call)
-    node = nodes[call.name]
+    node = Map.get(nodes, call.name)
 
     # ActionNode gets tool args merged into context; AgentNode handles via :tool_args opt
     flat_context =
@@ -1194,7 +1194,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   end
 
   defp replay_build_tool_directive(call, nodes, %Context{} = ctx) do
-    if nodes[call.name], do: build_tool_directive(call, nodes, ctx), else: nil
+    if Map.get(nodes, call.name), do: build_tool_directive(call, nodes, ctx), else: nil
   end
 
   defp replay_build_tool_directive(call, _nodes, _ctx) do
@@ -1277,7 +1277,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       saved_ctx = OtelCtx.get_current()
       ag = update_obs(ag, &Obs.start_tool_span(&1, call))
 
-      is_agent_node = match?(%AgentNode{}, nodes[call.name])
+      is_agent_node = match?(%AgentNode{}, Map.get(nodes, call.name))
 
       ctx_map =
         if is_agent_node do
