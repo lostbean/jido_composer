@@ -103,8 +103,14 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
 
   defp execute_action(action_module, params, meta) do
     case Jido.Exec.run(action_module, params) do
-      {:ok, result} -> %{status: :ok, result: result, meta: meta || %{}}
-      {:error, reason} -> %{status: :error, result: reason, meta: meta || %{}}
+      {:ok, result} ->
+        %{status: :ok, result: result, meta: meta || %{}}
+
+      {:ok, result, outcome} ->
+        %{status: :ok, result: result, outcome: outcome, meta: meta || %{}}
+
+      {:error, reason} ->
+        %{status: :error, result: reason, meta: meta || %{}}
     end
   end
 
@@ -415,6 +421,95 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
       assert remaining == []
       strat = StratState.get(agent)
       assert strat.status == :completed
+    end
+  end
+
+  describe "action 3-tuple suspension" do
+    test "tool action returning {:ok, result, :suspend} suspends the orchestrator" do
+      agent =
+        init_agent(
+          nodes: [
+            Jido.Composer.TestActions.SuspendAction,
+            Jido.Composer.TestActions.EchoAction
+          ]
+        )
+
+      tool_call = %{
+        id: "call_1",
+        name: "suspend",
+        arguments: %{"checkpoint" => "waiting_for_input"}
+      }
+
+      LLMStub.setup([{:tool_calls, [tool_call]}])
+
+      {agent, directives} =
+        Strategy.cmd(
+          agent,
+          [make_instruction(:orchestrator_start, %{query: "Suspend please"})],
+          %{}
+        )
+
+      {agent, remaining} = execute_orchestrator(agent, directives)
+
+      # Should have a Suspend directive — not loop until max_iterations
+      assert [%Suspend{} | _] = remaining
+
+      strat = StratState.get(agent)
+      assert strat.status == :awaiting_suspension
+    end
+
+    test "tool action returning {:ok, result, :suspend} can be resumed" do
+      agent =
+        init_agent(
+          nodes: [
+            Jido.Composer.TestActions.SuspendAction,
+            Jido.Composer.TestActions.EchoAction
+          ]
+        )
+
+      tool_call = %{
+        id: "call_1",
+        name: "suspend",
+        arguments: %{"checkpoint" => "waiting_for_input"}
+      }
+
+      LLMStub.setup([
+        {:tool_calls, [tool_call]},
+        {:final_answer, "Resumed and done"}
+      ])
+
+      {agent, directives} =
+        Strategy.cmd(
+          agent,
+          [make_instruction(:orchestrator_start, %{query: "Suspend please"})],
+          %{}
+        )
+
+      {agent, remaining} = execute_orchestrator(agent, directives)
+
+      # Extract the suspension id to resume
+      [%Suspend{} = suspend | _] = remaining
+      suspension_id = suspend.suspension.id
+
+      # Resume the suspension with data
+      {agent, directives} =
+        Strategy.cmd(
+          agent,
+          [
+            make_instruction(:suspend_resume, %{
+              suspension_id: suspension_id,
+              outcome: :ok,
+              data: %{user_input: "continue"}
+            })
+          ],
+          %{}
+        )
+
+      {agent, _} = execute_orchestrator(agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :completed
+      assert strat.result.value == "Resumed and done"
     end
   end
 end

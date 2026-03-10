@@ -201,41 +201,46 @@ defmodule Jido.Composer.Orchestrator.Strategy do
         handle_tool_suspension(agent, call_id, tool_name, params)
 
       status when status in [:ok, :error] ->
-        # Check if tool signaled suspension via effects (runtime DirectiveExec path)
-        if status == :ok and :suspend in List.wrap(params[:effects]) do
-          handle_tool_suspension(agent, call_id, tool_name, params)
-        else
-          tool_result =
-            case status do
-              :ok ->
-                AgentTool.to_tool_result(call_id, tool_name, {:ok, params[:result]})
+        # Check if tool signaled suspension via effects or outcome
+        cond do
+          status == :ok and :suspend in List.wrap(params[:effects]) ->
+            handle_tool_suspension(agent, call_id, tool_name, params)
 
-              :error ->
-                AgentTool.to_tool_result(call_id, tool_name, {:error, params[:result]})
-            end
+          status == :ok and params[:outcome] == :suspend ->
+            handle_tool_suspension(agent, call_id, tool_name, params)
 
-          # Scope result under tool name in context (only on success)
-          scope_key = scope_atom(agent, tool_name)
+          true ->
+            tool_result =
+              case status do
+                :ok ->
+                  AgentTool.to_tool_result(call_id, tool_name, {:ok, params[:result]})
 
-          scoped_result =
-            case status do
-              :ok -> params[:result] || %{}
-              :error -> %{error: inspect(params[:result])}
-            end
+                :error ->
+                  AgentTool.to_tool_result(call_id, tool_name, {:error, params[:result]})
+              end
 
-          agent =
-            StratState.update(agent, fn s ->
-              new_tc = ToolConcurrency.record_result(s.tool_concurrency, call_id, tool_result)
-              new_context = Context.apply_result(s.context, scope_key, scoped_result)
+            # Scope result under tool name in context (only on success)
+            scope_key = scope_atom(agent, tool_name)
 
-              %{s | tool_concurrency: new_tc, context: new_context}
-            end)
+            scoped_result =
+              case status do
+                :ok -> params[:result] || %{}
+                :error -> %{error: inspect(params[:result])}
+              end
 
-          agent = finish_tool_span(agent, call_id, tool_name, params[:result], status)
+            agent =
+              StratState.update(agent, fn s ->
+                new_tc = ToolConcurrency.record_result(s.tool_concurrency, call_id, tool_result)
+                new_context = Context.apply_result(s.context, scope_key, scoped_result)
 
-          {agent, queue_directives} = dispatch_queued_tool_calls(agent)
-          {agent, done_directives} = check_all_tools_done(agent)
-          {agent, queue_directives ++ done_directives}
+                %{s | tool_concurrency: new_tc, context: new_context}
+              end)
+
+            agent = finish_tool_span(agent, call_id, tool_name, params[:result], status)
+
+            {agent, queue_directives} = dispatch_queued_tool_calls(agent)
+            {agent, done_directives} = check_all_tools_done(agent)
+            {agent, queue_directives ++ done_directives}
         end
 
       other ->
