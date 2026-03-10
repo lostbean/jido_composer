@@ -268,6 +268,30 @@ defmodule Jido.Composer.Workflow.DSLTest do
     end
   end
 
+  describe "suspension via run_sync" do
+    defmodule SuspendWorkflow do
+      use Jido.Composer.Workflow,
+        name: "suspend_workflow",
+        nodes: %{
+          step_a: Jido.Composer.TestActions.SuspendAction
+        },
+        transitions: %{
+          {:step_a, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :step_a
+    end
+
+    test "run_sync returns suspended error when action returns :suspend" do
+      agent = SuspendWorkflow.new()
+
+      assert {:error, {:suspended, suspension}} =
+               SuspendWorkflow.run_sync(agent, %{checkpoint: "waiting"})
+
+      assert %Jido.Composer.Suspension{} = suspension
+    end
+  end
+
   describe "compile-time validation" do
     test "rejects initial state not in nodes" do
       assert_raise CompileError, fn ->

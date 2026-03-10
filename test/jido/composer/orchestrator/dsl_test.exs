@@ -308,4 +308,74 @@ defmodule Jido.Composer.Orchestrator.DSLTest do
       assert opts[:llm_opts] == [top_p: 0.95]
     end
   end
+
+  describe "gated tool suspension via query_sync" do
+    defmodule GatedSyncOrchestrator do
+      use Jido.Composer.Orchestrator,
+        name: "gated_sync_orchestrator",
+        model: "anthropic:claude-sonnet-4-20250514",
+        nodes: [
+          Jido.Composer.TestActions.AddAction,
+          {Jido.Composer.TestActions.EchoAction, requires_approval: true}
+        ],
+        system_prompt: "You have gated tools."
+    end
+
+    test "query_sync returns suspended error when gated tool is called" do
+      plug =
+        LLMStub.setup_req_stub(:dsl_gated_suspend, [
+          {:tool_calls,
+           [
+             %{
+               id: "call_1",
+               name: "echo",
+               arguments: %{"message" => "needs approval"}
+             }
+           ]}
+        ])
+
+      agent = GatedSyncOrchestrator.new()
+      agent = put_in(agent.state.__strategy__.req_options, plug: plug)
+
+      assert {:error, {:suspended, suspension}} =
+               GatedSyncOrchestrator.query_sync(agent, "Echo something")
+
+      assert %Jido.Composer.Suspension{reason: :human_input} = suspension
+    end
+  end
+
+  describe "suspension via query_sync" do
+    defmodule SuspendOrchestrator do
+      use Jido.Composer.Orchestrator,
+        name: "suspend_orchestrator",
+        model: "anthropic:claude-sonnet-4-20250514",
+        nodes: [
+          Jido.Composer.TestActions.SuspendAction,
+          Jido.Composer.TestActions.EchoAction
+        ],
+        system_prompt: "You have a suspend tool."
+    end
+
+    test "query_sync returns suspended error when action returns :suspend" do
+      plug =
+        LLMStub.setup_req_stub(:dsl_suspend, [
+          {:tool_calls,
+           [
+             %{
+               id: "call_1",
+               name: "suspend",
+               arguments: %{"checkpoint" => "waiting"}
+             }
+           ]}
+        ])
+
+      agent = SuspendOrchestrator.new()
+      agent = put_in(agent.state.__strategy__.req_options, plug: plug)
+
+      assert {:error, {:suspended, suspension}} =
+               SuspendOrchestrator.query_sync(agent, "Please suspend")
+
+      assert %Jido.Composer.Suspension{} = suspension
+    end
+  end
 end

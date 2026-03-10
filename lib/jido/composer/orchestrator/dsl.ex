@@ -132,9 +132,8 @@ defmodule Jido.Composer.Orchestrator.DSL do
       {:error, reason} ->
         {:error, reason}
 
-      {:suspend, agent, directive} ->
-        strat = Jido.Agent.Strategy.State.get(agent)
-        {:error, {:suspended, strat.pending_suspension || directive.suspension}}
+      {:suspend, _agent, directive} ->
+        {:error, {:suspended, directive.suspension}}
     end
   end
 
@@ -155,7 +154,17 @@ defmodule Jido.Composer.Orchestrator.DSL do
              :awaiting_tools_and_suspension,
              :awaiting_tools_and_approval
            ] ->
-        {:error, {:suspended, strat.pending_suspension}}
+        suspension =
+          Map.get(strat, :pending_suspension) ||
+            case Map.get(strat, :suspended_calls, %{}) do
+              calls when calls != %{} ->
+                calls |> Map.values() |> List.first() |> Map.get(:suspension)
+
+              _ ->
+                nil
+            end
+
+        {:error, {:suspended, suspension}}
 
       _ ->
         {:error, :unexpected_state}
