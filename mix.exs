@@ -56,7 +56,7 @@ defmodule JidoComposer.MixProject do
       {:req_cassette, "~> 0.5.2", only: :test},
 
       # Observability (test only — livebooks install their own deps via Mix.install)
-      {:agent_obs, github: "lostbean/agent_obs", branch: "feat/jido", only: :test},
+      {:agent_obs, "~> 0.1.4", only: :test},
       {:opentelemetry, "~> 1.3", only: :test},
       {:opentelemetry_api, "~> 1.2", only: :test}
     ]
