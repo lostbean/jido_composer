@@ -1,49 +1,133 @@
 # Jido Composer
 
-Composable agent flows via FSM for the [Jido](https://github.com/agentjido/jido) ecosystem.
+Build composable agent topologies in Elixir. Mix deterministic workflows (FSM)
+with adaptive orchestrators (LLM) in any combination — they nest arbitrarily.
+Human approval gates and durable persistence are built in, not bolted on.
 
-Two composition patterns that nest arbitrarily:
+## Example: Code Review pipeline
 
-- **Workflow** — Deterministic FSM pipeline (states + transitions)
-- **Orchestrator** — LLM-driven dynamic tool use (ReAct loop)
-
-## Example: Workflow
-
-Define actions and wire them into an FSM:
+```mermaid
+flowchart TD
+    subgraph CodeReviewPipeline [Workflow: Code Review]
+        direction TB
+        subgraph FanOut [FanOut: Parallel Review]
+            Lint[Lint Action]
+            Security[Orchestrator: Security Scanner]
+            Tests[Test Runner Action]
+        end
+        FanOut --> Approval[HumanNode: Approve Merge]
+        Approval -->|approved| Merge[Merge Action]
+        Approval -->|rejected| Failed[Failed]
+    end
+```
 
 ```elixir
-defmodule ExtractAction do
-  use Jido.Action,
-    name: "extract",
-    description: "Extract records from a data source",
-    schema: [source: [type: :string, required: true]]
-
-  @impl true
-  def run(%{source: source}, _ctx) do
-    {:ok, %{records: [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}], source: source}}
-  end
+# An LLM-driven security scanner (orchestrator)
+defmodule SecurityScanner do
+  use Jido.Composer.Orchestrator,
+    name: "security_scanner",
+    model: "anthropic:claude-sonnet-4-20250514",
+    nodes: [DependencyAuditAction, SecretScanAction, SASTAction],
+    system_prompt: "Scan code for security issues using all available tools."
 end
 
-defmodule TransformAction do
-  use Jido.Action, name: "transform", description: "Transform records", schema: []
+# A deterministic pipeline that uses the scanner as one parallel branch
+{:ok, parallel_review} = Jido.Composer.Node.FanOutNode.new(
+  name: "parallel_review",
+  branches: [
+    lint: LintAction,
+    security: SecurityScanner,   # orchestrator as a branch
+    tests: TestRunnerAction
+  ]
+)
 
-  @impl true
-  def run(params, _ctx) do
-    records = get_in(params, [:extract, :records]) || []
-    {:ok, %{records: Enum.map(records, &Map.put(&1, :processed, true))}}
-  end
+defmodule CodeReviewPipeline do
+  use Jido.Composer.Workflow,
+    name: "code_review",
+    nodes: %{
+      review: parallel_review,
+      approval: %Jido.Composer.Node.HumanNode{
+        name: "merge_approval",
+        description: "Approve merge to main",
+        prompt: "All checks passed. Approve merge?",
+        allowed_responses: [:approved, :rejected]
+      },
+      merge: MergeAction
+    },
+    transitions: %{
+      {:review, :ok}         => :approval,
+      {:approval, :approved} => :merge,
+      {:approval, :rejected} => :failed,
+      {:merge, :ok}          => :done,
+      {:_, :error}           => :failed
+    },
+    initial: :review
 end
 
-defmodule LoadAction do
-  use Jido.Action, name: "load", description: "Load records", schema: []
+# Run → suspend at human gate → checkpoint → resume later
+agent = CodeReviewPipeline.new()
+{agent, _directives} = CodeReviewPipeline.run(agent, %{repo: "acme/app", pr: 42})
 
-  @impl true
-  def run(params, _ctx) do
-    records = get_in(params, [:transform, :records]) || []
-    {:ok, %{loaded: length(records)}}
-  end
+# Persist while waiting for human
+checkpoint = Jido.Composer.Checkpoint.prepare_for_checkpoint(agent)
+
+# Later: resume with approval
+{agent, _directives} = CodeReviewPipeline.cmd(agent, {:suspend_resume, %{
+  suspension_id: suspension.id,
+  response_data: %{request_id: request.id, decision: :approved, respondent: "lead@acme.com"}
+}})
+```
+
+## Three Pillars
+
+### Composable Topologies
+
+Workflows and orchestrators both produce `Jido.Agent` modules. Agents are nodes.
+Nodes compose at any depth — a workflow can contain an orchestrator as a step,
+an orchestrator can invoke a workflow as a tool, and you can nest three or more
+levels deep. The uniform `context → context` interface makes every node
+interchangeable.
+
+### Human-in-the-Loop
+
+HumanNode gates pause workflows for human decisions. Tool approval gates enforce
+pre-execution review on orchestrator tools. Both use the same
+`ApprovalRequest`/`ApprovalResponse` protocol. Beyond HITL, the generalized
+suspension system handles rate limits, async completions, and custom pause
+reasons.
+
+### Durable Persistence
+
+Checkpoint any running or suspended flow to storage. Serialize across process
+boundaries — PIDs become `ChildRef` structs, closures are stripped and
+reattached on restore. Resume with idempotent semantics and top-down child
+re-spawning, even for deeply nested agent hierarchies.
+
+## Installation
+
+```elixir
+def deps do
+  [
+    {:jido_composer, "~> 0.1.0"}
+  ]
 end
+```
 
+## Control Spectrum
+
+| Level                | Pattern                          | Example              |
+| -------------------- | -------------------------------- | -------------------- |
+| Fully deterministic  | Workflow                         | ETL pipeline         |
+| + human gate         | Workflow + HumanNode             | Approval workflows   |
+| + adaptive step      | Workflow containing Orchestrator | Code review pipeline |
+| + deterministic tool | Orchestrator containing Workflow | Customer support     |
+| Fully adaptive       | Orchestrator                     | Research agent       |
+
+## Quick Start: Workflow
+
+Wire actions into a deterministic FSM pipeline:
+
+```elixir
 defmodule ETLPipeline do
   use Jido.Composer.Workflow,
     name: "etl_pipeline",
@@ -77,7 +161,10 @@ stateDiagram-v2
     load --> failed : error
 ```
 
-## Example: Orchestrator
+See [Getting Started](guides/getting-started.md) for the full walkthrough with
+action definitions.
+
+## Quick Start: Orchestrator
 
 Give an LLM tools and let it decide what to call:
 
@@ -104,50 +191,38 @@ agent = MathAssistant.new()
 {:ok, answer} = MathAssistant.query_sync(agent, "What is 5 + 3?")
 ```
 
-## Key Features
-
-- Uniform Node interface — actions, agents, human gates, fan-out all compose
-- Context layering — ambient config + working state + fork transforms
-- Generalized suspension — human input, rate limits, async, external jobs
-- Persistence cascade — checkpoint/thaw/resume across restarts
-- Fan-out with backpressure and partial completion
-- LLM integration via [req_llm](https://hexdocs.pm/req_llm) with tool approval gates
-- Pure strategies — testable without a running runtime
-
-## Installation
-
-```elixir
-def deps do
-  [
-    {:jido_composer, "~> 0.1.0"}
-  ]
-end
-```
-
 ## Composer vs Jido AI
 
-Both libraries are part of the [Jido](https://github.com/agentjido/jido) ecosystem and share
-the same action, signal, and LLM foundations. They solve different problems:
+Both libraries are part of the [Jido](https://github.com/agentjido/jido)
+ecosystem and share the same action, signal, and LLM foundations. They solve
+different problems:
 
-- **Composer** — Composable flows: deterministic pipelines, parallel branches, human approval
-  gates, checkpoint/resume. You define the structure; the FSM enforces it.
-- **[Jido AI](https://github.com/agentjido/jido_ai)** — AI reasoning runtime: 8 strategy
-  families (ReAct, CoT, ToT, ...), request handles, plugins, skills.
+- **Composer** — Composable flows: deterministic pipelines, parallel branches,
+  human approval gates, checkpoint/resume. You define the structure; the FSM
+  enforces it.
+- **[Jido AI](https://github.com/agentjido/jido_ai)** — AI reasoning runtime: 8
+  strategy families (ReAct, CoT, ToT, ...), request handles, plugins, skills.
 
-They work together — wrap a Jido AI agent as a node inside a Composer workflow to
-get structured flow control around open-ended reasoning. See the
+They work together — wrap a Jido AI agent as a node inside a Composer workflow
+to get structured flow control around open-ended reasoning. See the
 [full comparison](guides/composer-vs-jido-ai.md).
 
 ## Documentation
 
+- [Composition & Nesting](guides/composition.md) — Nesting patterns, context
+  flow, control spectrum
+- [Human-in-the-Loop](guides/hitl.md) — HumanNode, approval gates, suspension,
+  persistence
 - [Getting Started](guides/getting-started.md) — First workflow in 5 minutes
-- [Workflows Guide](guides/workflows.md) — All DSL options, fan-out, custom outcomes
-- [Orchestrators Guide](guides/orchestrators.md) — LLM config, tool approval, streaming
-- [Composition & Nesting](guides/composition.md) — Nesting patterns, context flow, control spectrum
-- [Human-in-the-Loop](guides/hitl.md) — HumanNode, approval gates, suspension, persistence
-- [Observability](guides/observability.md) — OTel spans, tracer setup, span hierarchy
+- [Workflows Guide](guides/workflows.md) — All DSL options, fan-out, custom
+  outcomes
+- [Orchestrators Guide](guides/orchestrators.md) — LLM config, tool approval,
+  streaming
+- [Observability](guides/observability.md) — OTel spans, tracer setup, span
+  hierarchy
 - [Testing](guides/testing.md) — ReqCassette, LLMStub, test layers
-- [Composer vs Jido AI](guides/composer-vs-jido-ai.md) — When to use which, how they combine
+- [Composer vs Jido AI](guides/composer-vs-jido-ai.md) — When to use which, how
+  they combine
 - Interactive demos in `livebooks/`
 
 ## License

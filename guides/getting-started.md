@@ -1,6 +1,16 @@
 # Getting Started
 
-A 5-minute introduction to building composable agent flows with Jido Composer.
+A 5-minute introduction to building composable agent topologies with Jido Composer.
+
+## What Makes Composer Special
+
+Workflows and orchestrators are both `Jido.Agent` modules. Agents are nodes. Nodes compose at any depth — a workflow step can be an orchestrator, an orchestrator tool can be a workflow, and you can nest further. The uniform `context → context` interface makes every node interchangeable regardless of what runs inside it.
+
+Any flow can pause for human input. HumanNode gates in workflows and tool approval gates in orchestrators use the same `ApprovalRequest`/`ApprovalResponse` protocol. The generalized suspension system extends beyond HITL to rate limits, async completions, and custom pause reasons.
+
+Running and suspended flows can be checkpointed to storage and resumed across process restarts — including deeply nested agent hierarchies. PIDs become serializable `ChildRef` structs, and resume is idempotent with top-down child re-spawning.
+
+This guide covers the building blocks. See [Composition & Nesting](composition.md) and [Human-in-the-Loop](hitl.md) for the full picture.
 
 ## Prerequisites
 
@@ -156,6 +166,45 @@ The orchestrator automatically:
 3. Feeds results back to the LLM
 4. Repeats until the LLM provides a final answer
 
+## Composing Them Together
+
+The `MathAssistant` orchestrator you just defined is a `Jido.Agent` — which means it can be used as a workflow node. Here it becomes one step in a larger pipeline:
+
+```elixir
+defmodule MathPipeline do
+  use Jido.Composer.Workflow,
+    name: "math_pipeline",
+    nodes: %{
+      parse:     ParseInputAction,
+      compute:   MathAssistant,    # orchestrator as a workflow step
+      format:    FormatResultAction
+    },
+    transitions: %{
+      {:parse, :ok}   => :compute,
+      {:compute, :ok} => :format,
+      {:format, :ok}  => :done,
+      {:_, :error}    => :failed
+    },
+    initial: :parse
+end
+
+agent = MathPipeline.new()
+{:ok, result} = MathPipeline.run_sync(agent, %{input: "what is 5 + 3?"})
+```
+
+```mermaid
+flowchart LR
+    Parse[parse] --> Compute[compute: MathAssistant]
+    Compute --> Format[format]
+    subgraph Compute[compute: MathAssistant]
+        LLM[LLM ReAct Loop] -->|tool call| Add[AddAction]
+    end
+```
+
+The DSL detects that `MathAssistant` is an agent and wraps it as an `AgentNode` automatically. The orchestrator runs its full ReAct loop inside the workflow step, and the result merges into the pipeline context under the `:compute` key.
+
+This works in the other direction too — list a workflow module in an orchestrator's `nodes` and the LLM can invoke it as a tool. See [Composition & Nesting](composition.md) for all patterns.
+
 ## Key Concepts
 
 | Term                | Description                                                                                                        |
@@ -173,9 +222,9 @@ The orchestrator automatically:
 
 ## Next Steps
 
-- [Workflows Guide](workflows.md) — All DSL options, fan-out, custom outcomes, compile-time validation
-- [Orchestrators Guide](orchestrators.md) — LLM config, tool approval gates, streaming, backpressure
 - [Composition & Nesting](composition.md) — Nesting patterns, context flow, control spectrum
 - [Human-in-the-Loop](hitl.md) — HumanNode, approval gates, suspension, persistence
+- [Workflows Guide](workflows.md) — All DSL options, fan-out, custom outcomes, compile-time validation
+- [Orchestrators Guide](orchestrators.md) — LLM config, tool approval gates, streaming, backpressure
 - [Observability](observability.md) — OTel spans, tracer setup, span hierarchy
 - [Testing](testing.md) — ReqCassette, LLMStub, test layers

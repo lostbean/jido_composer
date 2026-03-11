@@ -2,7 +2,7 @@
 
 ## Intent
 
-Compose agents and actions into higher-order flows via two nestable patterns: deterministic Workflow (FSM) and dynamic Orchestrator (LLM tool-use loop).
+Build composable agent topologies via two nestable patterns: deterministic Workflow (FSM) and dynamic Orchestrator (LLM tool-use loop). Human-in-the-Loop (HumanNode gates, tool approval, generalized suspension) and durable persistence (checkpoint/thaw/resume across process boundaries) are first-class concerns. The uniform Node interface (`context → context`) guarantees any node type composes with any other at any depth.
 
 ## Core Contracts
 
@@ -11,6 +11,14 @@ Compose agents and actions into higher-order flows via two nestable patterns: de
 - Nodes return `{:ok, context}`, `{:ok, context, outcome_atom}`, or `{:error, reason}`. HumanNode returns `{:ok, context, :suspend}`.
 - Context layers: each node's output merges under its key via deep merge. Access upstream results with `get_in(params, [:node_key, :field])`.
 - Directives describe side effects: `Suspend`, `SuspendForHuman`, `FanOutBranch`, `CheckpointAndStop`.
+
+## HITL & Persistence
+
+- Suspension reasons: `:human_input_required`, `:approval_required`, or custom atoms.
+- `ApprovalRequest`: serializable struct with unique `id`, `tool_call`, `context_snapshot`. `ApprovalResponse`: `approved | rejected | modified` with optional `modifications`.
+- Checkpoint: `Checkpoint.save/2` serializes state. `ChildRef` replaces live PIDs for safe serialization.
+- Resume: `Resume.resume/2` thaws from checkpoint. Top-down: parent resumes, then re-attaches children.
+- Parent isolation: parent doesn't know child is paused. Rejection is internalized within child.
 
 ## Workflow Patterns
 
@@ -41,15 +49,7 @@ Compose agents and actions into higher-order flows via two nestable patterns: de
 - When used as orchestrator tools, Jido.AI agents expose `{"query": "string"}` schema (not internal state fields).
 - Context flows top-down; child results merge into parent context under the node key.
 - FanOutNode `fork_fns` receive the current context and return branch-specific params.
-- Control spectrum: Workflow (fully deterministic) → Orchestrator (LLM-driven) → Jido.AI agent (ReAct) → mixed nesting.
-
-## HITL & Persistence
-
-- Suspension reasons: `:human_input_required`, `:approval_required`, or custom atoms.
-- `ApprovalRequest`: serializable struct with unique `id`, `tool_call`, `context_snapshot`. `ApprovalResponse`: `approved | rejected | modified` with optional `modifications`.
-- Checkpoint: `Checkpoint.save/2` serializes state. `ChildRef` replaces live PIDs for safe serialization.
-- Resume: `Resume.resume/2` thaws from checkpoint. Top-down: parent resumes, then re-attaches children.
-- Parent isolation: parent doesn't know child is paused. Rejection is internalized within child.
+- Control spectrum: Workflow only (fully deterministic) → Workflow + HumanNode → Workflow containing Orchestrator → Orchestrator containing Workflow → Orchestrator only (fully adaptive).
 
 ## Testing
 
