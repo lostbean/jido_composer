@@ -28,6 +28,29 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
       max_iterations: 2
   end
 
+  defmodule AmbientToolOrchestrator do
+    use Jido.Composer.Orchestrator,
+      name: "ambient_tool_orchestrator",
+      description: "Orchestrator with ambient context for regular tool testing",
+      nodes: [
+        Jido.Composer.TestActions.AmbientEchoAction
+      ],
+      ambient: [:actor],
+      system_prompt: "You are a helpful assistant with an ambient echo tool."
+  end
+
+  defmodule ConcurrencyOrchestrator do
+    use Jido.Composer.Orchestrator,
+      name: "concurrency_orchestrator",
+      description: "Orchestrator with max_tool_concurrency: 1",
+      nodes: [
+        Jido.Composer.TestActions.AddAction,
+        Jido.Composer.TestActions.EchoAction
+      ],
+      max_tool_concurrency: 1,
+      system_prompt: "You are a helpful assistant with math and echo tools."
+  end
+
   # -- Stub helpers (for edge-case tests only) --
 
   defp execute_orchestrator(agent_module, agent, directives) do
@@ -143,6 +166,30 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
 
       _other ->
         run_capturing_loop(agent_module, agent, rest, captured)
+    end
+  end
+
+  defp execute_tracking_dispatches(agent_module, agent, directives) do
+    run_tracking_loop(agent_module, agent, directives, [])
+  end
+
+  defp run_tracking_loop(_agent_module, agent, [], dispatched),
+    do: {agent, Enum.reverse(dispatched)}
+
+  defp run_tracking_loop(agent_module, agent, [directive | rest], dispatched) do
+    case directive do
+      %Directive.RunInstruction{instruction: instr, result_action: result_action, meta: meta} ->
+        entry = %{
+          action: instr.action,
+          call_id: (meta || %{})[:call_id]
+        }
+
+        payload = execute_stub_instruction(instr, meta)
+        {agent, new_directives} = agent_module.cmd(agent, {result_action, payload})
+        run_tracking_loop(agent_module, agent, new_directives ++ rest, [entry | dispatched])
+
+      _other ->
+        run_tracking_loop(agent_module, agent, rest, dispatched)
     end
   end
 
@@ -392,6 +439,70 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
       assert result[:summary] == "All done"
       assert result[:confidence] == 0.95
       assert result[:actor] == "test_user"
+    end
+  end
+
+  describe "ambient context with regular (non-termination) tools" do
+    test "regular tool receives ambient context from orchestrator" do
+      LLMStub.setup([
+        {:tool_calls,
+         [%{id: "call_1", name: "ambient_echo", arguments: %{"message" => "hello"}}]},
+        {:final_answer, "Done"}
+      ])
+
+      agent = AmbientToolOrchestrator.new()
+
+      {agent, directives} =
+        AmbientToolOrchestrator.query(agent, "Echo with ambient", %{actor: "test_user"})
+
+      agent = execute_orchestrator(AmbientToolOrchestrator, agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :completed
+
+      # Tool result should contain the ambient actor value
+      assert strat.context.working[:ambient_echo][:echoed] == "hello"
+      assert strat.context.working[:ambient_echo][:actor] == "test_user"
+    end
+  end
+
+  describe "max_tool_concurrency end-to-end" do
+    test "all tools complete with concurrency limit of 1 in FIFO order" do
+      LLMStub.setup([
+        {:tool_calls,
+         [
+           %{id: "call_1", name: "add", arguments: %{"value" => 1.0, "amount" => 2.0}},
+           %{id: "call_2", name: "echo", arguments: %{"message" => "hello"}},
+           %{id: "call_3", name: "add", arguments: %{"value" => 10.0, "amount" => 5.0}}
+         ]},
+        {:final_answer, "All done"}
+      ])
+
+      agent = ConcurrencyOrchestrator.new()
+      {agent, directives} = ConcurrencyOrchestrator.query(agent, "Do three things")
+
+      # Use capturing loop to track every dispatched tool instruction
+      {agent, dispatched} =
+        execute_tracking_dispatches(ConcurrencyOrchestrator, agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :completed
+
+      # All 3 tool calls must have been dispatched (not silently dropped)
+      tool_dispatches =
+        Enum.filter(dispatched, &(&1.action != Jido.Composer.Orchestrator.LLMAction))
+
+      assert length(tool_dispatches) == 3
+
+      # With max_concurrency=1, dispatch order is deterministic FIFO:
+      # call_1 (add 1+2) dispatches first, then call_2 (echo) drains, then call_3 (add 10+5)
+      assert Enum.map(tool_dispatches, & &1.call_id) == ["call_1", "call_2", "call_3"]
+
+      # Echo result present
+      assert strat.context.working[:echo][:echoed] == "hello"
+
+      # Last add (call_3: 10+5=15) overwrites first add (call_1: 1+2=3) under :add scope
+      assert strat.context.working[:add][:result] == 15.0
     end
   end
 

@@ -273,6 +273,26 @@ defmodule Jido.Composer.TestActions do
     end
   end
 
+  defmodule AmbientEchoAction do
+    @moduledoc false
+    use Jido.Action,
+      name: "ambient_echo",
+      description: "Echoes a message along with the ambient :actor value",
+      schema: [
+        message: [type: :string, required: true, doc: "Message to echo"]
+      ]
+
+    def run(params, _context) do
+      ambient = Map.get(params, Jido.Composer.Context.ambient_key(), %{})
+      actor = Map.get(ambient, :actor)
+
+      case actor do
+        nil -> {:error, "Missing :actor in ambient context"}
+        _ -> {:ok, %{echoed: params.message, actor: actor}}
+      end
+    end
+  end
+
   defmodule AmbientFinalReportAction do
     @moduledoc false
     use Jido.Action,

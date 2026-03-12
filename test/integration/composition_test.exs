@@ -3,6 +3,7 @@ defmodule Jido.Composer.Integration.CompositionTest do
 
   alias Jido.Agent.Directive
   alias Jido.Agent.Strategy.State, as: StratState
+  alias Jido.Composer.Orchestrator.Strategy
   alias Jido.Composer.TestSupport.LLMStub
 
   alias Jido.Composer.TestActions.{ExtractAction, TransformAction, LoadAction}
@@ -38,6 +39,23 @@ defmodule Jido.Composer.Integration.CompositionTest do
         Jido.Composer.Integration.CompositionTest.ETLWorkflow
       ],
       system_prompt: "You can run ETL workflows and echo messages."
+  end
+
+  # -- Fork helper for depth increment --
+
+  defmodule DepthFork do
+    def increment(ambient, _working) do
+      Map.update(ambient, :depth, 1, &(&1 + 1))
+    end
+  end
+
+  # -- Bare agent for fork_fns test (fork_fns passed at runtime via Strategy.init) --
+
+  defmodule ForkOrchestratorAgent do
+    use Jido.Agent,
+      name: "fork_orchestrator",
+      description: "Agent for fork_fns orchestrator tests",
+      schema: []
   end
 
   # -- Orchestrator with only action tools --
@@ -290,6 +308,195 @@ defmodule Jido.Composer.Integration.CompositionTest do
       assert etl_ctx[:extract][:records] != nil
       assert etl_ctx[:transform][:records] != nil
       assert etl_ctx[:load][:status] == :complete
+    end
+  end
+
+  describe "fork_fns propagation to child agent" do
+    test "child agent receives forked ambient context with incremented depth" do
+      LLMStub.setup([
+        {:tool_calls,
+         [
+           %{
+             id: "call_1",
+             name: "etl_workflow",
+             arguments: %{"source" => "test_db"}
+           }
+         ]},
+        {:final_answer, "ETL complete with forked context."}
+      ])
+
+      strategy_opts = [
+        nodes: [Jido.Composer.Integration.CompositionTest.ETLWorkflow],
+        model: "stub:test-model",
+        system_prompt: "You can run ETL workflows.",
+        max_iterations: 10,
+        ambient: [:depth],
+        fork_fns: %{
+          depth: {Jido.Composer.Integration.CompositionTest.DepthFork, :increment, []}
+        }
+      ]
+
+      agent = ForkOrchestratorAgent.new()
+      ctx = %{strategy_opts: strategy_opts}
+      {agent, _} = Strategy.init(agent, ctx)
+
+      start_params = %{query: "Run ETL", depth: 0}
+
+      {agent, directives} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :orchestrator_start, params: start_params}],
+          %{}
+        )
+
+      # Custom loop that captures SpawnAgent directive to verify forked context
+      {agent, spawn_directive} =
+        run_capturing_spawn_loop(agent, directives)
+
+      # Verify the SpawnAgent directive has forked ambient (depth incremented)
+      assert %Directive.SpawnAgent{} = spawn_directive
+      child_context = spawn_directive.opts[:context]
+      assert child_context != nil
+
+      # The fork function should have incremented depth from 0 to 1
+      ambient_key = Jido.Composer.Context.ambient_key()
+      assert child_context[ambient_key][:depth] == 1
+
+      # Now actually execute the child workflow and feed result back
+      result = simulate_workflow_tool(spawn_directive.agent, spawn_directive.opts)
+
+      {agent, new_directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :orchestrator_child_result,
+              params: %{tag: spawn_directive.tag, result: result}
+            }
+          ],
+          %{}
+        )
+
+      agent = run_strategy_directive_loop(agent, new_directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :completed
+      assert strat.context.working[:etl_workflow] != nil
+    end
+  end
+
+  # Directive loop using Strategy.cmd directly (for bare agent tests)
+  defp run_strategy_directive_loop(agent, []), do: agent
+
+  defp run_strategy_directive_loop(agent, [directive | rest]) do
+    case directive do
+      %Directive.RunInstruction{
+        instruction: %Jido.Instruction{action: Jido.Composer.Orchestrator.LLMAction} = instr,
+        result_action: result_action
+      } ->
+        payload =
+          case LLMStub.execute(instr.params) do
+            {:ok, %{response: response, conversation: conversation}} ->
+              %{
+                status: :ok,
+                result: %{response: response, conversation: conversation},
+                meta: %{}
+              }
+
+            {:error, reason} ->
+              %{status: :error, result: %{error: reason}, meta: %{}}
+          end
+
+        {agent, new_directives} =
+          Strategy.cmd(
+            agent,
+            [%Jido.Instruction{action: result_action, params: payload}],
+            %{}
+          )
+
+        run_strategy_directive_loop(agent, new_directives ++ rest)
+
+      %Directive.RunInstruction{
+        instruction: %Jido.Instruction{action: action_module, params: params},
+        result_action: result_action,
+        meta: meta
+      } ->
+        payload =
+          case Jido.Exec.run(action_module, params) do
+            {:ok, result} ->
+              %{status: :ok, result: result, meta: meta || %{}}
+
+            {:error, reason} ->
+              %{status: :error, result: reason, meta: meta || %{}}
+          end
+
+        {agent, new_directives} =
+          Strategy.cmd(
+            agent,
+            [%Jido.Instruction{action: result_action, params: payload}],
+            %{}
+          )
+
+        run_strategy_directive_loop(agent, new_directives ++ rest)
+
+      %Directive.SpawnAgent{agent: child_module, tag: tag, opts: spawn_opts} ->
+        result = simulate_workflow_tool(child_module, spawn_opts)
+
+        {agent, new_directives} =
+          Strategy.cmd(
+            agent,
+            [
+              %Jido.Instruction{
+                action: :orchestrator_child_result,
+                params: %{tag: tag, result: result}
+              }
+            ],
+            %{}
+          )
+
+        run_strategy_directive_loop(agent, new_directives ++ rest)
+
+      _other ->
+        run_strategy_directive_loop(agent, rest)
+    end
+  end
+
+  # Captures the first SpawnAgent directive using Strategy.cmd
+  defp run_capturing_spawn_loop(agent, []), do: {agent, nil}
+
+  defp run_capturing_spawn_loop(agent, [directive | rest]) do
+    case directive do
+      %Directive.RunInstruction{
+        instruction: %Jido.Instruction{action: Jido.Composer.Orchestrator.LLMAction} = instr,
+        result_action: result_action
+      } ->
+        payload =
+          case LLMStub.execute(instr.params) do
+            {:ok, %{response: response, conversation: conversation}} ->
+              %{
+                status: :ok,
+                result: %{response: response, conversation: conversation},
+                meta: %{}
+              }
+
+            {:error, reason} ->
+              %{status: :error, result: %{error: reason}, meta: %{}}
+          end
+
+        {agent, new_directives} =
+          Strategy.cmd(
+            agent,
+            [%Jido.Instruction{action: result_action, params: payload}],
+            %{}
+          )
+
+        run_capturing_spawn_loop(agent, new_directives ++ rest)
+
+      %Directive.SpawnAgent{} = spawn ->
+        {agent, spawn}
+
+      _other ->
+        run_capturing_spawn_loop(agent, rest)
     end
   end
 end

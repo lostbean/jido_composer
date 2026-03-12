@@ -22,6 +22,8 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
   defp init_agent(opts) do
     gated_nodes = Keyword.get(opts, :gated_nodes, [])
     rejection_policy = Keyword.get(opts, :rejection_policy)
+    approval_policy = Keyword.get(opts, :approval_policy)
+    ambient = Keyword.get(opts, :ambient)
 
     nodes =
       Keyword.get(opts, :nodes, [
@@ -36,7 +38,10 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
         system_prompt: "You are a helpful assistant.",
         max_iterations: 10,
         gated_nodes: gated_nodes
-      ] ++ if(rejection_policy, do: [rejection_policy: rejection_policy], else: [])
+      ] ++
+        if(rejection_policy, do: [rejection_policy: rejection_policy], else: []) ++
+        if(approval_policy, do: [approval_policy: approval_policy], else: []) ++
+        if(ambient, do: [ambient: ambient], else: [])
 
     agent = HITLOrchestratorAgent.new()
     ctx = %{strategy_opts: strategy_opts}
@@ -421,6 +426,71 @@ defmodule Jido.Composer.Integration.OrchestratorHITLTest do
       assert remaining == []
       strat = StratState.get(agent)
       assert strat.status == :completed
+    end
+  end
+
+  describe "dynamic approval_policy function" do
+    test "policy gates large amounts and allows small amounts through" do
+      # Policy: require approval when amount > 10
+      policy = fn call, _context ->
+        amount = call.arguments["amount"] || call.arguments[:amount] || 0
+        if amount > 10, do: :require_approval, else: :proceed
+      end
+
+      agent = init_agent(approval_policy: policy)
+
+      # LLM requests two add calls: one small (proceeds), one large (gated)
+      calls = [
+        %{id: "call_small", name: "add", arguments: %{"value" => 1.0, "amount" => 1.0}},
+        %{id: "call_large", name: "add", arguments: %{"value" => 1.0, "amount" => 50.0}}
+      ]
+
+      LLMStub.setup([
+        {:tool_calls, calls},
+        {:final_answer, "Both adds completed"}
+      ])
+
+      {agent, directives} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Two adds"})], %{})
+
+      # Execute — small add should run, large add should suspend
+      {agent, remaining} = execute_orchestrator(agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :awaiting_approval
+
+      # Small add was executed
+      assert strat.context.working[:add][:result] == 2.0
+
+      # Large add is gated
+      assert map_size(strat.approval_gate.gated_calls) == 1
+      assert Enum.any?(remaining, &match?(%Suspend{}, &1))
+
+      # Approve the gated call
+      [{request_id, _}] = Map.to_list(strat.approval_gate.gated_calls)
+      {:ok, response} = ApprovalResponse.new(request_id: request_id, decision: :approved)
+
+      {agent, directives} =
+        Strategy.cmd(
+          agent,
+          [
+            make_instruction(:suspend_resume, %{
+              suspension_id: request_id,
+              response_data: Map.from_struct(response)
+            })
+          ],
+          %{}
+        )
+
+      {agent, _} = execute_orchestrator(agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :completed
+      assert strat.result.value == "Both adds completed"
+
+      # The approved large add (1.0 + 50.0 = 51.0) must have actually executed,
+      # overwriting the small add's result under the shared :add scope
+      assert strat.context.working[:add][:result] == 51.0
     end
   end
 
