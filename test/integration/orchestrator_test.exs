@@ -75,6 +75,18 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
     end
   end
 
+  defmodule AmbientTermOrchestrator do
+    use Jido.Composer.Orchestrator,
+      name: "ambient_term_orchestrator",
+      description: "Orchestrator with ambient context and termination tool",
+      nodes: [
+        Jido.Composer.TestActions.AddAction
+      ],
+      ambient: [:actor],
+      termination_tool: Jido.Composer.TestActions.AmbientFinalReportAction,
+      system_prompt: "You are a helpful assistant. Always call ambient_final_report to finish."
+  end
+
   # -- Edge-case tests (stubs only — no cassette equivalent) --
 
   describe "tool param isolation (regression)" do
@@ -349,6 +361,37 @@ defmodule Jido.Composer.Integration.OrchestratorTest do
         # nodes remains a map through all iterations (regression for nodes[call.name] bug)
         assert is_map(strat.nodes)
       end)
+    end
+  end
+
+  describe "termination tool ambient context" do
+    test "termination tool receives ambient context from orchestrator" do
+      LLMStub.setup([
+        {:tool_calls,
+         [
+           %{
+             id: "call_term",
+             name: "ambient_final_report",
+             arguments: %{"summary" => "All done", "confidence" => 0.95}
+           }
+         ]}
+      ])
+
+      agent = AmbientTermOrchestrator.new()
+
+      {agent, directives} =
+        AmbientTermOrchestrator.query(agent, "Finish up", %{actor: "test_user"})
+
+      agent = execute_orchestrator(AmbientTermOrchestrator, agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :completed
+
+      # Result should be structured (not an error)
+      assert %Jido.Composer.NodeIO{type: :object, value: result} = strat.result
+      assert result[:summary] == "All done"
+      assert result[:confidence] == 0.95
+      assert result[:actor] == "test_user"
     end
   end
 

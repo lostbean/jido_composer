@@ -1416,8 +1416,9 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       end
 
     args = AgentTool.to_context(call, term_keys)
+    flat_params = Context.to_flat_map(%{state.context | working: args})
 
-    case Jido.Exec.run(state.termination_tool_mod, args, %{}) do
+    case Jido.Exec.run(state.termination_tool_mod, flat_params, %{}) do
       {:ok, result} ->
         agent =
           StratState.update(agent, fn s ->

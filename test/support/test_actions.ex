@@ -273,6 +273,27 @@ defmodule Jido.Composer.TestActions do
     end
   end
 
+  defmodule AmbientFinalReportAction do
+    @moduledoc false
+    use Jido.Action,
+      name: "ambient_final_report",
+      description: "Termination tool that reads ambient context and includes it in the result.",
+      schema: [
+        summary: [type: :string, required: true, doc: "Summary of findings"],
+        confidence: [type: :float, required: true, doc: "Confidence score 0.0-1.0"]
+      ]
+
+    def run(params, _context) do
+      ambient = Map.get(params, Jido.Composer.Context.ambient_key(), %{})
+      actor = Map.get(ambient, :actor)
+
+      case actor do
+        nil -> {:error, "Missing :actor in ambient context"}
+        _ -> {:ok, %{summary: params.summary, confidence: params.confidence, actor: actor}}
+      end
+    end
+  end
+
   defmodule FailingFinalReportAction do
     @moduledoc false
     use Jido.Action,
