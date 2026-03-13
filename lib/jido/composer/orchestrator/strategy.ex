@@ -1036,6 +1036,10 @@ defmodule Jido.Composer.Orchestrator.Strategy do
             %{s | tool_concurrency: new_tc, suspended_calls: new_suspended, status: new_status}
           end)
 
+        # Flush completed results and inject synthetic results for orphaned tool_use IDs
+        # so the conversation satisfies the LLM API's tool_use/tool_result pairing contract.
+        agent = flush_tool_results_on_suspension(agent)
+
         directive = %SuspendDirective{suspension: suspension}
         state = StratState.get(agent)
         directives = Checkpoint.maybe_add_checkpoint_and_stop([directive], state)
@@ -1056,6 +1060,126 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
         check_all_tools_done(agent)
     end
+  end
+
+  # Ensures the conversation satisfies the LLM API contract after a tool suspension.
+  # Every tool_use in the last assistant message must have a matching tool_result.
+  # This function:
+  #   1. Appends completed sibling tool results from tool_concurrency.completed
+  #   2. Injects a synthetic "suspended" result for the suspended tool call
+  #   3. Injects synthetic "not_executed" results for any remaining orphaned tool_use IDs
+  #      (tools whose directives were dropped by the early SuspendDirective return)
+  #   4. Clears tool_concurrency.pending for tools that were never dispatched
+  defp flush_tool_results_on_suspension(agent) do
+    state = StratState.get(agent)
+    conversation = state.conversation
+
+    case conversation do
+      %ReqLLM.Context{} ->
+        # Extract all tool_use IDs from the last assistant message
+        all_tool_use_ids = extract_tool_use_ids(conversation)
+
+        # IDs that already have tool_result messages in the conversation
+        existing_result_ids = extract_tool_result_ids(conversation)
+
+        # IDs with completed results in tool_concurrency
+        completed_ids = MapSet.new(state.tool_concurrency.completed, & &1.id)
+
+        # IDs that are suspended
+        suspended_call_ids =
+          state.suspended_calls
+          |> Map.values()
+          |> MapSet.new(& &1.call.id)
+
+        # 1. Flush completed results to conversation
+        conversation =
+          Enum.reduce(state.tool_concurrency.completed, conversation, fn tr, ctx ->
+            if MapSet.member?(all_tool_use_ids, tr.id) and
+                 not MapSet.member?(existing_result_ids, tr.id) do
+              content = Jason.encode!(tr.result)
+              msg = ReqLLM.Context.tool_result(tr.id, tr.name, content)
+              ReqLLM.Context.append(ctx, msg)
+            else
+              ctx
+            end
+          end)
+
+        # IDs accounted for so far (existing + completed + suspended)
+        accounted_ids =
+          existing_result_ids
+          |> MapSet.union(completed_ids)
+          |> MapSet.union(suspended_call_ids)
+
+        # 2. Inject synthetic result for suspended tool calls
+        conversation =
+          Enum.reduce(Map.values(state.suspended_calls), conversation, fn entry, ctx ->
+            call = entry.call
+
+            if MapSet.member?(all_tool_use_ids, call.id) and
+                 not MapSet.member?(existing_result_ids, call.id) and
+                 not MapSet.member?(completed_ids, call.id) do
+              content =
+                Jason.encode!(%{
+                  status: "suspended",
+                  message: "Tool execution suspended, awaiting external input"
+                })
+
+              msg = ReqLLM.Context.tool_result(call.id, call.name, content)
+              ReqLLM.Context.append(ctx, msg)
+            else
+              ctx
+            end
+          end)
+
+        # 3. Inject synthetic results for any remaining orphaned tool_use IDs
+        #    (tools that were never dispatched due to early SuspendDirective return)
+        orphaned_ids = MapSet.difference(all_tool_use_ids, accounted_ids)
+
+        # Also clear these from pending since they were never actually dispatched
+        conversation =
+          Enum.reduce(orphaned_ids, conversation, fn orphan_id, ctx ->
+            content =
+              Jason.encode!(%{
+                status: "not_executed",
+                message: "Tool was not executed due to sibling tool suspension"
+              })
+
+            msg = ReqLLM.Context.tool_result(orphan_id, nil, content)
+            ReqLLM.Context.append(ctx, msg)
+          end)
+
+        # Update state: store flushed conversation, clear completed, clean pending
+        StratState.update(agent, fn s ->
+          cleaned_pending =
+            Enum.reject(s.tool_concurrency.pending, &MapSet.member?(orphaned_ids, &1))
+
+          new_tc = %{s.tool_concurrency | completed: [], pending: cleaned_pending}
+          %{s | conversation: conversation, tool_concurrency: new_tc}
+        end)
+
+      _ ->
+        # Non-ReqLLM.Context conversation (e.g. stub mode) — skip flush
+        agent
+    end
+  end
+
+  defp extract_tool_use_ids(%ReqLLM.Context{messages: messages}) do
+    messages
+    |> Enum.filter(&(&1.role == :assistant))
+    |> Enum.flat_map(fn msg ->
+      (msg.tool_calls || [])
+      |> Enum.map(& &1.id)
+      |> Enum.reject(&is_nil/1)
+    end)
+    |> MapSet.new()
+  end
+
+  defp extract_tool_result_ids(%ReqLLM.Context{messages: messages}) do
+    messages
+    |> Enum.filter(&(&1.role == :tool))
+    |> Enum.map(& &1.tool_call_id)
+    |> Enum.reject(&is_nil/1)
+    |> MapSet.new()
   end
 
   defp check_all_tools_done(agent) do
