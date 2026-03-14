@@ -59,7 +59,7 @@ defmodule Jido.Composer.Orchestrator.LLMAction do
   end
 
   defp build_context(%ReqLLM.Context{} = context, [], _params) do
-    pad_orphaned_tool_results(context)
+    strip_orphaned_tool_calls(context)
   end
 
   defp build_context(%ReqLLM.Context{} = context, tool_results, _params) do
@@ -70,37 +70,31 @@ defmodule Jido.Composer.Orchestrator.LLMAction do
         ReqLLM.Context.append(c, ReqLLM.Context.tool_result(tr.id, tr.name, content))
       end)
     end)
-    |> pad_orphaned_tool_results()
+    |> strip_orphaned_tool_calls()
   end
 
-  # Pads any tool_use IDs that lack a matching tool_result with a "not_executed" message.
-  # This ensures the LLM API contract is satisfied at call time without storing
-  # synthetic results in the persisted conversation.
-  defp pad_orphaned_tool_results(%ReqLLM.Context{} = context) do
-    all_use_ids = extract_tool_use_ids(context)
-    existing_result_ids = extract_tool_result_ids(context)
-    orphaned = MapSet.difference(all_use_ids, existing_result_ids)
+  # Removes tool_use entries from assistant messages that have no matching
+  # tool_result. This keeps the conversation truthful — only tools that were
+  # actually executed appear — while satisfying the API contract that every
+  # tool_use must have a tool_result.
+  defp strip_orphaned_tool_calls(%ReqLLM.Context{messages: messages} = context) do
+    result_ids = extract_tool_result_ids(context)
 
-    Enum.reduce(orphaned, context, fn id, ctx ->
-      content =
-        Jason.encode!(%{
-          status: "not_executed",
-          message: "Tool was not executed due to sibling tool suspension"
-        })
+    updated =
+      Enum.map(messages, fn
+        %{role: :assistant, tool_calls: calls} = msg when is_list(calls) and calls != [] ->
+          filtered = Enum.filter(calls, &MapSet.member?(result_ids, &1.id))
 
-      ReqLLM.Context.append(ctx, ReqLLM.Context.tool_result(id, nil, content))
-    end)
-  end
+          case filtered do
+            [] -> %{msg | tool_calls: nil}
+            kept -> %{msg | tool_calls: kept}
+          end
 
-  defp extract_tool_use_ids(%ReqLLM.Context{messages: messages}) do
-    messages
-    |> Enum.filter(&(&1.role == :assistant))
-    |> Enum.flat_map(fn msg ->
-      (msg.tool_calls || [])
-      |> Enum.map(& &1.id)
-      |> Enum.reject(&is_nil/1)
-    end)
-    |> MapSet.new()
+        msg ->
+          msg
+      end)
+
+    %{context | messages: updated}
   end
 
   defp extract_tool_result_ids(%ReqLLM.Context{messages: messages}) do

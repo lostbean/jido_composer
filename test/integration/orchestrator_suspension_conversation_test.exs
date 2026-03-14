@@ -5,7 +5,7 @@ defmodule Jido.Composer.Integration.OrchestratorSuspensionConversationTest do
   Key invariants:
   1. Conversation stores only REAL tool_results — no synthetics at suspension time
   2. Orphaned pending tool IDs are cleaned up by the DSL on suspend
-  3. Padding for orphaned tool_use IDs happens at LLM-call time (in LLMAction)
+  3. Orphaned tool_use entries are stripped from assistant messages at LLM-call time
   4. Resume produces exactly one tool_result per tool_use_id — no duplicates
   """
   use ExUnit.Case, async: true
@@ -207,13 +207,22 @@ defmodule Jido.Composer.Integration.OrchestratorSuspensionConversationTest do
 
       # Exactly ONE tool_result for the suspended call
       assert count_tool_results(strat.conversation, "call_suspend_1") == 1
+
+      # Assistant message's tool_calls should only contain suspend (no orphans)
+      assistant_msgs =
+        Enum.filter(strat.conversation.messages, &(&1.role == :assistant))
+
+      assert Enum.any?(assistant_msgs, fn msg ->
+               is_list(msg.tool_calls) and
+                 Enum.any?(msg.tool_calls, &(&1.id == "call_suspend_1"))
+             end)
     end
   end
 
-  describe "orphaned tool gets not_executed padding at LLM-call time" do
-    test "conversation sent to LLM has all tool_results (real + padded)" do
+  describe "orphaned tool_use is stripped from assistant message after resume" do
+    test "orphaned tool_use removed, only real results remain" do
       plug =
-        LLMStub.setup_req_stub(:orphan_padding, [
+        LLMStub.setup_req_stub(:orphan_strip, [
           # LLM call 1: echo + suspend + add
           {:tool_calls,
            [
@@ -253,22 +262,94 @@ defmodule Jido.Composer.Integration.OrchestratorSuspensionConversationTest do
 
       strat = final_agent.state.__strategy__
 
-      # All three tool_use IDs should have exactly one tool_result each
+      # Only real tool_results for echo and suspend
       assert count_tool_results(strat.conversation, "call_echo_1") == 1
       assert count_tool_results(strat.conversation, "call_suspend_1") == 1
-      assert count_tool_results(strat.conversation, "call_add_1") == 1
 
-      # The orphaned add should have a "not_executed" result
-      [add_result] = find_tool_results(strat.conversation, "call_add_1")
+      # NO tool_result for the orphaned add
+      assert count_tool_results(strat.conversation, "call_add_1") == 0
 
-      text_content =
-        Enum.find_value(add_result.content, fn
-          %{type: :text, text: text} -> text
-          _ -> nil
-        end)
+      # Assistant message's tool_calls should only have echo and suspend (add stripped)
+      assistant_msgs =
+        Enum.filter(strat.conversation.messages, &(&1.role == :assistant))
 
-      content = Jason.decode!(text_content)
-      assert content["status"] == "not_executed"
+      all_tool_call_ids =
+        assistant_msgs
+        |> Enum.flat_map(fn msg -> msg.tool_calls || [] end)
+        |> Enum.map(& &1.id)
+
+      assert "call_echo_1" in all_tool_call_ids
+      assert "call_suspend_1" in all_tool_call_ids
+      refute "call_add_1" in all_tool_call_ids
+    end
+  end
+
+  describe "stripped conversation is valid for consumer persistence round-trip" do
+    test "no synthetics survive suspend → resume → complete cycle" do
+      plug =
+        LLMStub.setup_req_stub(:persistence_roundtrip, [
+          # LLM call 1: suspend + add (add will be orphaned)
+          {:tool_calls,
+           [
+             %{id: "call_suspend_1", name: "suspend", arguments: %{"checkpoint" => "waiting"}},
+             %{id: "call_add_1", name: "add", arguments: %{"value" => 1.0, "amount" => 2.0}}
+           ]},
+          # LLM call 2: final answer after resume
+          {:final_answer, "done"}
+        ])
+
+      agent = SuspendOrchestrator.new()
+      agent = put_in(agent.state.__strategy__.req_options, plug: plug)
+
+      # First query → suspended
+      assert {:suspended, agent, suspension} =
+               SuspendOrchestrator.query_sync(agent, "Suspend and add")
+
+      # Suspension-time invariant: no tool_results in conversation
+      suspended_strat = agent.state.__strategy__
+      assert all_tool_result_ids(suspended_strat.conversation) == []
+
+      # Resume
+      {agent, directives} =
+        SuspendOrchestrator.cmd(
+          agent,
+          {:suspend_resume,
+           %{
+             suspension_id: suspension.id,
+             data: %{approved: true}
+           }}
+        )
+
+      # Process directives to completion
+      assert {:ok, final_agent, "done"} =
+               Jido.Composer.Orchestrator.DSL.__query_sync_loop__(
+                 SuspendOrchestrator,
+                 agent,
+                 directives
+               )
+
+      strat = final_agent.state.__strategy__
+
+      # Assistant message has only suspend in tool_calls (add was stripped)
+      assistant_msgs =
+        Enum.filter(strat.conversation.messages, &(&1.role == :assistant))
+
+      all_tool_call_ids =
+        assistant_msgs
+        |> Enum.flat_map(fn msg -> msg.tool_calls || [] end)
+        |> Enum.map(& &1.id)
+
+      assert "call_suspend_1" in all_tool_call_ids
+      refute "call_add_1" in all_tool_call_ids
+
+      # Only suspend's real tool_result exists
+      assert count_tool_results(strat.conversation, "call_suspend_1") == 1
+      assert count_tool_results(strat.conversation, "call_add_1") == 0
+
+      # Conversation can be serialized/deserialized without synthetics
+      serialized = Jason.encode!(strat.conversation)
+      refute String.contains?(serialized, "not_executed")
+      assert {:ok, _} = Jason.decode(serialized)
     end
   end
 end
