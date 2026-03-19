@@ -40,7 +40,7 @@ defmodule Jido.Composer.Workflow.Obs do
     result =
       case state[:machine] do
         %{context: %Context{} = ctx} ->
-          ctx |> Context.to_flat_map() |> Map.delete(Context.ambient_key())
+          Context.to_clean_map(ctx)
 
         _ ->
           nil

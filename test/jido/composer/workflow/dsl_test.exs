@@ -379,6 +379,53 @@ defmodule Jido.Composer.Workflow.DSLTest do
     end
   end
 
+  describe "run_sync result serialization" do
+    defmodule AmbientWorkflow do
+      use Jido.Composer.Workflow,
+        name: "ambient_workflow",
+        nodes: %{
+          step: AddAction
+        },
+        transitions: %{
+          {:step, :ok} => :done,
+          {:_, :error} => :failed
+        },
+        initial: :step,
+        ambient: [:org_id, :region]
+    end
+
+    test "run_sync result does not contain the ambient tuple key" do
+      agent = AmbientWorkflow.new()
+
+      assert {:ok, result} =
+               AmbientWorkflow.run_sync(agent, %{
+                 value: 1.0,
+                 amount: 2.0,
+                 org_id: "acme",
+                 region: "us-east"
+               })
+
+      # The result map must not contain the internal {Jido.Composer.Context, :ambient} tuple key
+      refute Map.has_key?(result, Jido.Composer.Context.ambient_key()),
+             "run_sync result should not expose the internal ambient tuple key"
+    end
+
+    test "run_sync result is Jason-encodable when ambient keys are present" do
+      agent = AmbientWorkflow.new()
+
+      assert {:ok, result} =
+               AmbientWorkflow.run_sync(agent, %{
+                 value: 1.0,
+                 amount: 2.0,
+                 org_id: "acme",
+                 region: "us-east"
+               })
+
+      # If the tuple key leaks through, Jason.encode! will raise
+      assert {:ok, _json} = Jason.encode(result)
+    end
+  end
+
   describe "suspension via run_sync" do
     defmodule SuspendWorkflow do
       use Jido.Composer.Workflow,

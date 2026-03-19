@@ -151,7 +151,7 @@ defmodule Jido.Composer.Workflow.DSL do
 
         result =
           case strat.machine.context do
-            %Jido.Composer.Context{} = ctx -> Jido.Composer.Context.to_flat_map(ctx)
+            %Jido.Composer.Context{} = ctx -> Jido.Composer.Context.to_clean_map(ctx)
             map when is_map(map) -> map
           end
 

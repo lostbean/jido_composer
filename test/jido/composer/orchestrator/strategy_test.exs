@@ -782,7 +782,9 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       # Should be a flat map, not a Context struct
       refute match?(%Context{}, snap.details.context)
       assert is_map(snap.details.context)
-      assert snap.details.context[Context.ambient_key()] == %{org_id: "acme"}
+
+      refute Map.has_key?(snap.details.context, Context.ambient_key()),
+             "snapshot context should not expose the internal ambient tuple key"
     end
 
     test "backward compatible: init without ambient/fork_fns works identically" do
@@ -820,9 +822,9 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       assert state.context.working == %{add: %{result: 8.0}}
       assert state.context.ambient == %{}
 
-      # Snapshot returns flat map with empty ambient
+      # Snapshot returns clean map without ambient tuple key
       snap = Strategy.snapshot(agent, ctx())
-      assert snap.details.context[Context.ambient_key()] == %{}
+      refute Map.has_key?(snap.details.context, Context.ambient_key())
     end
 
     test "approval_policy receives flat map with ambient key" do

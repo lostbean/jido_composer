@@ -160,6 +160,27 @@ defmodule Jido.Composer.ContextTest do
     end
   end
 
+  describe "to_clean_map/1" do
+    test "returns working map without the ambient tuple key" do
+      ctx = Context.new(ambient: %{org_id: "acme"}, working: %{data: 1})
+      clean = Context.to_clean_map(ctx)
+      assert clean == %{data: 1}
+      refute Map.has_key?(clean, Context.ambient_key())
+    end
+
+    test "result is Jason-encodable" do
+      ctx = Context.new(ambient: %{org_id: "acme", region: "us-east"}, working: %{step: %{v: 42}})
+      clean = Context.to_clean_map(ctx)
+      assert {:ok, _json} = Jason.encode(clean)
+    end
+
+    test "empty ambient still produces clean map" do
+      ctx = Context.new(working: %{data: 1})
+      clean = Context.to_clean_map(ctx)
+      assert clean == %{data: 1}
+    end
+  end
+
   describe "to_serializable/1 and from_serializable/1" do
     test "round-trip preserves all fields" do
       ctx =

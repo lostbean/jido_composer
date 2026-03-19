@@ -522,7 +522,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       iteration: Map.get(strat, :iteration, 0),
       context:
         case Map.get(strat, :context) do
-          %Context{} = ctx -> Context.to_flat_map(ctx)
+          %Context{} = ctx -> Context.to_clean_map(ctx)
           other -> other || %{}
         end
     }

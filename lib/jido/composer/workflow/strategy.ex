@@ -196,7 +196,7 @@ defmodule Jido.Composer.Workflow.Strategy do
         # Strip the Context ambient marker key — it's a tuple that can't be serialized
         result =
           if is_map(result),
-            do: Map.delete(result, Context.ambient_key()),
+            do: Map.delete(result, Jido.Composer.Context.ambient_key()),
             else: result
 
         machine = Machine.apply_result(strat.machine, result)
@@ -425,7 +425,7 @@ defmodule Jido.Composer.Workflow.Strategy do
 
     snapshot_result =
       case raw_context do
-        %Context{} -> Context.to_flat_map(raw_context)
+        %Context{} -> Context.to_clean_map(raw_context)
         other -> other
       end
 
@@ -483,10 +483,7 @@ defmodule Jido.Composer.Workflow.Strategy do
     else
       node_name = node.__struct__.name(node)
       flat_context = Context.to_flat_map(strat.machine.context)
-
-      # Strip the ambient marker key from arguments — it's a tuple that
-      # can't be serialized to string by OTel span attribute encoders.
-      obs_arguments = Map.delete(flat_context, Context.ambient_key())
+      obs_arguments = Context.to_clean_map(strat.machine.context)
 
       agent =
         update_obs(
@@ -704,11 +701,18 @@ defmodule Jido.Composer.Workflow.Strategy do
     ambient_keys = Map.get(strat, :ambient_keys, [])
     fork_fns = Map.get(strat, :fork_fns, %{})
 
-    if ambient_keys == [] and fork_fns == %{} do
+    # If parent sent ambient data (from Context.to_flat_map), extract it
+    {inherited_ambient, params} =
+      case Map.pop(params, Context.ambient_key()) do
+        {nil, params} -> {%{}, params}
+        {ambient_map, params} -> {ambient_map, params}
+      end
+
+    if ambient_keys == [] and fork_fns == %{} and inherited_ambient == %{} do
       %{current_ctx | working: Map.merge(current_ctx.working, params)}
     else
       {ambient_vals, working_vals} = Map.split(params, ambient_keys)
-      ambient = Map.merge(current_ctx.ambient, ambient_vals)
+      ambient = current_ctx.ambient |> Map.merge(inherited_ambient) |> Map.merge(ambient_vals)
       working = Map.merge(current_ctx.working, working_vals)
 
       %Context{

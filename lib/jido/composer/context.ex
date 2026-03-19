@@ -5,6 +5,8 @@ defmodule Jido.Composer.Context do
 
   Nodes never receive this struct directly — they get a flat map from
   `to_flat_map/1`, with ambient data under the reserved `ambient_key/0` key.
+  Use `to_clean_map/1` when the result must be serializable (JSON, OTel, or
+  returned to callers) — it returns only the working data without the tuple key.
 
   Note: When the same scope key is used in multiple `apply_result/3` calls
   (e.g., an orchestrator calling the same tool twice), scalar values within
@@ -67,6 +69,18 @@ defmodule Jido.Composer.Context do
   @spec to_flat_map(t()) :: map()
   def to_flat_map(%__MODULE__{ambient: ambient, working: working}) do
     Map.put(working, @ambient_key, ambient)
+  end
+
+  @doc """
+  Returns working data as a plain map without the internal ambient tuple key.
+
+  Use this instead of `to_flat_map/1` when the result will be returned to
+  callers, serialized to JSON, or used with OTel attributes — any context
+  where the `{module, :ambient}` tuple key would cause encoding failures.
+  """
+  @spec to_clean_map(t()) :: map()
+  def to_clean_map(%__MODULE__{working: working}) do
+    working
   end
 
   @spec to_serializable(t()) :: map()
