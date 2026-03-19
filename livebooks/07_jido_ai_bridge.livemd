@@ -322,7 +322,9 @@ defmodule Demo.AnalysisPipeline do
       {:verdict, :ok} => :done,
       {:_, :error} => :failed
     },
-    initial: :summarize
+    initial: :summarize,
+    terminal_states: [:done, :failed],
+    success_states: [:done]
 
   require Demo.Helpers
   Demo.Helpers.suppress_agent_doctests()

@@ -109,7 +109,7 @@ defmodule ETLPipeline do
 end
 ```
 
-This generates a full `Jido.Agent` module with `run/2` and `run_sync/2` functions. Here's what the FSM looks like:
+No `terminal_states` or `success_states` are specified, so the convention defaults apply: `:done` and `:failed` are terminal states, with `:done` as the success state. This generates a full `Jido.Agent` module with `run/2` and `run_sync/2` functions. Here's what the FSM looks like:
 
 ```mermaid
 stateDiagram-v2
@@ -207,18 +207,18 @@ This works in the other direction too — list a workflow module in an orchestra
 
 ## Key Concepts
 
-| Term                | Description                                                                                                        |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Node**            | The uniform `context -> context` interface. Actions, agents, fan-out branches, and human gates are all nodes.      |
-| **Context**         | Accumulates results across states. Each node's output is scoped under its state/tool name via deep merge.          |
-| **Directive**       | A side-effect description emitted by strategies. `run_sync` and `query_sync` handle them automatically.            |
-| **Outcome**         | An atom (`:ok`, `:error`, or custom) returned by a node that determines which transition fires.                    |
-| **Transition**      | A `{state, outcome} => next_state` mapping. Use `{:_, :error}` as a wildcard catch-all.                            |
-| **Terminal State**  | A state that ends the flow (default: `:done`, `:failed`). No outgoing transitions.                                 |
-| **Suspension**      | A pause in execution — for human input, rate limits, async jobs, or custom reasons.                                |
-| **Deep Merge**      | How node results accumulate: maps merge recursively, scoped under the node's state name to prevent key collisions. |
-| **Ambient Context** | Read-only keys visible to all nodes. Configured via the `ambient:` DSL option.                                     |
-| **Fork Functions**  | MFA tuples that transform ambient values at agent boundaries when nesting.                                         |
+| Term                | Description                                                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Node**            | The uniform `context -> context` interface. Actions, agents, fan-out branches, and human gates are all nodes.                                      |
+| **Context**         | Accumulates results across states. Each node's output is scoped under its state/tool name via deep merge.                                          |
+| **Directive**       | A side-effect description emitted by strategies. `run_sync` and `query_sync` handle them automatically.                                            |
+| **Outcome**         | An atom (`:ok`, `:error`, or custom) returned by a node that determines which transition fires.                                                    |
+| **Transition**      | A `{state, outcome} => next_state` mapping. Use `{:_, :error}` as a wildcard catch-all.                                                            |
+| **Terminal State**  | A state that ends the flow. Convention defaults: `:done` (success) and `:failed`. Custom sets require both `terminal_states` and `success_states`. |
+| **Suspension**      | A pause in execution — for human input, rate limits, async jobs, or custom reasons.                                                                |
+| **Deep Merge**      | How node results accumulate: maps merge recursively, scoped under the node's state name to prevent key collisions.                                 |
+| **Ambient Context** | Read-only keys visible to all nodes. Configured via the `ambient:` DSL option.                                                                     |
+| **Fork Functions**  | MFA tuples that transform ambient values at agent boundaries when nesting.                                                                         |
 
 ## Next Steps
 

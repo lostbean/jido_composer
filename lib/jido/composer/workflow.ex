@@ -29,6 +29,19 @@ defmodule Jido.Composer.Workflow do
       {:ok, result} = ETLPipeline.run_sync(agent, %{source: "customer_db"})
       result[:load][:loaded] #=> 2
 
+  ## Terminal and Success States
+
+  By convention, `:done` and `:failed` are the default terminal states, with
+  `:done` as the sole success state. To customize, provide **both**
+  `terminal_states` and `success_states`:
+
+      terminal_states: [:completed, :errored, :cancelled],
+      success_states: [:completed]
+
+  Any terminal state not in `success_states` is a failure. When no node error
+  was captured, the terminal state atom itself becomes the error reason
+  (e.g., `{:error, :cancelled}`).
+
   ## Generated Functions
 
   - `new/0` — Create a new agent instance
@@ -36,6 +49,7 @@ defmodule Jido.Composer.Workflow do
   - `run_sync/2` — Run to completion, returns `{:ok, result}` or `{:error, reason}`.
     On failure, `reason` is the original error from the failing node — typically a
     `Jido.Action.Error` struct, a child agent's error, or a transition error.
+    When no node error was captured, the terminal state atom is the reason.
     Callers can pattern-match on the error type for specific handling.
 
   See the [Workflows Guide](workflows.md) for all DSL options, node types,

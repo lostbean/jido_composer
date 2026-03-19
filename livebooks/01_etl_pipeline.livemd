@@ -141,7 +141,9 @@ defmodule Demo.ETLWorkflow do
       {:load, :ok} => :done,
       {:_, :error} => :failed
     },
-    initial: :extract
+    initial: :extract,
+    terminal_states: [:done, :failed],
+    success_states: [:done]
 
   require Demo.Helpers
   Demo.Helpers.suppress_agent_doctests()

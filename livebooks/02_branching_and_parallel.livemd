@@ -128,7 +128,9 @@ defmodule Demo.QualityGateWorkflow do
       {:retry_step, :ok} => :done,
       {:_, :error} => :failed
     },
-    initial: :validate
+    initial: :validate,
+    terminal_states: [:done, :failed],
+    success_states: [:done]
 
   require Demo.Helpers
   Demo.Helpers.suppress_agent_doctests()
@@ -238,7 +240,9 @@ defmodule Demo.FanOutWorkflow do
       {:finalize, :ok} => :done,
       {:_, :error} => :failed
     },
-    initial: :parallel
+    initial: :parallel,
+    terminal_states: [:done, :failed],
+    success_states: [:done]
 
   require Demo.Helpers
   Demo.Helpers.suppress_agent_doctests()

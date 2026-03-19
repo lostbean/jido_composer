@@ -447,6 +447,16 @@ defmodule Jido.Composer.Workflow.Strategy do
       status = if strat.machine.status in success_states, do: :success, else: :failure
       agent = StratState.set_status(agent, status)
 
+      # When no explicit error_reason was captured, use the terminal state atom
+      agent =
+        if status == :failure and is_nil(Map.get(strat, :error_reason)) do
+          StratState.update(agent, fn s -> Map.put(s, :error_reason, strat.machine.status) end)
+        else
+          agent
+        end
+
+      strat = StratState.get(agent)
+
       extra =
         if status == :failure do
           case Map.get(strat, :error_reason) do
@@ -894,6 +904,16 @@ defmodule Jido.Composer.Workflow.Strategy do
       success_states = Map.get(strat, :success_states, [:done])
       status = if strat.machine.status in success_states, do: :success, else: :failure
       agent = StratState.set_status(agent, status)
+
+      # When no explicit error_reason was captured, use the terminal state atom
+      agent =
+        if status == :failure and is_nil(Map.get(strat, :error_reason)) do
+          StratState.update(agent, fn s -> Map.put(s, :error_reason, strat.machine.status) end)
+        else
+          agent
+        end
+
+      strat = StratState.get(agent)
 
       extra =
         if status == :failure do

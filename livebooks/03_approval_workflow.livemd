@@ -150,7 +150,9 @@ defmodule Demo.DeployWorkflow do
       {:deploy, :ok} => :done,
       {:_, :error} => :failed
     },
-    initial: :prepare
+    initial: :prepare,
+    terminal_states: [:done, :failed],
+    success_states: [:done]
 
   require Demo.Helpers
   Demo.Helpers.suppress_agent_doctests()
@@ -281,7 +283,9 @@ defmodule Demo.RateLimitWorkflow do
       {:finish, :ok} => :done,
       {:_, :error} => :failed
     },
-    initial: :prepare
+    initial: :prepare,
+    terminal_states: [:done, :failed],
+    success_states: [:done]
 
   require Demo.Helpers
   Demo.Helpers.suppress_agent_doctests()

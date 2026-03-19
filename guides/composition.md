@@ -278,3 +278,5 @@ Fork functions are:
 | Use case        | Simple pipelines          | Deterministic multi-step flows | Adaptive tool composition   |
 
 Use `Jido.Exec.Chain` for simple sequential pipelines. Use Composer when you need branching, parallelism, suspension, or nesting.
+
+> **Note on terminal states:** The examples above use the convention defaults (`:done` and `:failed`). When you need custom terminal states, provide both `terminal_states` and `success_states` — see the [Workflows guide](workflows.md#custom-terminal-and-success-states) for details.

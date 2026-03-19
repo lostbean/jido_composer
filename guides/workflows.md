@@ -27,7 +27,8 @@ stateDiagram-v2
 | `nodes`           | `map`     | yes      | —                     | Map of `state_atom => node` bindings                                                 |
 | `transitions`     | `map`     | yes      | —                     | Map of `{state, outcome} => next_state`                                              |
 | `initial`         | `atom`    | yes      | —                     | Starting state                                                                       |
-| `terminal_states` | `[atom]`  | no       | `[:done, :failed]`    | States that end the workflow                                                         |
+| `terminal_states` | `[atom]`  | no       | `[:done, :failed]`    | States that end the workflow (must pair with `success_states` when provided)         |
+| `success_states`  | `[atom]`  | no       | `[:done]`             | Subset of `terminal_states` indicating success (must pair with `terminal_states`)    |
 | `ambient`         | `[atom]`  | no       | `[]`                  | Context keys made read-only across all nodes                                         |
 | `fork_fns`        | `map`     | no       | `%{}`                 | `%{name => {module, function, args}}` for context transformation at child boundaries |
 
@@ -276,6 +277,34 @@ use Jido.Composer.Workflow,
   },
   # ...
 ```
+
+## Custom Terminal and Success States
+
+When neither `terminal_states` nor `success_states` is provided, the convention defaults apply: `terminal_states: [:done, :failed]` with `success_states: [:done]`.
+
+To customize, you must provide **both** options — providing one without the other is a compile error:
+
+```elixir
+defmodule ReviewPipeline do
+  use Jido.Composer.Workflow,
+    name: "review_pipeline",
+    nodes: %{
+      check: CheckAction,
+      review: ReviewAction
+    },
+    transitions: %{
+      {:check, :ok}       => :review,
+      {:review, :ok}      => :approved,
+      {:review, :rejected} => :rejected,
+      {:_, :error}        => :errored
+    },
+    initial: :check,
+    terminal_states: [:approved, :rejected, :errored],
+    success_states: [:approved]
+end
+```
+
+The `success_states` must be a subset of `terminal_states`. The strategy uses this to determine whether the workflow completed successfully or with a failure.
 
 ## Compile-Time Validation
 

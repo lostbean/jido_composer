@@ -255,7 +255,8 @@ defmodule Jido.Composer.Workflow.DSLTest do
           {:_, :error} => :failed
         },
         initial: :step_a,
-        terminal_states: [:complete, :failed]
+        terminal_states: [:complete, :failed],
+        success_states: [:complete]
     end
 
     test "custom terminal state :complete is classified as success" do
@@ -265,6 +266,116 @@ defmodule Jido.Composer.Workflow.DSLTest do
                CustomTerminalWorkflow.run_sync(agent, %{value: 1.0, amount: 2.0})
 
       assert is_map(result)
+    end
+  end
+
+  describe "explicit success_states" do
+    alias Jido.Composer.TestActions.FailAction
+
+    defmodule ExplicitSuccessWorkflow do
+      use Jido.Composer.Workflow,
+        name: "explicit_success",
+        nodes: %{
+          step_a: AddAction,
+          step_b: MultiplyAction
+        },
+        transitions: %{
+          {:step_a, :ok} => :step_b,
+          {:step_b, :ok} => :completed,
+          {:_, :error} => :errored
+        },
+        initial: :step_a,
+        terminal_states: [:completed, :errored, :cancelled],
+        success_states: [:completed]
+    end
+
+    defmodule MultipleFailureWorkflow do
+      use Jido.Composer.Workflow,
+        name: "multiple_failure",
+        nodes: %{
+          step_a: FailAction
+        },
+        transitions: %{
+          {:step_a, :ok} => :done,
+          {:step_a, :error} => :errored,
+          {:_, :error} => :cancelled
+        },
+        initial: :step_a,
+        terminal_states: [:done, :errored, :cancelled],
+        success_states: [:done]
+    end
+
+    test "explicit success_states: completed terminal is success" do
+      agent = ExplicitSuccessWorkflow.new()
+      assert {:ok, result} = ExplicitSuccessWorkflow.run_sync(agent, %{value: 1.0, amount: 2.0})
+      assert is_map(result)
+    end
+
+    test "explicit success_states: non-success terminal is failure" do
+      agent = MultipleFailureWorkflow.new()
+      assert {:error, _reason} = MultipleFailureWorkflow.run_sync(agent, %{})
+    end
+
+    test "terminal state atom used as error_reason when no explicit error captured" do
+      # Build a workflow that transitions to :cancelled (a failure terminal) without
+      # going through a node that sets error_reason
+      defmodule CancelledWorkflow do
+        use Jido.Composer.Workflow,
+          name: "cancelled_wf",
+          nodes: %{
+            step_a: AddAction
+          },
+          transitions: %{
+            {:step_a, :ok} => :cancelled,
+            {:_, :error} => :errored
+          },
+          initial: :step_a,
+          terminal_states: [:done, :errored, :cancelled],
+          success_states: [:done]
+      end
+
+      agent = CancelledWorkflow.new()
+      assert {:error, :cancelled} = CancelledWorkflow.run_sync(agent, %{value: 1.0, amount: 2.0})
+    end
+
+    test "compile error when success_states not subset of terminal_states" do
+      assert_raise CompileError, fn ->
+        defmodule BadSuccessStatesWorkflow do
+          use Jido.Composer.Workflow,
+            name: "bad_success",
+            nodes: %{step: AddAction},
+            transitions: %{{:step, :ok} => :done, {:_, :error} => :failed},
+            initial: :step,
+            terminal_states: [:done, :failed],
+            success_states: [:done, :nonexistent]
+        end
+      end
+    end
+
+    test "compile error when terminal_states provided without success_states" do
+      assert_raise CompileError, ~r/terminal_states requires success_states/, fn ->
+        defmodule TerminalOnlyWorkflow do
+          use Jido.Composer.Workflow,
+            name: "terminal_only",
+            nodes: %{step: AddAction},
+            transitions: %{{:step, :ok} => :complete, {:_, :error} => :failed},
+            initial: :step,
+            terminal_states: [:complete, :failed]
+        end
+      end
+    end
+
+    test "compile error when success_states provided without terminal_states" do
+      assert_raise CompileError, ~r/success_states requires terminal_states/, fn ->
+        defmodule SuccessOnlyWorkflow do
+          use Jido.Composer.Workflow,
+            name: "success_only",
+            nodes: %{step: AddAction},
+            transitions: %{{:step, :ok} => :done, {:_, :error} => :failed},
+            initial: :step,
+            success_states: [:done]
+        end
+      end
     end
   end
 

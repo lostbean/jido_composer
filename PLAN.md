@@ -211,7 +211,8 @@ defmodule Jido.Composer.Workflow.Machine do
     :status,          # current state name (atom)
     :nodes,           # %{state_name => Node.t()}
     :transitions,     # %{{state_name, outcome} => next_state_name}
-    :terminal_states, # MapSet of terminal states (default: [:done, :failed])
+    :terminal_states, # MapSet of terminal states (default: [:done, :failed] when neither terminal_states nor success_states provided)
+    :success_states,  # MapSet of success states (subset of terminal_states; default: [:done])
     :context,         # accumulated context map flowing through the pipeline
     :history          # list of {state, outcome, timestamp} tuples
   ]
@@ -226,7 +227,7 @@ end
 
 **Transition lookup**: Given current state `:extract` and outcome `:ok`, looks up `{:extract, :ok}` in transitions map. Falls back to `{:_, :ok}` (wildcard state) then `{:extract, :_}` (wildcard outcome) then `{:_, :_}` (global fallback).
 
-**Terminal states**: When the machine reaches a terminal state, no node is executed — the workflow is complete. Default terminal states are `:done` and `:failed`.
+**Terminal states**: When the machine reaches a terminal state, no node is executed — the workflow is complete. Convention defaults are `terminal_states: [:done, :failed]` with `success_states: [:done]`, applied only when neither option is provided. Providing `terminal_states` without `success_states` (or vice versa) is a compile error. When both are provided, `success_states` must be a subset of `terminal_states`.
 
 ### Step 6: Workflow Strategy (`lib/jido/composer/workflow/strategy.ex`)
 
