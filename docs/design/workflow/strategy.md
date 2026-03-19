@@ -13,6 +13,7 @@ following structure:
 | -------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `machine`            | `Machine.t()`             | The FSM being driven                                                                                                                                        |
 | `module`             | module                    | Strategy module reference                                                                                                                                   |
+| `error_reason`       | `nil \| term()`           | Original error from failing node — see [Error Propagation](error-propagation.md)                                                                            |
 | `pending_child`      | `nil \| {tag, node}`      | Tracks in-flight AgentNode execution                                                                                                                        |
 | `child_request_id`   | `nil \| String.t()`       | Correlation ID for child agent communication                                                                                                                |
 | `pending_suspension` | `nil \| Suspension.t()`   | Tracks any active [suspension](../hitl/README.md)                                                                                                           |
@@ -217,3 +218,7 @@ determine what happens next:
 
 Unexpected child agent exits (crashes) are delivered as
 `jido.agent.child.exit` signals and handled similarly.
+
+The original error reason is preserved through the `error_reason` strategy state
+field and surfaced to callers. See
+[Error Propagation](error-propagation.md) for details.

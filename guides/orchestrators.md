@@ -151,11 +151,11 @@ agent = MyOrchestrator.new()
 
 `query_sync` returns three variants:
 
-| Return                            | Meaning                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| `{:ok, agent, result}`            | Completed — `result` is the LLM's final answer (string or structured map) |
-| `{:suspended, agent, suspension}` | Paused — a tool requires human approval or an action suspended            |
-| `{:error, reason}`                | Failed — LLM error, iteration limit, etc.                                 |
+| Return                            | Meaning                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------- |
+| `{:ok, agent, result}`            | Completed — `result` is the LLM's final answer (string or structured map)       |
+| `{:suspended, agent, suspension}` | Paused — a tool requires human approval or an action suspended                  |
+| `{:error, reason}`                | Failed — `reason` is structured (e.g., error struct, not a stringified inspect) |
 
 The returned `agent` carries the full post-execution strategy state:
 conversation history, token usage, iteration count, and tool call results. This

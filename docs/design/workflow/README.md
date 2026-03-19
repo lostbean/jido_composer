@@ -78,11 +78,12 @@ from any state.
 
 ## Components
 
-| Component                   | Responsibility                    | Details                                             |
-| --------------------------- | --------------------------------- | --------------------------------------------------- |
-| [Machine](state-machine.md) | Pure FSM data structure           | States, transitions, node bindings, context         |
-| [Strategy](strategy.md)     | Strategy behaviour implementation | Directive emission, result handling, lifecycle      |
-| DSL                         | Compile-time macro                | Validation, agent generation, convenience functions |
+| Component                                 | Responsibility                    | Details                                                           |
+| ----------------------------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| [Machine](state-machine.md)               | Pure FSM data structure           | States, transitions, node bindings, context                       |
+| [Strategy](strategy.md)                   | Strategy behaviour implementation | Directive emission, result handling, lifecycle                    |
+| [Error Propagation](error-propagation.md) | Error reason threading            | Preserving original error reasons through the pipeline to callers |
+| DSL                                       | Compile-time macro                | Validation, agent generation, convenience functions               |
 
 ## DSL
 

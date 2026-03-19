@@ -165,7 +165,7 @@ defmodule Demo.DirectiveRunner do
 
     case strat.status do
       :success -> {:ok, agent}
-      :failure -> {:error, :workflow_failed}
+      :failure -> {:error, Map.get(strat, :error_reason, :workflow_failed)}
       _ -> {:ok, agent}
     end
   end

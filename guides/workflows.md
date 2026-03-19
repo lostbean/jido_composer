@@ -193,6 +193,45 @@ agent = MyWorkflow.new()
 
 If the workflow suspends (e.g., at a HumanNode), `run_sync` returns `{:error, {:suspended, suspension}}`.
 
+## Error Handling
+
+When a node fails, the original error reason is preserved through the workflow
+pipeline and returned to the caller. The `{:error, reason}` from `run_sync`
+contains the actual error — not a generic atom:
+
+```elixir
+case MyWorkflow.run_sync(agent, %{input: "data"}) do
+  {:ok, result} ->
+    result
+
+  {:error, %Jido.Action.Error.ExecutionFailureError{message: msg}} ->
+    # Action execution failed — original error preserved
+    Logger.error("Action failed: #{msg}")
+
+  {:error, {:suspended, suspension}} ->
+    # Workflow suspended for human input
+    handle_suspension(suspension)
+
+  {:error, reason} ->
+    # Other errors (transition failures, etc.)
+    Logger.error("Workflow failed: #{inspect(reason)}")
+end
+```
+
+Error reasons flow from the failing node through the strategy to the caller:
+
+1. **Action errors** — When `Jido.Exec.run` returns `{:error, reason}`, the
+   reason (typically a `Jido.Action.Error` struct) is captured
+2. **Child agent errors** — When a nested agent returns `{:error, reason}`, the
+   inner reason propagates to the parent
+3. **Transition errors** — When the FSM has no matching transition, the
+   transition error is captured
+4. **FanOut errors** — In `:fail_fast` mode, the first branch error is captured
+
+If no error reason was captured (e.g., the workflow reached a `:failed` terminal
+state via a valid transition without an explicit error), `run_sync` falls back to
+`{:error, :workflow_failed}` for backward compatibility.
+
 ## Context Accumulation
 
 Each node's result is deep-merged into the context under its state name:

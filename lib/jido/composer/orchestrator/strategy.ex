@@ -6,6 +6,13 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   feed results back, repeat until final answer or iteration limit.
 
   All side effects are dispatched via directives — the strategy itself is pure.
+
+  ## Error Handling
+
+  Error reasons are stored as structured data in `strat.result` (not stringified
+  via `inspect/1`), preserving error types for callers that pattern-match on them.
+  LLM-facing error context (tool results, conversation messages) continues to use
+  string representations since the LLM consumes text.
   """
 
   use Jido.Agent.Strategy
@@ -173,7 +180,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       %{status: :error, result: %{error: reason}} ->
         agent =
           StratState.update(agent, fn s ->
-            %{s | status: :error, result: inspect(reason)}
+            %{s | status: :error, result: reason}
           end)
 
         agent = finish_agent_span(agent, %{error: reason})
@@ -613,7 +620,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       {:error, reason} ->
         agent =
           StratState.update(agent, fn s ->
-            %{s | status: :error, result: inspect(reason)}
+            %{s | status: :error, result: reason}
           end)
 
         agent = update_obs(agent, &Obs.finish_iteration_span(&1, %{error: reason}))

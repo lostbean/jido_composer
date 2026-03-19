@@ -89,7 +89,17 @@ defmodule Jido.Composer.Workflow.DSL do
         __MODULE__.cmd(agent, {:workflow_start, context})
       end
 
-      @doc "Runs the workflow synchronously, blocking until terminal state."
+      @doc """
+      Runs the workflow synchronously, blocking until terminal state.
+
+      Returns `{:ok, result_map}` on success or `{:error, reason}` on failure.
+      The `reason` preserves the original error from the failing node (e.g., a
+      `Jido.Action.Error` struct or a child agent's error). Falls back to
+      `:workflow_failed` when no specific error was captured.
+
+      If the workflow suspends (e.g., at a HumanNode), returns
+      `{:error, {:suspended, suspension}}`.
+      """
       @spec run_sync(Jido.Agent.t(), map()) :: {:ok, map()} | {:error, term()}
       def run_sync(%Jido.Agent{} = agent, context \\ %{}) when is_map(context) do
         {agent, directives} = run(agent, context)
@@ -236,7 +246,7 @@ defmodule Jido.Composer.Workflow.DSL do
 
     case strat.status do
       :success -> {:ok, agent}
-      :failure -> {:error, :workflow_failed}
+      :failure -> {:error, Map.get(strat, :error_reason, :workflow_failed)}
       _ -> {:ok, agent}
     end
   end

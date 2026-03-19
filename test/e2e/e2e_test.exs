@@ -365,7 +365,9 @@ defmodule Jido.Composer.E2E.E2ETest do
   describe "workflow: error propagation via run_sync" do
     test "failing action transitions to :failed" do
       agent = FailingWorkflow.new()
-      assert {:error, :workflow_failed} = FailingWorkflow.run_sync(agent, %{})
+
+      assert {:error, %Jido.Action.Error.ExecutionFailureError{message: "intentional failure"}} =
+               FailingWorkflow.run_sync(agent, %{})
     end
   end
 

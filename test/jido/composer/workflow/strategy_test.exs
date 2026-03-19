@@ -258,6 +258,7 @@ defmodule Jido.Composer.Workflow.StrategyTest do
       strat = StratState.get(agent)
       assert strat.machine.status == :failed
       assert StratState.status(agent) == :failure
+      assert strat.error_reason == "something broke"
     end
   end
 
@@ -684,6 +685,7 @@ defmodule Jido.Composer.Workflow.StrategyTest do
       strat = StratState.get(agent)
       assert strat.machine.status == :failed
       assert strat.fan_out == nil
+      assert strat.error_reason == "intentional failure"
 
       # Directives may include StopChild for remaining pending branches
       assert is_list(directives)
