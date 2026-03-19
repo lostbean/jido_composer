@@ -2,6 +2,20 @@
 
 Workflows are deterministic FSM pipelines where each state binds to a node (action, agent, fan-out, or human gate) and transitions are fully determined by outcomes.
 
+> ### Upgrading from 0.2 to 0.3 {: .warning}
+>
+> `run_sync` now returns the **original error reason** instead of `{:error, :workflow_failed}`.
+> If you pattern-match on `:workflow_failed`, update to match on `{:error, reason}`:
+>
+>     # Before (0.2)
+>     {:error, :workflow_failed} = MyWorkflow.run_sync(agent, params)
+>
+>     # After (0.3)
+>     {:error, reason} = MyWorkflow.run_sync(agent, params)
+>
+> `reason` is typically a `Jido.Action.Error` struct, a child agent error, or a
+> transition error. See [Error Handling](#error-handling) for details.
+
 ## FSM Lifecycle
 
 ```mermaid

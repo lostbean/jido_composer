@@ -3,6 +3,18 @@
 Orchestrators use an LLM to dynamically compose available tools (actions and
 agents) at runtime via a ReAct-style loop.
 
+> ### Upgrading from 0.2 to 0.3 {: .warning}
+>
+> `query_sync` error reasons are now **structured data** instead of `inspect()`-ed
+> strings. If you parse error strings, switch to pattern-matching:
+>
+>     # Before (0.2)
+>     {:error, "some stringified error"} = MyOrch.query_sync(agent, query)
+>
+>     # After (0.3)
+>     {:error, reason} = MyOrch.query_sync(agent, query)
+>     # reason is the original struct/tuple/atom — not a string
+
 ## ReAct Loop
 
 ```mermaid

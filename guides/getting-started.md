@@ -25,7 +25,7 @@ Add `jido_composer` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:jido_composer, "~> 0.1.0"}
+    {:jido_composer, "~> 0.3.0"}
   ]
 end
 ```
