@@ -6,6 +6,16 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   feed results back, repeat until final answer or iteration limit.
 
   All side effects are dispatched via directives — the strategy itself is pure.
+
+  ## Error Handling
+
+  Error reasons are stored as structured data in `strat.result` (not stringified
+  via `inspect/1`), preserving error types for callers that pattern-match on them.
+  LLM-facing error context (tool results, conversation messages) continues to use
+  string representations since the LLM consumes text.
+
+  All error paths close open observability spans (agent, iteration) to ensure
+  telemetry is emitted even on failure.
   """
 
   use Jido.Agent.Strategy
@@ -173,7 +183,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       %{status: :error, result: %{error: reason}} ->
         agent =
           StratState.update(agent, fn s ->
-            %{s | status: :error, result: inspect(reason)}
+            %{s | status: :error, result: reason}
           end)
 
         agent = finish_agent_span(agent, %{error: reason})
@@ -613,7 +623,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       {:error, reason} ->
         agent =
           StratState.update(agent, fn s ->
-            %{s | status: :error, result: inspect(reason)}
+            %{s | status: :error, result: reason}
           end)
 
         agent = update_obs(agent, &Obs.finish_iteration_span(&1, %{error: reason}))
@@ -624,11 +634,15 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
   defp dispatch_tool_calls(agent, calls, state) do
     if state.iteration >= state.max_iterations do
+      error = "max iteration limit reached (#{state.max_iterations})"
+
       agent =
         StratState.update(agent, fn s ->
-          %{s | status: :error, result: "max iteration limit reached (#{s.max_iterations})"}
+          %{s | status: :error, result: error}
         end)
 
+      agent = update_obs(agent, &Obs.finish_iteration_span(&1, %{error: error}))
+      agent = finish_agent_span(agent, %{error: error})
       {agent, []}
     else
       case find_termination_call(calls, state.termination_tool_name) do
@@ -644,11 +658,15 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   defp dispatch_regular_tool_calls(agent, calls, state) do
     case ApprovalGate.partition_calls(state.approval_gate, calls, state.context) do
       {:error, reason} ->
+        error = "Failed to create approval request: #{reason}"
+
         agent =
           StratState.update(agent, fn s ->
-            %{s | status: :error, result: "Failed to create approval request: #{reason}"}
+            %{s | status: :error, result: error}
           end)
 
+        agent = update_obs(agent, &Obs.finish_iteration_span(&1, %{error: error}))
+        agent = finish_agent_span(agent, %{error: error})
         {agent, []}
 
       {:ok, ungated, gated_entries} ->
@@ -935,17 +953,20 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
     case state.approval_gate.rejection_policy do
       :abort_iteration ->
+        error = "Iteration aborted: tool #{call.name} rejected. Reason: #{reason}"
+
         agent =
           StratState.update(agent, fn s ->
             %{
               s
               | status: :error,
-                result: "Iteration aborted: tool #{call.name} rejected. Reason: #{reason}",
+                result: error,
                 approval_gate: %{s.approval_gate | gated_calls: %{}},
                 tool_concurrency: %{s.tool_concurrency | pending: []}
             }
           end)
 
+        agent = finish_agent_span(agent, %{error: error})
         {agent, []}
 
       :cancel_siblings ->

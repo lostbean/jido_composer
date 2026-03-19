@@ -30,7 +30,8 @@ classDiagram
 | `status`          | atom                            | Current state name (e.g., `:extract`, `:done`)                                                                                   |
 | `nodes`           | `%{atom => Node.t()}`           | Maps each state name to its bound [Node](../nodes/README.md)                                                                     |
 | `transitions`     | `%{{atom, atom} => atom}`       | Maps `{state, outcome}` to next state                                                                                            |
-| `terminal_states` | `MapSet.t()`                    | States where execution stops (default: `:done`, `:failed`)                                                                       |
+| `terminal_states` | `MapSet.t()`                    | States where execution stops                                                                                                     |
+| `success_states`  | `MapSet.t()`                    | Subset of terminal states indicating successful completion                                                                       |
 | `context`         | `Context.t()` or `map()`        | [Layered context](../nodes/context-flow.md#context-layers) flowing through the pipeline. Bare maps are accepted and auto-wrapped |
 | `history`         | `[{state, outcome, timestamp}]` | Audit trail of state transitions                                                                                                 |
 
@@ -81,8 +82,18 @@ terminal state:
 - The [strategy](strategy.md) reports completion via its
   [snapshot](../glossary.md#snapshot)
 
-The default terminal states are `:done` and `:failed`. Custom terminal states
-can be configured.
+### Configuration Rules
+
+Terminal and success states follow an explicit configuration model:
+
+1. **Neither provided** — Convention defaults apply: `terminal_states: [:done, :failed]`, `success_states: [:done]`
+2. **Only `terminal_states` provided** — Compile error. `success_states` must also be specified.
+3. **Only `success_states` provided** — Compile error. `terminal_states` must also be specified.
+4. **Both provided** — Validated: `success_states` must be a subset of `terminal_states`.
+
+The `success_states` set determines which terminal states represent successful
+completion vs failure. The strategy uses this to decide the snapshot status
+(`:success` vs `:failure`) when the workflow finishes.
 
 ## Relationship to Jido's Existing FSM
 

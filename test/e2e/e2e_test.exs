@@ -363,9 +363,98 @@ defmodule Jido.Composer.E2E.E2ETest do
   end
 
   describe "workflow: error propagation via run_sync" do
-    test "failing action transitions to :failed" do
+    test "failing action transitions to :failed with original error" do
       agent = FailingWorkflow.new()
-      assert {:error, :workflow_failed} = FailingWorkflow.run_sync(agent, %{})
+
+      assert {:error, %Jido.Action.Error.ExecutionFailureError{message: "intentional failure"}} =
+               FailingWorkflow.run_sync(agent, %{})
+    end
+
+    test "raising action returns error instead of crashing" do
+      defmodule RaisingWorkflow do
+        use Jido.Composer.Workflow,
+          name: "raising_workflow",
+          nodes: %{
+            step: Jido.Composer.TestActions.RaiseAction
+          },
+          transitions: %{
+            {:step, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :step
+      end
+
+      agent = RaisingWorkflow.new()
+
+      # Should return {:error, _} not crash
+      assert {:error, reason} = RaisingWorkflow.run_sync(agent, %{})
+      assert reason != :workflow_failed
+    end
+
+    test "nested workflow propagates child error to parent" do
+      defmodule InnerFailingWorkflow do
+        use Jido.Composer.Workflow,
+          name: "inner_failing",
+          nodes: %{
+            step: FailAction
+          },
+          transitions: %{
+            {:step, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :step
+      end
+
+      defmodule OuterContainerWorkflow do
+        use Jido.Composer.Workflow,
+          name: "outer_container",
+          nodes: %{
+            prepare: NoopAction,
+            inner: {InnerFailingWorkflow, []}
+          },
+          transitions: %{
+            {:prepare, :ok} => :inner,
+            {:inner, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :prepare
+      end
+
+      agent = OuterContainerWorkflow.new()
+      assert {:error, reason} = OuterContainerWorkflow.run_sync(agent, %{})
+      # The outer workflow should propagate the inner's error, not just :workflow_failed
+      assert reason != :workflow_failed
+    end
+
+    test "deeply nested workflow (3 levels) propagates error" do
+      defmodule Level1FailWorkflow do
+        use Jido.Composer.Workflow,
+          name: "level1_fail",
+          nodes: %{step: FailAction},
+          transitions: %{{:step, :ok} => :done, {:_, :error} => :failed},
+          initial: :step
+      end
+
+      defmodule Level2WrapperWorkflow do
+        use Jido.Composer.Workflow,
+          name: "level2_wrapper",
+          nodes: %{inner: {Level1FailWorkflow, []}},
+          transitions: %{{:inner, :ok} => :done, {:_, :error} => :failed},
+          initial: :inner
+      end
+
+      defmodule Level3WrapperWorkflow do
+        use Jido.Composer.Workflow,
+          name: "level3_wrapper",
+          nodes: %{inner: {Level2WrapperWorkflow, []}},
+          transitions: %{{:inner, :ok} => :done, {:_, :error} => :failed},
+          initial: :inner
+      end
+
+      agent = Level3WrapperWorkflow.new()
+      assert {:error, reason} = Level3WrapperWorkflow.run_sync(agent, %{})
+      # Error should propagate all the way up, not collapse to :workflow_failed
+      assert reason != :workflow_failed
     end
   end
 

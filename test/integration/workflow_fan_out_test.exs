@@ -478,7 +478,7 @@ defmodule Jido.Composer.Integration.WorkflowFanOutTest do
     test "FanOut fail_fast with agent branch failure" do
       agent = FailFastAgentFanOutWorkflow.new()
 
-      assert {:error, :workflow_failed} =
+      assert {:error, %Jido.Action.Error.ExecutionFailureError{message: "intentional failure"}} =
                FailFastAgentFanOutWorkflow.run_sync(agent, %{
                  source: "test_db",
                  extract: %{records: [%{id: 1, source: "test"}], count: 1}

@@ -1540,4 +1540,90 @@ defmodule Jido.Composer.Orchestrator.StrategyTest do
       assert state.status == :completed
     end
   end
+
+  describe "finish_agent_span on error paths" do
+    test "max_iterations error finishes agent and iteration spans" do
+      tool_call = %{id: "call_1", name: "echo", arguments: %{"message" => "loop"}}
+
+      LLMStub.setup([
+        {:tool_calls, [tool_call]},
+        {:tool_calls, [tool_call]},
+        {:tool_calls, [tool_call]}
+      ])
+
+      agent = init_agent(max_iterations: 2)
+
+      # Start -> LLM call
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "loop"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      # Iteration 1: LLM returns tool call
+      {agent, [tool_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      # Tool result
+      {agent, [llm_dir2]} =
+        Strategy.cmd(
+          agent,
+          [
+            make_instruction(:orchestrator_tool_result, %{
+              status: :ok,
+              result: %{echoed: "loop"},
+              meta: tool_dir.meta
+            })
+          ],
+          ctx()
+        )
+
+      llm_result2 = execute_llm_directive(llm_dir2)
+
+      # Iteration 2: LLM returns tool call again -> hits max
+      {agent, _directives} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result2)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :error
+      # Both spans must be closed
+      assert state._obs.agent_span == nil
+      assert state._obs.iteration_span == nil
+    end
+
+    test "LLM error finishes agent span" do
+      LLMStub.setup([{:error, "API timeout"}])
+      agent = init_agent()
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Hi"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {agent, _} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :error
+      # Agent span must be closed
+      assert state._obs.agent_span == nil
+    end
+
+    test "LLM error preserves structured error in result" do
+      LLMStub.setup([{:error, "API timeout"}])
+      agent = init_agent()
+
+      {agent, [llm_dir]} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_start, %{query: "Hi"})], ctx())
+
+      llm_result = execute_llm_directive(llm_dir)
+
+      {agent, _} =
+        Strategy.cmd(agent, [make_instruction(:orchestrator_llm_result, llm_result)], ctx())
+
+      state = get_state(agent)
+      assert state.status == :error
+      # Error should be preserved as structured data, not inspect()ed
+      assert state.result == "API timeout"
+    end
+  end
 end

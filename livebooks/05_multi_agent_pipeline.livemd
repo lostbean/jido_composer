@@ -165,7 +165,7 @@ defmodule Demo.DirectiveRunner do
 
     case strat.status do
       :success -> {:ok, agent}
-      :failure -> {:error, :workflow_failed}
+      :failure -> {:error, Map.get(strat, :error_reason, :workflow_failed)}
       _ -> {:ok, agent}
     end
   end
@@ -292,7 +292,9 @@ defmodule Demo.AnalysisAgent do
       {:load, :ok} => :done,
       {:_, :error} => :failed
     },
-    initial: :transform
+    initial: :transform,
+    terminal_states: [:done, :failed],
+    success_states: [:done]
 
   require Demo.Helpers
   Demo.Helpers.suppress_agent_doctests()
@@ -328,6 +330,8 @@ defmodule Demo.DocumentReviewPipeline do
       {:_, :error} => :failed
     },
     initial: :prepare,
+    terminal_states: [:done, :failed],
+    success_states: [:done],
     ambient: [:org_id, :project_id]
 
   require Demo.Helpers

@@ -258,6 +258,7 @@ defmodule Jido.Composer.Workflow.StrategyTest do
       strat = StratState.get(agent)
       assert strat.machine.status == :failed
       assert StratState.status(agent) == :failure
+      assert strat.error_reason == "something broke"
     end
   end
 
@@ -684,6 +685,7 @@ defmodule Jido.Composer.Workflow.StrategyTest do
       strat = StratState.get(agent)
       assert strat.machine.status == :failed
       assert strat.fan_out == nil
+      assert strat.error_reason == "intentional failure"
 
       # Directives may include StopChild for remaining pending branches
       assert is_list(directives)
@@ -2030,6 +2032,280 @@ defmodule Jido.Composer.Workflow.StrategyTest do
       assert checkpoint.machine.status == :extract
       assert checkpoint.status == :running
       assert checkpoint.module == Strategy
+    end
+  end
+
+  describe "finish_agent_span on direct failure transitions" do
+    alias Jido.Composer.Node.{ActionNode, FanOutNode}
+
+    # Task 1: All error paths that set status=:failure must also close the agent span.
+    # We verify this by checking that _obs.agent_span is nil after failure.
+
+    test "workflow_node_result OK-path transition error finishes agent span" do
+      # Build a workflow with NO error transition — Machine.transition(:ok) will fail for transform
+      ctx = %{
+        agent_module: TestWorkflowAgent,
+        strategy_opts: [
+          nodes: %{
+            extract: {:action, Jido.Composer.TestActions.AddAction}
+            # No node for :transform — transition to :transform succeeds but
+            # we need a transition that FAILS. Use a custom outcome instead.
+          },
+          transitions: %{
+            # extract :ok goes to :done, but we'll send a custom outcome that has no transition
+            {:extract, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :extract
+        ]
+      }
+
+      agent = TestWorkflowAgent.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      # Start workflow
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_start, params: %{value: 1.0, amount: 2.0}}],
+          ctx
+        )
+
+      # Send success result with an outcome that has no transition defined
+      result_params = %{
+        status: :ok,
+        result: %{result: 3.0},
+        outcome: :nonexistent_outcome,
+        instruction: %Jido.Instruction{action: Jido.Composer.TestActions.AddAction, params: %{}},
+        effects: [],
+        meta: %{}
+      }
+
+      {agent, _directives} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_node_result, params: result_params}],
+          ctx
+        )
+
+      strat = StratState.get(agent)
+      assert StratState.status(agent) == :failure
+      assert strat.error_reason != nil
+      # Agent span must be closed (nil)
+      assert strat._obs.agent_span == nil
+    end
+
+    test "workflow_node_result error-path transition error finishes agent span" do
+      # Workflow with NO error transition at all
+      ctx = %{
+        agent_module: TestWorkflowAgent,
+        strategy_opts: [
+          nodes: %{
+            extract: {:action, Jido.Composer.TestActions.AddAction}
+          },
+          transitions: %{
+            {:extract, :ok} => :done
+            # NO {:_, :error} transition
+          },
+          initial: :extract,
+          terminal_states: [:done, :failed]
+        ]
+      }
+
+      agent = TestWorkflowAgent.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_start, params: %{value: 1.0, amount: 2.0}}],
+          ctx
+        )
+
+      result_params = %{
+        status: :error,
+        result: %{error: "node crashed"},
+        instruction: %Jido.Instruction{action: Jido.Composer.TestActions.AddAction, params: %{}},
+        effects: [],
+        meta: %{}
+      }
+
+      {agent, _directives} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_node_result, params: result_params}],
+          ctx
+        )
+
+      strat = StratState.get(agent)
+      assert StratState.status(agent) == :failure
+      assert strat.error_reason == "node crashed"
+      # Agent span must be closed
+      assert strat._obs.agent_span == nil
+    end
+
+    test "workflow_child_result error-path transition error finishes agent span" do
+      ctx = %{
+        agent_module: TestWorkflowAgent,
+        strategy_opts: [
+          nodes: %{
+            step: {:agent, Jido.Composer.TestAgents.EchoAgent, []}
+          },
+          transitions: %{
+            {:step, :ok} => :done
+            # NO error transition
+          },
+          initial: :step,
+          terminal_states: [:done, :failed]
+        ]
+      }
+
+      agent = TestWorkflowAgent.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      {agent, _} =
+        Strategy.cmd(
+          agent,
+          [%Jido.Instruction{action: :workflow_start, params: %{}}],
+          ctx
+        )
+
+      {agent, _directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_child_result,
+              params: %{tag: :step, result: {:error, :child_crashed}}
+            }
+          ],
+          ctx
+        )
+
+      strat = StratState.get(agent)
+      assert StratState.status(agent) == :failure
+      assert strat.error_reason == :child_crashed
+      # Agent span must be closed
+      assert strat._obs.agent_span == nil
+    end
+
+    test "cancel_and_fail transition error finishes agent span" do
+      # FanOut with fail_fast and NO error transition
+      {:ok, add_node} = ActionNode.new(Jido.Composer.TestActions.AddAction)
+      {:ok, mul_node} = ActionNode.new(Jido.Composer.TestActions.MultiplyAction)
+
+      {:ok, fan_out} =
+        FanOutNode.new(
+          name: "fail_test",
+          branches: [add: add_node, mul: mul_node],
+          on_error: :fail_fast
+        )
+
+      ctx = %{
+        agent_module: TestWorkflowAgent,
+        strategy_opts: [
+          nodes: %{compute: fan_out},
+          transitions: %{
+            {:compute, :ok} => :done
+            # NO error transition
+          },
+          initial: :compute,
+          terminal_states: [:done, :failed]
+        ]
+      }
+
+      agent = TestWorkflowAgent.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      {agent, _directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_start,
+              params: %{value: 1.0, amount: 2.0}
+            }
+          ],
+          ctx
+        )
+
+      # Feed error to trigger cancel_and_fail
+      {agent, _directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :fan_out_branch_result,
+              params: %{branch_name: :add, result: {:error, "branch exploded"}}
+            }
+          ],
+          ctx
+        )
+
+      strat = StratState.get(agent)
+      assert StratState.status(agent) == :failure
+      assert strat.error_reason == "branch exploded"
+      # Agent span must be closed
+      assert strat._obs.agent_span == nil
+    end
+
+    test "handle_after_transition_with_directives finishes agent span on terminal failure" do
+      # FanOut with fail_fast that HAS an error transition to :failed (terminal)
+      {:ok, add_node} = ActionNode.new(Jido.Composer.TestActions.AddAction)
+      {:ok, mul_node} = ActionNode.new(Jido.Composer.TestActions.MultiplyAction)
+
+      {:ok, fan_out} =
+        FanOutNode.new(
+          name: "fail_test",
+          branches: [add: add_node, mul: mul_node],
+          on_error: :fail_fast
+        )
+
+      ctx = %{
+        agent_module: TestWorkflowAgent,
+        strategy_opts: [
+          nodes: %{compute: fan_out},
+          transitions: %{
+            {:compute, :ok} => :done,
+            {:_, :error} => :failed
+          },
+          initial: :compute
+        ]
+      }
+
+      agent = TestWorkflowAgent.new()
+      {agent, _} = Strategy.init(agent, ctx)
+
+      {agent, _directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :workflow_start,
+              params: %{value: 1.0, amount: 2.0}
+            }
+          ],
+          ctx
+        )
+
+      # Feed error — cancel_and_fail -> transition to :failed -> handle_after_transition_with_directives
+      {agent, _directives} =
+        Strategy.cmd(
+          agent,
+          [
+            %Jido.Instruction{
+              action: :fan_out_branch_result,
+              params: %{branch_name: :add, result: {:error, "branch boom"}}
+            }
+          ],
+          ctx
+        )
+
+      strat = StratState.get(agent)
+      assert StratState.status(agent) == :failure
+      assert strat.error_reason == "branch boom"
+      # Agent span must be closed even through handle_after_transition_with_directives
+      assert strat._obs.agent_span == nil
     end
   end
 end

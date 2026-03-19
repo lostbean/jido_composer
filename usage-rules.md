@@ -27,7 +27,7 @@ Build composable agent topologies via two nestable patterns: deterministic Workf
 - Custom outcomes: nodes return `{:ok, ctx, :custom_outcome}` to branch. Transition map must cover all possible outcomes.
 - FanOutNode: `fork_fns` returns list of `{branch_key, fun}` pairs. Results merge under each branch key.
 - HumanNode: always returns `:suspend` outcome. Pair with `SuspendForHuman` directive for approval gates.
-- Terminal states: `:done` and `:failed` are conventional.
+- Terminal states: `:done` and `:failed` are convention defaults (with `:done` as success state). Custom `terminal_states` require pairing with `success_states`; providing one without the other is a compile error.
 
 ## Orchestrator Patterns
 

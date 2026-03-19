@@ -36,6 +36,8 @@ shared by all participants.
     and terminal states
   - [Strategy](workflow/strategy.md) — Workflow strategy lifecycle, directive
     flow, and directive-based FanOut
+  - [Error Propagation](workflow/error-propagation.md) — Preserving original
+    error reasons through the pipeline to callers
 - [Orchestrator](orchestrator/README.md) — LLM-driven dynamic composition
   - [LLM Integration](orchestrator/llm-integration.md) — LLMAction calling
     ReqLLM directly, generation modes, and parameter flow

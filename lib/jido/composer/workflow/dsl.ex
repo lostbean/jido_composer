@@ -5,8 +5,27 @@ defmodule Jido.Composer.Workflow.DSL do
   `use Jido.Composer.Workflow` generates a `Jido.Agent` module wired
   to the `Jido.Composer.Workflow.Strategy` with validated configuration.
 
-  ## Example
+  ## Terminal and Success States
 
+  By default, workflows use `:done` and `:failed` as terminal states, with
+  `:done` as the sole success state. Any terminal state not in `success_states`
+  is treated as a failure.
+
+  To customize, provide **both** `terminal_states` and `success_states`:
+
+      terminal_states: [:completed, :errored, :cancelled, :timed_out],
+      success_states: [:completed]
+
+  Providing only one without the other raises a compile error — this ensures
+  the success/failure classification is always explicit.
+
+  On failure, the `error_reason` is the original error from the failing node.
+  When no node error was captured (e.g., a direct transition to `:cancelled`),
+  the terminal state atom itself becomes the error reason.
+
+  ## Examples
+
+      # Using convention defaults (:done/:failed)
       defmodule MyETLPipeline do
         use Jido.Composer.Workflow,
           name: "etl_pipeline",
@@ -23,6 +42,22 @@ defmodule Jido.Composer.Workflow.DSL do
           },
           initial: :extract
       end
+
+      # Custom terminal states with explicit success classification
+      defmodule ApprovalPipeline do
+        use Jido.Composer.Workflow,
+          name: "approval_pipeline",
+          nodes: %{process: ProcessAction, review: ReviewAction},
+          transitions: %{
+            {:process, :ok}       => :review,
+            {:review, :approved}  => :completed,
+            {:review, :rejected}  => :rejected,
+            {:_, :error}          => :errored
+          },
+          initial: :process,
+          terminal_states: [:completed, :rejected, :errored],
+          success_states: [:completed]
+      end
   """
 
   defmacro __using__(opts) do
@@ -31,6 +66,7 @@ defmodule Jido.Composer.Workflow.DSL do
     schema = Keyword.get(opts, :schema, [])
     initial = Keyword.fetch!(opts, :initial)
     terminal_states = Keyword.get(opts, :terminal_states)
+    success_states = Keyword.get(opts, :success_states)
     ambient_keys = Keyword.get(opts, :ambient, [])
     fork_fns = Keyword.get(opts, :fork_fns, %{})
 
@@ -48,6 +84,7 @@ defmodule Jido.Composer.Workflow.DSL do
       @__wf_transitions__ unquote(transitions_ast)
       @__wf_initial__ unquote(initial)
       @__wf_terminal_states__ unquote(Macro.escape(terminal_states))
+      @__wf_success_states__ unquote(Macro.escape(success_states))
 
       # Wrap bare action modules: MyAction -> {:action, MyAction}
       @__wf_nodes__ Jido.Composer.Workflow.DSL.__wrap_nodes__(@__wf_nodes_raw__)
@@ -57,24 +94,22 @@ defmodule Jido.Composer.Workflow.DSL do
         @__wf_nodes_raw__,
         @__wf_transitions__,
         @__wf_initial__,
-        @__wf_terminal_states__
+        @__wf_terminal_states__,
+        @__wf_success_states__
       )
 
-      # Build strategy opts
+      # Build strategy opts — when neither terminal_states nor success_states is
+      # provided, use convention defaults. When both are provided, use as given.
+      # Providing one without the other is caught by __validate__!.
       @__wf_strategy_opts__ [
-                              nodes: @__wf_nodes__,
-                              transitions: @__wf_transitions__,
-                              initial: @__wf_initial__,
-                              ambient: unquote(ambient_keys),
-                              fork_fns: unquote(Macro.escape(fork_fns))
-                            ] ++
-                              if(@__wf_terminal_states__,
-                                do: [
-                                  terminal_states: @__wf_terminal_states__,
-                                  success_states: @__wf_terminal_states__ -- [:failed]
-                                ],
-                                else: []
-                              )
+        nodes: @__wf_nodes__,
+        transitions: @__wf_transitions__,
+        initial: @__wf_initial__,
+        ambient: unquote(ambient_keys),
+        fork_fns: unquote(Macro.escape(fork_fns)),
+        terminal_states: @__wf_terminal_states__ || [:done, :failed],
+        success_states: @__wf_success_states__ || [:done]
+      ]
 
       use Jido.Agent,
         name: unquote(name),
@@ -89,7 +124,17 @@ defmodule Jido.Composer.Workflow.DSL do
         __MODULE__.cmd(agent, {:workflow_start, context})
       end
 
-      @doc "Runs the workflow synchronously, blocking until terminal state."
+      @doc """
+      Runs the workflow synchronously, blocking until terminal state.
+
+      Returns `{:ok, result_map}` on success or `{:error, reason}` on failure.
+      The `reason` preserves the original error from the failing node — typically
+      a `Jido.Action.Error` struct, a child agent's error, or a transition error.
+      Callers can pattern-match on the error type for specific handling.
+
+      If the workflow suspends (e.g., at a HumanNode), returns
+      `{:error, {:suspended, suspension}}`.
+      """
       @spec run_sync(Jido.Agent.t(), map()) :: {:ok, map()} | {:error, term()}
       def run_sync(%Jido.Agent{} = agent, context \\ %{}) when is_map(context) do
         {agent, directives} = run(agent, context)
@@ -236,7 +281,7 @@ defmodule Jido.Composer.Workflow.DSL do
 
     case strat.status do
       :success -> {:ok, agent}
-      :failure -> {:error, :workflow_failed}
+      :failure -> {:error, Map.get(strat, :error_reason, :workflow_failed)}
       _ -> {:ok, agent}
     end
   end
@@ -266,9 +311,38 @@ defmodule Jido.Composer.Workflow.DSL do
   @reserved_outcomes [:suspend]
 
   @doc false
-  def __validate__!(nodes, transitions, initial, terminal_states) do
+  def __validate__!(nodes, transitions, initial, terminal_states, success_states) do
     node_states = Map.keys(nodes)
     terminals = MapSet.new(terminal_states || [:done, :failed])
+
+    # Enforce pairing: terminal_states and success_states must be provided together
+    case {terminal_states, success_states} do
+      {nil, nil} ->
+        :ok
+
+      {_, nil} ->
+        raise CompileError,
+          description:
+            "terminal_states requires success_states — " <>
+              "specify which terminal states are successes (e.g., success_states: [:done])"
+
+      {nil, _} ->
+        raise CompileError,
+          description:
+            "success_states requires terminal_states — " <>
+              "specify all terminal states (e.g., terminal_states: [:done, :failed])"
+
+      {_, _} ->
+        success_set = MapSet.new(success_states)
+        invalid = MapSet.difference(success_set, terminals)
+
+        unless MapSet.size(invalid) == 0 do
+          raise CompileError,
+            description:
+              "success_states #{inspect(MapSet.to_list(invalid))} " <>
+                "are not in terminal_states #{inspect(MapSet.to_list(terminals))}"
+        end
+    end
 
     transition_targets =
       transitions

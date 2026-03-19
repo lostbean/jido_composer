@@ -284,9 +284,13 @@ update, status, terminal?).
 
 ### Terminal State
 
-A [Machine](#machine) state from which no further execution occurs. Default
-terminal states are `:done` and `:failed`. When the machine reaches a terminal
-state, the [Workflow](#workflow) is complete.
+A [Machine](#machine) state from which no further execution occurs. When the
+machine reaches a terminal state, the [Workflow](#workflow) is complete. If
+neither `terminal_states` nor `success_states` is configured, the convention
+defaults `:done` and `:failed` apply (with `:done` as the success state). When
+custom terminal states are provided, `success_states` must also be specified to
+indicate which terminal states represent successful completion. See
+[State Machine — Terminal States](workflow/state-machine.md#terminal-states).
 
 ### Tool
 

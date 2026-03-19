@@ -45,6 +45,18 @@ defmodule Jido.Composer.TestActions do
     end
   end
 
+  defmodule RaiseAction do
+    @moduledoc false
+    use Jido.Action,
+      name: "raise",
+      description: "Always raises an exception",
+      schema: []
+
+    def run(_params, _context) do
+      raise RuntimeError, "action raised!"
+    end
+  end
+
   defmodule SlowAction do
     @moduledoc false
     use Jido.Action,

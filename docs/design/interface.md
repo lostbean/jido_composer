@@ -83,7 +83,8 @@ use Jido.Composer.Workflow,
   nodes:       map           — state-to-node bindings
   transitions: map           — FSM transition rules
   initial:     atom          — starting state
-  terminal_states: list(atom) — terminal states (default: [:done, :failed])
+  terminal_states: list(atom) — states that end the workflow (must pair with success_states)
+  success_states:  list(atom) — subset of terminal_states indicating success (must pair with terminal_states)
   ambient:     list(atom)    — context keys extracted into the ambient layer
   fork_fns:    keyword       — MFA tuples applied at agent boundaries
 ```

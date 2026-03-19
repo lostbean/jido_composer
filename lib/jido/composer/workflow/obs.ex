@@ -50,7 +50,7 @@ defmodule Jido.Composer.Workflow.Obs do
 
     measurements =
       if state[:status] == :failure and not Map.has_key?(measurements, :error) do
-        Map.put(measurements, :error, "workflow failed")
+        Map.put(measurements, :error, state[:error_reason] || "workflow failed")
       else
         measurements
       end
