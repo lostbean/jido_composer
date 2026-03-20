@@ -61,6 +61,14 @@ strategies emit directives but never interpret them. Core directives include
 Emit, RunInstruction, SpawnAgent, Schedule, and Stop. See
 [Overview — Directive System](overview.md#directive-system).
 
+### DynamicAgentNode
+
+A [Node](#node) type that wraps [Skill assembly](skills/README.md#assembly) and
+execution for use as a tool in compositions. Looks up selected
+[Skills](#skill), calls `Skill.assemble/2` to produce a configured
+[Orchestrator](#orchestrator), then executes it. See
+[Skills — DynamicAgentNode](skills/README.md#dynamicagentnode).
+
 ### Deep Merge
 
 The monoidal operation for [context](#context) accumulation. Nested maps are
@@ -212,6 +220,23 @@ agents (thaw from storage, then deliver). Provides idempotency via
 [Suspension](#suspension) ID matching and optional compare-and-swap on
 [checkpoint](#checkpoint-structure) status. See
 [Persistence — Targeted Resume](hitl/persistence.md#targeted-resume).
+
+### Skill
+
+A reusable bundle of prompt instructions and [Nodes](#node) that can be
+composed at runtime to create dynamically configured agents. A Skill is a data
+struct with four fields: `name`, `description`, `prompt_fragment`, and `tools`.
+Skills are the unit of capability packaging for
+[assembly](#skill-assembly). See [Skills](skills/README.md).
+
+### Skill Assembly
+
+A pure function (`Skill.assemble/2`) that transforms a list of
+[Skills](#skill) and configuration options into a configured
+[Orchestrator](#orchestrator) agent. Performs prompt composition, tool union,
+and agent instantiation. Separated from execution so the assembled agent can be
+inspected, tested, or reused independently. See
+[Skills — Assembly](skills/README.md#assembly).
 
 ### Signal
 

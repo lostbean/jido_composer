@@ -39,10 +39,16 @@ graph TB
         Composer --> WF
         Composer --> ORC
         Composer --> Err
+        SKL["Skill<br/>(capability bundle)"]
+        DAN["DynamicAgentNode"]
+
         Node --> AN
         Node --> AGN
         Node --> HN
         Node --> FN
+        Node --> DAN
+        DAN --> SKL
+        DAN --> ORC
         HN --> SUS
         HITL --> SUS
         SUS --> SD
@@ -117,6 +123,8 @@ All user-facing modules live under this namespace:
 | `Jido.Composer.OtelCtx`                | [OTel context management](observability.md#otelctx)                                                     |
 | `Jido.Composer.Orchestrator.Obs`       | [Orchestrator observability state](observability.md#obs-structs)                                        |
 | `Jido.Composer.Workflow.Obs`           | [Workflow observability state](observability.md#obs-structs)                                            |
+| `Jido.Composer.Skill`                  | [Capability bundle](skills/README.md) (prompt fragment + tools) for runtime agent assembly              |
+| `Jido.Composer.Node.DynamicAgentNode`  | [Runtime agent assembly](skills/README.md#dynamicagentnode) from selected skills                        |
 | `Jido.Composer.Error`                  | [Structured errors](#error-handling)                                                                    |
 
 ## Design Principles

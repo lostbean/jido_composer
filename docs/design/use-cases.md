@@ -427,17 +427,112 @@ know the details of each specialty.
 
 ---
 
+## 8. Dynamic Agent Assembly via Skills
+
+**Pattern**: Orchestrator with a [DynamicAgentNode](skills/README.md#dynamicagentnode).
+
+**Relationship to #7**: Use case #7 pre-defines each specialist as a module —
+this works when the set of specialists is stable and bounded (researcher,
+designer, engineer). Use case #8 assembles specialists at runtime from
+capability bundles — this earns its indirection when the useful capability
+combinations grow combinatorially and are determined by runtime context. See
+[When to Use Skills vs. Pre-Defined Agents](skills/README.md#when-to-use-skills-vs-pre-defined-agents).
+
+**Scenario**: A general-purpose assistant that creates specialized sub-agents on
+demand. Instead of pre-defining every possible agent configuration, the
+top-level Orchestrator delegates tasks to a DynamicAgentNode that assembles
+purpose-built agents from [Skills](skills/README.md).
+
+```mermaid
+graph TB
+    COORD["General Assistant<br/>(Orchestrator)"]
+    DAN["DynamicAgentNode<br/>(delegate_task tool)"]
+
+    subgraph "Skill Registry"
+        S1["Web Search Skill<br/>prompt + SearchAction, FetchAction"]
+        S2["Code Editing Skill<br/>prompt + ReadFileAction, EditFileAction, RunTestAction"]
+        S3["Planning Skill<br/>prompt + OutlineAction, BreakdownAction"]
+        S4["Data Analysis Skill<br/>prompt + QueryDBAction, AnalyticsWorkflow"]
+    end
+
+    subgraph "Assembled at Runtime"
+        A1["Research Agent<br/>(web_search + planning skills)"]
+        A2["Dev Agent<br/>(code_editing + web_search skills)"]
+    end
+
+    COORD -->|"delegate_task(skills: [web_search, planning])"| DAN
+    DAN --> S1
+    DAN --> S3
+    DAN -->|"assembles"| A1
+
+    COORD -->|"delegate_task(skills: [code_editing, web_search])"| DAN
+    DAN --> S2
+    DAN --> S1
+    DAN -->|"assembles"| A2
+```
+
+**DSL shape**:
+
+```
+# Define skills as capability bundles
+web_search = %Skill{
+  name: "web_search",
+  description: "Search the internet and fetch web pages",
+  prompt_fragment: "You can search the web and retrieve page content.
+    Use search for broad queries, fetch for specific URLs.",
+  tools: [WebSearchAction, FetchPageAction]
+}
+
+data_analysis = %Skill{
+  name: "data_analysis",
+  description: "Query databases and run analysis pipelines",
+  prompt_fragment: "You can query databases and run full analysis
+    workflows including statistical analysis.",
+  tools: [QueryDBAction, AnalyticsWorkflow]  # Workflow as a tool
+}
+
+# Top-level orchestrator with a DynamicAgentNode
+use Jido.Composer.Orchestrator,
+  name: "general_assistant",
+  model: "anthropic:claude-sonnet-4-20250514",
+  nodes: [
+    %DynamicAgentNode{
+      name: "delegate_task",
+      description: "Delegate a task to a specialized sub-agent
+        assembled from selected skills",
+      skill_registry: [web_search, code_editing, planning, data_analysis],
+      model: "anthropic:claude-sonnet-4-20250514",
+      base_prompt: "You are a focused specialist. Complete the task
+        using the tools available to you."
+    },
+    SummarizeAction  # Direct action for simple tasks
+  ],
+  system_prompt: "You are a general assistant. For complex tasks,
+    delegate to a specialist by selecting the right skills.
+    For simple tasks, handle them directly."
+```
+
+**Why Skills**: The number of possible capability combinations grows
+combinatorially. Pre-defining an agent for every combination is impractical.
+Skills let the parent LLM describe _what capabilities are needed_ and the
+DynamicAgentNode handles the assembly. Note that `data_analysis` includes a
+Workflow agent (`AnalyticsWorkflow`) as one of its tools — skill tools are
+[Nodes](nodes/README.md), not just actions.
+
+---
+
 ## Composition Patterns Summary
 
-| Use Case             | Outer        | Inner                    | Determinism                            | Depth |
-| -------------------- | ------------ | ------------------------ | -------------------------------------- | ----- |
-| ETL Pipeline         | Workflow     | Actions                  | Fully deterministic                    | 1     |
-| Research Coordinator | Orchestrator | Actions                  | Fully adaptive                         | 1     |
-| Project Manager      | Orchestrator | Workflows + Actions      | Adaptive over deterministic            | 2     |
-| Content Publisher    | Workflow     | Orchestrator + Actions   | Deterministic with adaptive step       | 2     |
-| Customer Support     | Orchestrator | Workflows → Orchestrator | Mixed, 3 levels                        | 3     |
-| Due Diligence        | Workflow     | FanOutNode (parallel)    | Deterministic with parallel delegation | 2     |
-| Product Development  | Orchestrator | Orchestrators            | Fully adaptive, multi-agent            | 2     |
+| Use Case             | Outer        | Inner                     | Determinism                            | Depth |
+| -------------------- | ------------ | ------------------------- | -------------------------------------- | ----- |
+| ETL Pipeline         | Workflow     | Actions                   | Fully deterministic                    | 1     |
+| Research Coordinator | Orchestrator | Actions                   | Fully adaptive                         | 1     |
+| Project Manager      | Orchestrator | Workflows + Actions       | Adaptive over deterministic            | 2     |
+| Content Publisher    | Workflow     | Orchestrator + Actions    | Deterministic with adaptive step       | 2     |
+| Customer Support     | Orchestrator | Workflows → Orchestrator  | Mixed, 3 levels                        | 3     |
+| Due Diligence        | Workflow     | FanOutNode (parallel)     | Deterministic with parallel delegation | 2     |
+| Product Development  | Orchestrator | Orchestrators             | Fully adaptive, multi-agent            | 2     |
+| Dynamic Assembly     | Orchestrator | DynamicAgentNode + Skills | Adaptive with runtime-assembled agents | 2+    |
 
 The common thread: the same [Node interface](nodes/README.md) and
 [context flow model](nodes/context-flow.md) work at every level, regardless

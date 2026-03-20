@@ -55,6 +55,11 @@ shared by all participants.
     recursive composition, FanOut branches, concurrent work, and cascading
     cancellation
 
+## Dynamic Composition
+
+- [Skills](skills/README.md) — Reusable capability bundles (prompt + tools)
+  for runtime agent assembly via DynamicAgentNode
+
 ## Observability
 
 - [Observability](observability.md) — OpenTelemetry span hierarchy, Obs structs,

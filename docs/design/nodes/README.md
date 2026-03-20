@@ -74,6 +74,8 @@ types for compile-time compatibility checking. See
 - `AgentNode`: wraps a `Jido.Agent` with sync/async/streaming execution modes.
 - `HumanNode`: emits `:suspend` for human approval/decision.
 - `FanOutNode`: runs named branches concurrently and merges results.
+- `DynamicAgentNode`: assembles and executes a temporary Orchestrator from
+  selected [Skills](../skills/README.md) at runtime.
 
 ### ActionNode
 
