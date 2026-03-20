@@ -3,8 +3,10 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
 
   alias Jido.Composer.Orchestrator.AgentTool
   alias Jido.Composer.Node.ActionNode
+  alias Jido.Composer.Node.DynamicAgentNode
   alias Jido.Composer.NodeIO
   alias Jido.Composer.TestActions.{AddAction, EchoAction}
+  alias Jido.Composer.TestSkills
 
   describe "to_tool/1 with ActionNode" do
     test "returns ReqLLM.Tool struct with name, description, and parameter_schema" do
@@ -167,6 +169,38 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
       assert is_binary(result.result.error)
       assert result.result.error =~ "500"
       assert result.result.error =~ "internal"
+    end
+  end
+
+  describe "to_tool/1 with DynamicAgentNode" do
+    test "returns ReqLLM.Tool struct with name and description" do
+      node = %DynamicAgentNode{
+        name: "delegate_task",
+        description: "Delegates tasks to assembled sub-agents",
+        skill_registry: [TestSkills.math_skill()]
+      }
+
+      tool = AgentTool.to_tool(node)
+
+      assert %ReqLLM.Tool{} = tool
+      assert tool.name == "delegate_task"
+      assert tool.description == "Delegates tasks to assembled sub-agents"
+    end
+
+    test "parameter_schema includes task and skills properties" do
+      node = %DynamicAgentNode{
+        name: "delegate",
+        description: "Delegate",
+        skill_registry: []
+      }
+
+      tool = AgentTool.to_tool(node)
+
+      assert tool.parameter_schema["type"] == "object"
+      assert tool.parameter_schema["properties"]["task"]["type"] == "string"
+      assert tool.parameter_schema["properties"]["skills"]["type"] == "array"
+      assert "task" in tool.parameter_schema["required"]
+      assert "skills" in tool.parameter_schema["required"]
     end
   end
 end

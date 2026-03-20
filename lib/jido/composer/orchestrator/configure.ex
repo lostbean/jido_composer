@@ -110,6 +110,7 @@ defmodule Jido.Composer.Orchestrator.Configure do
     |> Enum.map(fn
       %ActionNode{action_module: mod} -> mod
       %AgentNode{agent_module: mod} -> mod
+      node -> node
     end)
   end
 
@@ -163,6 +164,15 @@ defmodule Jido.Composer.Orchestrator.Configure do
           {:ok, node} = ActionNode.new(mod)
           {ActionNode.name(node), node}
         end
+
+      %ActionNode{} = node ->
+        {ActionNode.name(node), node}
+
+      %AgentNode{} = node ->
+        {AgentNode.name(node), node}
+
+      %node_mod{} = node ->
+        {node_mod.name(node), node}
     end)
   end
 

@@ -20,8 +20,19 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
   Node structs delegate to their `to_tool_spec/1` callback. Raw action modules
   are handled directly for the termination tool use case.
   """
-  @spec to_tool(ActionNode.t() | AgentNode.t() | module()) :: ReqLLM.Tool.t()
+  @spec to_tool(ActionNode.t() | AgentNode.t() | struct() | module()) :: ReqLLM.Tool.t()
   def to_tool(%mod{} = node) when mod in [ActionNode, AgentNode] do
+    spec = mod.to_tool_spec(node)
+
+    ReqLLM.Tool.new!(
+      name: spec.name,
+      description: spec.description,
+      parameter_schema: spec.parameter_schema,
+      callback: fn _args -> {:ok, :noop} end
+    )
+  end
+
+  def to_tool(%mod{} = node) when is_atom(mod) do
     spec = mod.to_tool_spec(node)
 
     ReqLLM.Tool.new!(

@@ -1395,6 +1395,9 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
       %AgentNode{} = node ->
         {AgentNode.name(node), node}
+
+      %mod{} = node ->
+        {mod.name(node), node}
     end)
   end
 
