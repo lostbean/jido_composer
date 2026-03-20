@@ -109,6 +109,82 @@ defmodule Jido.Composer.TestSupport.LLMStub do
     {Req.Test, stub_name}
   end
 
+  @doc """
+  Like `setup_req_stub/2`, but also captures each request body for later inspection.
+
+  Use `get_captured_requests/1` to retrieve the list of decoded request bodies.
+  """
+  def setup_req_stub_with_capture(stub_name, responses) when is_atom(stub_name) do
+    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
+    agent_name = Module.concat(LLMStubAgent, stub_name)
+    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
+    capture_name = Module.concat(LLMStubCapture, stub_name)
+
+    case Agent.start_link(fn -> responses end, name: agent_name) do
+      {:ok, _pid} -> :ok
+      {:error, {:already_started, pid}} -> Agent.update(pid, fn _ -> responses end)
+    end
+
+    case Agent.start_link(fn -> [] end, name: capture_name) do
+      {:ok, _pid} -> :ok
+      {:error, {:already_started, pid}} -> Agent.update(pid, fn _ -> [] end)
+    end
+
+    Req.Test.stub(stub_name, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      decoded = Jason.decode!(body)
+      Agent.update(capture_name, fn reqs -> reqs ++ [decoded] end)
+
+      response =
+        Agent.get_and_update(agent_name, fn
+          [] -> {:empty, []}
+          [resp | rest] -> {resp, rest}
+        end)
+
+      case response do
+        :empty ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.send_resp(
+            500,
+            Jason.encode!(%{
+              "type" => "error",
+              "error" => %{"type" => "no_stub_responses", "message" => "Queue exhausted"}
+            })
+          )
+
+        {:final_answer, text} ->
+          Req.Test.json(conn, anthropic_text_response(text))
+
+        {:tool_calls, calls} ->
+          Req.Test.json(conn, anthropic_tool_calls_response(calls))
+
+        {:error, _reason} ->
+          conn
+          |> Plug.Conn.put_resp_content_type("application/json")
+          |> Plug.Conn.send_resp(
+            500,
+            Jason.encode!(%{
+              "type" => "error",
+              "error" => %{
+                "type" => "server_error",
+                "message" => "Stubbed error response"
+              }
+            })
+          )
+      end
+    end)
+
+    {Req.Test, stub_name}
+  end
+
+  @doc "Returns the list of captured request bodies from `setup_req_stub_with_capture/2`."
+  def get_captured_requests(stub_name) when is_atom(stub_name) do
+    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
+    capture_name = Module.concat(LLMStubCapture, stub_name)
+    Agent.get(capture_name, & &1)
+  end
+
   @doc "Returns Anthropic-format JSON for a text response."
   def anthropic_text_response(text) do
     %{
