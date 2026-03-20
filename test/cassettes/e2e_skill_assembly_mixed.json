@@ -1,7 +1,7 @@
 {
   "interactions": [
     {
-      "recorded_at": "2026-03-20T13:01:34.103957Z",
+      "recorded_at": "2026-03-20T14:23:42.013712Z",
       "request": {
         "body_json": {
           "max_tokens": 64000,
@@ -68,14 +68,14 @@
         "body_json": {
           "content": [
             {
-              "text": "I'll delegate the addition task to a sub-agent equipped with the math skill.",
+              "text": "I'll delegate the addition task to a sub-agent with the math skill.",
               "type": "text"
             },
             {
               "caller": {
                 "type": "direct"
               },
-              "id": "toolu_01UiJwzd9PBuf9Ubp8AwW76E",
+              "id": "toolu_017myH695ZRedMQwM37TJfzo",
               "input": {
                 "skills": ["math"],
                 "task": "Add 10 and 20"
@@ -84,7 +84,7 @@
               "type": "tool_use"
             }
           ],
-          "id": "msg_01HFvJLCD8Ttc7ofdEPhZm2o",
+          "id": "msg_01M7sf6E63Sh88wWsD4dNfzu",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "tool_use",
@@ -99,7 +99,7 @@
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
             "input_tokens": 628,
-            "output_tokens": 96,
+            "output_tokens": 95,
             "service_tier": "standard"
           }
         },
@@ -108,40 +108,535 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T13:01:33Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:23:41Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T13:01:34Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:23:41Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-20T13:01:28Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:40Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-20T13:01:33Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:23:41Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9df4e7d72fc282e3-GIG"],
+          "cf-ray": ["9df560438e9582fa-GIG"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Fri, 20 Mar 2026 13:01:34 GMT"],
-          "request-id": ["req_011CZENjrqMqvBHRsUVmitJH"],
+          "date": ["Fri, 20 Mar 2026 14:23:42 GMT"],
+          "request-id": ["req_011CZEV1TMP1MzyDrBgb3Pt6"],
           "server": ["cloudflare"],
-          "server-timing": ["x-originResponse;dur=6431"],
+          "server-timing": ["x-originResponse;dur=1790"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["6431"],
+          "x-envoy-upstream-service-time": ["1790"],
           "x-robots-tag": ["none"]
         },
         "status": 200
       }
     },
     {
-      "recorded_at": "2026-03-20T13:01:38.734150Z",
+      "recorded_at": "2026-03-20T14:23:48.961765Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 64000,
+          "messages": [
+            {
+              "content": "Add 10 and 20",
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "stream": false,
+          "system": "You are a specialist sub-agent. Complete the task using your tools.\n\n## Capabilities\n\nYou can perform math operations using the add and multiply tools.",
+          "tools": [
+            {
+              "description": "Adds an amount to a value",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The amount to add",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "add"
+            },
+            {
+              "description": "Multiplies a value by an amount",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The multiplier",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "multiply"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "I'll add 10 and 20 for you.",
+              "type": "text"
+            },
+            {
+              "caller": {
+                "type": "direct"
+              },
+              "id": "toolu_01WfWaQoroVf7WiQA5quUVVU",
+              "input": {
+                "amount": 20,
+                "value": 10
+              },
+              "name": "add",
+              "type": "tool_use"
+            }
+          ],
+          "id": "msg_016WpenBzsuzCxBZLWtgrofW",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 526,
+            "output_tokens": 82,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:23:47Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:23:48Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:42Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:23:47Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9df5604fcbfe82fa-GIG"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Fri, 20 Mar 2026 14:23:48 GMT"],
+          "request-id": ["req_011CZEV1cejAAZ7iJZR9yoJg"],
+          "server": ["cloudflare"],
+          "server-timing": ["x-originResponse;dur=6466"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["6464"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    },
+    {
+      "recorded_at": "2026-03-20T14:23:50.958810Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 64000,
+          "messages": [
+            {
+              "content": "Add 10 and 20",
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "I'll add 10 and 20 for you.",
+                  "type": "text"
+                },
+                {
+                  "id": "toolu_01WfWaQoroVf7WiQA5quUVVU",
+                  "input": {
+                    "amount": 20,
+                    "value": 10
+                  },
+                  "name": "add",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"error\":\"%{error: %Jido.Action.Error.InvalidInputError{message: \\\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 10\\\", field: nil, value: nil, details: %{}}}\"}",
+                  "tool_use_id": "toolu_01WfWaQoroVf7WiQA5quUVVU",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "stream": false,
+          "system": "You are a specialist sub-agent. Complete the task using your tools.\n\n## Capabilities\n\nYou can perform math operations using the add and multiply tools.",
+          "tools": [
+            {
+              "description": "Adds an amount to a value",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The amount to add",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "add"
+            },
+            {
+              "description": "Multiplies a value by an amount",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The multiplier",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "multiply"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "Let me try again with the correct number format:",
+              "type": "text"
+            },
+            {
+              "caller": {
+                "type": "direct"
+              },
+              "id": "toolu_01EUcVxC1CunxE3iMozfEErj",
+              "input": {
+                "amount": 20.0,
+                "value": 10.0
+              },
+              "name": "add",
+              "type": "tool_use"
+            }
+          ],
+          "id": "msg_01GXQvJiaF8arcYwsUeivtfr",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 696,
+            "output_tokens": 83,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:23:50Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:23:50Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:49Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:23:50Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9df5607b391f82fa-GIG"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Fri, 20 Mar 2026 14:23:50 GMT"],
+          "request-id": ["req_011CZEV27Rqt8KeKoREHuPwh"],
+          "server": ["cloudflare"],
+          "server-timing": ["x-originResponse;dur=1812"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["1812"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    },
+    {
+      "recorded_at": "2026-03-20T14:24:02.343080Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 64000,
+          "messages": [
+            {
+              "content": "Add 10 and 20",
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "I'll add 10 and 20 for you.",
+                  "type": "text"
+                },
+                {
+                  "id": "toolu_01WfWaQoroVf7WiQA5quUVVU",
+                  "input": {
+                    "amount": 20,
+                    "value": 10
+                  },
+                  "name": "add",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"error\":\"%{error: %Jido.Action.Error.InvalidInputError{message: \\\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 10\\\", field: nil, value: nil, details: %{}}}\"}",
+                  "tool_use_id": "toolu_01WfWaQoroVf7WiQA5quUVVU",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "Let me try again with the correct number format:",
+                  "type": "text"
+                },
+                {
+                  "id": "toolu_01EUcVxC1CunxE3iMozfEErj",
+                  "input": {
+                    "amount": 20.0,
+                    "value": 10.0
+                  },
+                  "name": "add",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"result\":30.0}",
+                  "tool_use_id": "toolu_01EUcVxC1CunxE3iMozfEErj",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "stream": false,
+          "system": "You are a specialist sub-agent. Complete the task using your tools.\n\n## Capabilities\n\nYou can perform math operations using the add and multiply tools.",
+          "tools": [
+            {
+              "description": "Adds an amount to a value",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The amount to add",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "add"
+            },
+            {
+              "description": "Multiplies a value by an amount",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The multiplier",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "multiply"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "The result of adding 10 and 20 is 30.",
+              "type": "text"
+            }
+          ],
+          "id": "msg_01YFKNEUXhFHccsztdLgMvLN",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 797,
+            "output_tokens": 18,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:24:01Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:24:02Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:51Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:24:01Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9df560879db282fa-GIG"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Fri, 20 Mar 2026 14:24:02 GMT"],
+          "request-id": ["req_011CZEV2Fy3o6aeg2ZfKFZ4z"],
+          "server": ["cloudflare"],
+          "server-timing": ["x-originResponse;dur=11222"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["11222"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    },
+    {
+      "recorded_at": "2026-03-20T14:24:04.037416Z",
       "request": {
         "body_json": {
           "max_tokens": 64000,
@@ -153,11 +648,11 @@
             {
               "content": [
                 {
-                  "text": "I'll delegate the addition task to a sub-agent equipped with the math skill.",
+                  "text": "I'll delegate the addition task to a sub-agent with the math skill.",
                   "type": "text"
                 },
                 {
-                  "id": "toolu_01UiJwzd9PBuf9Ubp8AwW76E",
+                  "id": "toolu_017myH695ZRedMQwM37TJfzo",
                   "input": {
                     "skills": ["math"],
                     "task": "Add 10 and 20"
@@ -171,8 +666,8 @@
             {
               "content": [
                 {
-                  "content": "{\"error\":\"%{error: %Jido.Action.Error.ExecutionFailureError{message: \\\"DynamicAgentNode reference not found in process dictionary\\\", details: %{}}}\"}",
-                  "tool_use_id": "toolu_01UiJwzd9PBuf9Ubp8AwW76E",
+                  "content": "{\"result\":\"The result of adding 10 and 20 is 30.\"}",
+                  "tool_use_id": "toolu_017myH695ZRedMQwM37TJfzo",
                   "type": "tool_result"
                 }
               ],
@@ -236,11 +731,11 @@
         "body_json": {
           "content": [
             {
-              "text": "It appears there was a system error with the delegate_task function. The error indicates that the dynamic agent system is not properly initialized. This seems to be a technical issue with the delegation infrastructure rather than with the task request itself.\n\nThe task was properly formatted - I requested a sub-agent with the \"math\" skill to \"Add 10 and 20\", which should have resulted in the answer 30. However, the underlying system that creates and manages the sub-agents appears to be unavailable at the moment.",
+              "text": "The sub-agent with the math skill has completed the task and calculated that 10 + 20 = 30.",
               "type": "text"
             }
           ],
-          "id": "msg_01Kdfvh8vshhLmsDehZk8w2L",
+          "id": "msg_011gMDyQYN8Y5gKLHEfemTmn",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "end_turn",
@@ -254,8 +749,8 @@
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
-            "input_tokens": 781,
-            "output_tokens": 110,
+            "input_tokens": 753,
+            "output_tokens": 29,
             "service_tier": "standard"
           }
         },
@@ -264,33 +759,33 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T13:01:35Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:24:03Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T13:01:38Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:24:03Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-20T13:01:34Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:24:02Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-20T13:01:35Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:24:03Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9df4e801dfdd82e3-GIG"],
+          "cf-ray": ["9df560ceca2782fa-GIG"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Fri, 20 Mar 2026 13:01:38 GMT"],
-          "request-id": ["req_011CZENkMw5RGFe3UZovFXpM"],
+          "date": ["Fri, 20 Mar 2026 14:24:04 GMT"],
+          "request-id": ["req_011CZEV36cFyRTG8iFprqta1"],
           "server": ["cloudflare"],
-          "server-timing": ["x-originResponse;dur=4228"],
+          "server-timing": ["x-originResponse;dur=1539"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["4227"],
+          "x-envoy-upstream-service-time": ["1539"],
           "x-robots-tag": ["none"]
         },
         "status": 200

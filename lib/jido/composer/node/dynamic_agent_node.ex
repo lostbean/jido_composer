@@ -93,13 +93,9 @@ defmodule Jido.Composer.Node.DynamicAgentNode do
     # Merge tool_args into context for skill/task extraction
     context = Map.merge(flat_context, tool_args)
 
-    # Stash the node struct under a process-scoped key so ExecuteAction can retrieve it
-    ref = make_ref()
-    Process.put({__MODULE__, ref}, {node, context})
-
     instruction = %Jido.Instruction{
       action: Jido.Composer.Node.DynamicAgentNode.ExecuteAction,
-      params: %{node_ref: ref}
+      params: %{__node__: node, __context__: context}
     }
 
     directive = %Jido.Agent.Directive.RunInstruction{

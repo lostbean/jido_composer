@@ -31,6 +31,30 @@ defmodule Jido.Composer.CassetteHelper do
     ]
   end
 
+  @doc """
+  Returns cassette opts with a shared session for cross-process scenarios.
+
+  Use this when the code under test spawns child processes (e.g. via
+  `Jido.Exec.run`) that also make HTTP requests through the cassette plug.
+  The shared session ensures sequential matching works across processes.
+
+  The caller must stop the session after the test (see example).
+
+  ## Example
+
+      session = ReqCassette.Session.start_shared_session()
+      try do
+        with_cassette("name", CassetteHelper.shared_cassette_opts(session), fn plug ->
+          # test code ...
+        end)
+      after
+        ReqCassette.Session.end_shared_session(session)
+      end
+  """
+  def shared_cassette_opts(session) do
+    Keyword.put(default_cassette_opts(), :session, session)
+  end
+
   def filter_sensitive(body) when is_binary(body) do
     Enum.reduce(@sensitive_patterns, body, fn {pattern, replacement}, acc ->
       Regex.replace(pattern, acc, replacement)

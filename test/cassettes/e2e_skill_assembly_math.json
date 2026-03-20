@@ -1,7 +1,7 @@
 {
   "interactions": [
     {
-      "recorded_at": "2026-03-20T13:01:23.483360Z",
+      "recorded_at": "2026-03-20T14:23:25.498195Z",
       "request": {
         "body_json": {
           "max_tokens": 64000,
@@ -68,14 +68,14 @@
         "body_json": {
           "content": [
             {
-              "text": "I'll delegate this math calculation to a sub-agent with the math skill.",
+              "text": "I'll use the delegate_task tool with the math skill to compute 5 + 3 for you.",
               "type": "text"
             },
             {
               "caller": {
                 "type": "direct"
               },
-              "id": "toolu_0162QaD1JhR1BJovTtzGSQ3N",
+              "id": "toolu_01D93Fg9zfGyruxjUUoxMgxt",
               "input": {
                 "skills": ["math"],
                 "task": "Calculate 5 + 3"
@@ -84,7 +84,7 @@
               "type": "tool_use"
             }
           ],
-          "id": "msg_01QL1ofqMdr1B8nG8ypotDve",
+          "id": "msg_0197FrLP2HWGMM5C6wyHhWe5",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "tool_use",
@@ -99,7 +99,7 @@
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
             "input_tokens": 629,
-            "output_tokens": 95,
+            "output_tokens": 103,
             "service_tier": "standard"
           }
         },
@@ -108,40 +108,535 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T13:01:22Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:23:24Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T13:01:23Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:23:25Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-20T13:01:21Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:23Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-20T13:01:22Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:23:24Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9df4e7afcd0f82e3-GIG"],
+          "cf-ray": ["9df55fdc8ba582fa-GIG"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Fri, 20 Mar 2026 13:01:23 GMT"],
-          "request-id": ["req_011CZENjPiCz22d1dcKKvY5y"],
+          "date": ["Fri, 20 Mar 2026 14:23:25 GMT"],
+          "request-id": ["req_011CZEUzEtFfmPmPVrfwzPxF"],
           "server": ["cloudflare"],
-          "server-timing": ["x-originResponse;dur=2087"],
+          "server-timing": ["x-originResponse;dur=1762"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["2087"],
+          "x-envoy-upstream-service-time": ["1762"],
           "x-robots-tag": ["none"]
         },
         "status": 200
       }
     },
     {
-      "recorded_at": "2026-03-20T13:01:27.522465Z",
+      "recorded_at": "2026-03-20T14:23:28.571466Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 64000,
+          "messages": [
+            {
+              "content": "Calculate 5 + 3",
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "stream": false,
+          "system": "You are a specialist sub-agent. Complete the task using your tools.\n\n## Capabilities\n\nYou can perform math operations using the add and multiply tools.",
+          "tools": [
+            {
+              "description": "Adds an amount to a value",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The amount to add",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "add"
+            },
+            {
+              "description": "Multiplies a value by an amount",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The multiplier",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "multiply"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "I'll calculate 5 + 3 for you using the add function.",
+              "type": "text"
+            },
+            {
+              "caller": {
+                "type": "direct"
+              },
+              "id": "toolu_01Di9mLqnSqnb7USTqjmhjYa",
+              "input": {
+                "amount": 3,
+                "value": 5
+              },
+              "name": "add",
+              "type": "tool_use"
+            }
+          ],
+          "id": "msg_01BJpDKiM7HCzfxz3HTkuQnH",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 526,
+            "output_tokens": 86,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:23:27Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:23:28Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:26Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:23:27Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9df55fe88fb882fa-GIG"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Fri, 20 Mar 2026 14:23:28 GMT"],
+          "request-id": ["req_011CZEUzQ1SJpSTGPv8w4uHn"],
+          "server": ["cloudflare"],
+          "server-timing": ["x-originResponse;dur=2791"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["2791"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    },
+    {
+      "recorded_at": "2026-03-20T14:23:30.825299Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 64000,
+          "messages": [
+            {
+              "content": "Calculate 5 + 3",
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "I'll calculate 5 + 3 for you using the add function.",
+                  "type": "text"
+                },
+                {
+                  "id": "toolu_01Di9mLqnSqnb7USTqjmhjYa",
+                  "input": {
+                    "amount": 3,
+                    "value": 5
+                  },
+                  "name": "add",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"error\":\"%{error: %Jido.Action.Error.InvalidInputError{message: \\\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 5\\\", field: nil, value: nil, details: %{}}}\"}",
+                  "tool_use_id": "toolu_01Di9mLqnSqnb7USTqjmhjYa",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "stream": false,
+          "system": "You are a specialist sub-agent. Complete the task using your tools.\n\n## Capabilities\n\nYou can perform math operations using the add and multiply tools.",
+          "tools": [
+            {
+              "description": "Adds an amount to a value",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The amount to add",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "add"
+            },
+            {
+              "description": "Multiplies a value by an amount",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The multiplier",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "multiply"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "Let me try again with the parameters as proper numbers:",
+              "type": "text"
+            },
+            {
+              "caller": {
+                "type": "direct"
+              },
+              "id": "toolu_01UowkqCvUUYgUUqNpyrVBEc",
+              "input": {
+                "amount": 3.0,
+                "value": 5.0
+              },
+              "name": "add",
+              "type": "tool_use"
+            }
+          ],
+          "id": "msg_013msTzsuGBZ2ARrwQYu1kc9",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 700,
+            "output_tokens": 84,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:23:29Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:23:30Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:28Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:23:29Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9df55ffbab1282fa-GIG"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Fri, 20 Mar 2026 14:23:30 GMT"],
+          "request-id": ["req_011CZEUzcCQoDgxhAC5xwuVC"],
+          "server": ["cloudflare"],
+          "server-timing": ["x-originResponse;dur=2046"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["2045"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    },
+    {
+      "recorded_at": "2026-03-20T14:23:31.950496Z",
+      "request": {
+        "body_json": {
+          "max_tokens": 64000,
+          "messages": [
+            {
+              "content": "Calculate 5 + 3",
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "I'll calculate 5 + 3 for you using the add function.",
+                  "type": "text"
+                },
+                {
+                  "id": "toolu_01Di9mLqnSqnb7USTqjmhjYa",
+                  "input": {
+                    "amount": 3,
+                    "value": 5
+                  },
+                  "name": "add",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"error\":\"%{error: %Jido.Action.Error.InvalidInputError{message: \\\"Invalid parameters for Action (Elixir.Jido.Composer.TestActions.AddAction): invalid value for :value option: expected float, got: 5\\\", field: nil, value: nil, details: %{}}}\"}",
+                  "tool_use_id": "toolu_01Di9mLqnSqnb7USTqjmhjYa",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            },
+            {
+              "content": [
+                {
+                  "text": "Let me try again with the parameters as proper numbers:",
+                  "type": "text"
+                },
+                {
+                  "id": "toolu_01UowkqCvUUYgUUqNpyrVBEc",
+                  "input": {
+                    "amount": 3.0,
+                    "value": 5.0
+                  },
+                  "name": "add",
+                  "type": "tool_use"
+                }
+              ],
+              "role": "assistant"
+            },
+            {
+              "content": [
+                {
+                  "content": "{\"result\":8.0}",
+                  "tool_use_id": "toolu_01UowkqCvUUYgUUqNpyrVBEc",
+                  "type": "tool_result"
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "model": "claude-sonnet-4-20250514",
+          "stream": false,
+          "system": "You are a specialist sub-agent. Complete the task using your tools.\n\n## Capabilities\n\nYou can perform math operations using the add and multiply tools.",
+          "tools": [
+            {
+              "description": "Adds an amount to a value",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The amount to add",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "add"
+            },
+            {
+              "description": "Multiplies a value by an amount",
+              "input_schema": {
+                "properties": {
+                  "amount": {
+                    "description": "The multiplier",
+                    "type": "number"
+                  },
+                  "value": {
+                    "description": "The current value",
+                    "type": "number"
+                  }
+                },
+                "required": ["value", "amount"],
+                "type": "object"
+              },
+              "name": "multiply"
+            }
+          ]
+        },
+        "body_type": "json",
+        "headers": {
+          "accept-encoding": ["gzip"],
+          "anthropic-beta": ["tools-2024-05-16"],
+          "anthropic-version": ["2023-06-01"],
+          "content-type": ["application/json"],
+          "user-agent": ["req/0.5.17"]
+        },
+        "method": "POST",
+        "query_string": "",
+        "uri": "https://api.anthropic.com/v1/messages"
+      },
+      "response": {
+        "body_json": {
+          "content": [
+            {
+              "text": "The result of 5 + 3 is **8**.",
+              "type": "text"
+            }
+          ],
+          "id": "msg_01PhemvEe1MannTZbgbXuGUn",
+          "model": "claude-sonnet-4-20250514",
+          "role": "assistant",
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "not_available",
+            "input_tokens": 802,
+            "output_tokens": 17,
+            "service_tier": "standard"
+          }
+        },
+        "body_type": "json",
+        "headers": {
+          "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
+          "anthropic-ratelimit-input-tokens-limit": ["2000000"],
+          "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:23:31Z"],
+          "anthropic-ratelimit-output-tokens-limit": ["400000"],
+          "anthropic-ratelimit-output-tokens-remaining": ["400000"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:23:31Z"],
+          "anthropic-ratelimit-requests-limit": ["4000"],
+          "anthropic-ratelimit-requests-remaining": ["3999"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:30Z"],
+          "anthropic-ratelimit-tokens-limit": ["2400000"],
+          "anthropic-ratelimit-tokens-remaining": ["2400000"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:23:31Z"],
+          "cf-cache-status": ["DYNAMIC"],
+          "cf-ray": ["9df56009c8fd82fa-GIG"],
+          "connection": ["keep-alive"],
+          "content-security-policy": [
+            "default-src 'none'; frame-ancestors 'none'"
+          ],
+          "content-type": ["application/json"],
+          "date": ["Fri, 20 Mar 2026 14:23:31 GMT"],
+          "request-id": ["req_011CZEUzmprWz654L7FfjKpY"],
+          "server": ["cloudflare"],
+          "server-timing": ["x-originResponse;dur=922"],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "transfer-encoding": ["chunked"],
+          "vary": ["Accept-Encoding"],
+          "x-envoy-upstream-service-time": ["922"],
+          "x-robots-tag": ["none"]
+        },
+        "status": 200
+      }
+    },
+    {
+      "recorded_at": "2026-03-20T14:23:33.639544Z",
       "request": {
         "body_json": {
           "max_tokens": 64000,
@@ -153,11 +648,11 @@
             {
               "content": [
                 {
-                  "text": "I'll delegate this math calculation to a sub-agent with the math skill.",
+                  "text": "I'll use the delegate_task tool with the math skill to compute 5 + 3 for you.",
                   "type": "text"
                 },
                 {
-                  "id": "toolu_0162QaD1JhR1BJovTtzGSQ3N",
+                  "id": "toolu_01D93Fg9zfGyruxjUUoxMgxt",
                   "input": {
                     "skills": ["math"],
                     "task": "Calculate 5 + 3"
@@ -171,8 +666,8 @@
             {
               "content": [
                 {
-                  "content": "{\"error\":\"%{error: %Jido.Action.Error.ExecutionFailureError{message: \\\"DynamicAgentNode reference not found in process dictionary\\\", details: %{}}}\"}",
-                  "tool_use_id": "toolu_0162QaD1JhR1BJovTtzGSQ3N",
+                  "content": "{\"result\":\"The result of 5 + 3 is **8**.\"}",
+                  "tool_use_id": "toolu_01D93Fg9zfGyruxjUUoxMgxt",
                   "type": "tool_result"
                 }
               ],
@@ -236,11 +731,11 @@
         "body_json": {
           "content": [
             {
-              "text": "It appears there was an error with the delegate_task tool. The system couldn't find the reference to create the sub-agent. This seems to be a technical issue with the delegation system rather than a problem with our request format.\n\nThe calculation you asked for is 5 + 3 = 8, but I was supposed to delegate this task to a sub-agent with math skills as you requested. Unfortunately, the delegation system encountered an error and couldn't complete the task.",
+              "text": "The sub-agent with math skills has calculated that 5 + 3 equals **8**.",
               "type": "text"
             }
           ],
-          "id": "msg_01MoGNqzw1B3nVqHywR8wEE3",
+          "id": "msg_01Bs1KsyNXtkG95cFTdaisqp",
           "model": "claude-sonnet-4-20250514",
           "role": "assistant",
           "stop_reason": "end_turn",
@@ -254,8 +749,8 @@
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": 0,
             "inference_geo": "not_available",
-            "input_tokens": 781,
-            "output_tokens": 103,
+            "input_tokens": 762,
+            "output_tokens": 24,
             "service_tier": "standard"
           }
         },
@@ -264,33 +759,33 @@
           "anthropic-organization-id": ["a8b30265-cdb3-4bc6-8798-158fb659a7f5"],
           "anthropic-ratelimit-input-tokens-limit": ["2000000"],
           "anthropic-ratelimit-input-tokens-remaining": ["2000000"],
-          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T13:01:24Z"],
+          "anthropic-ratelimit-input-tokens-reset": ["2026-03-20T14:23:33Z"],
           "anthropic-ratelimit-output-tokens-limit": ["400000"],
           "anthropic-ratelimit-output-tokens-remaining": ["400000"],
-          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T13:01:27Z"],
+          "anthropic-ratelimit-output-tokens-reset": ["2026-03-20T14:23:33Z"],
           "anthropic-ratelimit-requests-limit": ["4000"],
           "anthropic-ratelimit-requests-remaining": ["3999"],
-          "anthropic-ratelimit-requests-reset": ["2026-03-20T13:01:23Z"],
+          "anthropic-ratelimit-requests-reset": ["2026-03-20T14:23:32Z"],
           "anthropic-ratelimit-tokens-limit": ["2400000"],
           "anthropic-ratelimit-tokens-remaining": ["2400000"],
-          "anthropic-ratelimit-tokens-reset": ["2026-03-20T13:01:24Z"],
+          "anthropic-ratelimit-tokens-reset": ["2026-03-20T14:23:33Z"],
           "cf-cache-status": ["DYNAMIC"],
-          "cf-ray": ["9df4e7bf9f3382e3-GIG"],
+          "cf-ray": ["9df56010c85e82fa-GIG"],
           "connection": ["keep-alive"],
           "content-security-policy": [
             "default-src 'none'; frame-ancestors 'none'"
           ],
           "content-type": ["application/json"],
-          "date": ["Fri, 20 Mar 2026 13:01:27 GMT"],
-          "request-id": ["req_011CZENjaX6G6jn9CzE9XEjg"],
+          "date": ["Fri, 20 Mar 2026 14:23:33 GMT"],
+          "request-id": ["req_011CZEUzrda8CL5oW27kmpGP"],
           "server": ["cloudflare"],
-          "server-timing": ["x-originResponse;dur=3613"],
+          "server-timing": ["x-originResponse;dur=1544"],
           "strict-transport-security": [
             "max-age=31536000; includeSubDomains; preload"
           ],
           "transfer-encoding": ["chunked"],
           "vary": ["Accept-Encoding"],
-          "x-envoy-upstream-service-time": ["3613"],
+          "x-envoy-upstream-service-time": ["1544"],
           "x-robots-tag": ["none"]
         },
         "status": 200
