@@ -28,7 +28,7 @@ Mix.install(
     ],
     opentelemetry_exporter: [
       otlp_protocol: :http_protobuf,
-      otlp_endpoint: "http://localhost:6060"
+      otlp_endpoint: "http://localhost:6006"
     ]
   ]
 )

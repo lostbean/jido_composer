@@ -121,4 +121,4 @@ When a flow is checkpointed, the `Obs` struct is reset to `Obs.new()`. Spans are
 
 ## Interactive Demo
 
-See `livebooks/06_observability.livemd` for a runnable example that traces orchestrator and workflow execution with visualization via AgentObs Phoenix at `localhost:6060`.
+See `livebooks/06_observability.livemd` for a runnable example that traces orchestrator and workflow execution with visualization via AgentObs Phoenix at `localhost:6006`.
