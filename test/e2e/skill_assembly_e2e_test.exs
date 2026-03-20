@@ -214,24 +214,47 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
 
   describe "skill assembly: action-only skills (cassette)" do
     test "parent orchestrator delegates to DynamicAgentNode, sub-agent uses math tools" do
-      with_cassette(
-        "e2e_skill_assembly_math",
-        CassetteHelper.default_cassette_opts(),
-        fn plug ->
-          dynamic_node = build_dynamic_node([math_skill(), echo_skill()], plug)
-          agent = init_skill_orchestrator(plug, dynamic_node)
+      session = ReqCassette.Session.start_shared_session()
 
-          agent =
-            execute_loop(
-              agent,
-              "What is 5 + 3? Use the delegate_task tool with the math skill to compute this."
-            )
+      try do
+        with_cassette(
+          "e2e_skill_assembly_math",
+          CassetteHelper.shared_cassette_opts(session),
+          fn plug ->
+            dynamic_node = build_dynamic_node([math_skill(), echo_skill()], plug)
+            agent = init_skill_orchestrator(plug, dynamic_node)
 
-          strat = StratState.get(agent)
-          assert strat.status == :completed
-          assert strat.result != nil
-        end
-      )
+            agent =
+              execute_loop(
+                agent,
+                "What is 5 + 3? Use the delegate_task tool with the math skill to compute this."
+              )
+
+            strat = StratState.get(agent)
+            assert strat.status == :completed
+
+            # The result must contain the correct answer
+            result_text = inspect(strat.result)
+            assert result_text =~ "8", "Expected result to contain '8', got: #{result_text}"
+
+            # delegate_task tool was called and its result was scoped in context
+            assert Map.has_key?(strat.context.working, :delegate_task),
+                   "Expected :delegate_task key in context.working — tool was never called successfully"
+
+            # The delegate_task result should not contain error
+            delegate_result = inspect(strat.context.working[:delegate_task])
+
+            refute delegate_result =~ "error",
+                   "delegate_task returned an error: #{delegate_result}"
+
+            # At least 2 iterations: one for tool call, one for final answer
+            assert strat.iteration >= 2,
+                   "Expected >= 2 iterations (tool call + answer), got #{strat.iteration}"
+          end
+        )
+      after
+        ReqCassette.Session.end_shared_session(session)
+      end
     end
   end
 
@@ -241,26 +264,49 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
 
   describe "skill assembly: mixed action + workflow-agent skills (cassette)" do
     test "sub-agent assembles with both action and workflow-agent tools" do
-      with_cassette(
-        "e2e_skill_assembly_mixed",
-        CassetteHelper.default_cassette_opts(),
-        fn plug ->
-          dynamic_node =
-            build_dynamic_node([math_skill(), pipeline_skill()], plug)
+      session = ReqCassette.Session.start_shared_session()
 
-          agent = init_skill_orchestrator(plug, dynamic_node)
+      try do
+        with_cassette(
+          "e2e_skill_assembly_mixed",
+          CassetteHelper.shared_cassette_opts(session),
+          fn plug ->
+            dynamic_node =
+              build_dynamic_node([math_skill(), pipeline_skill()], plug)
 
-          agent =
-            execute_loop(
-              agent,
-              "Use the delegate_task tool with the math skill. Ask it to add 10 and 20."
-            )
+            agent = init_skill_orchestrator(plug, dynamic_node)
 
-          strat = StratState.get(agent)
-          assert strat.status == :completed
-          assert strat.result != nil
-        end
-      )
+            agent =
+              execute_loop(
+                agent,
+                "Use the delegate_task tool with the math skill. Ask it to add 10 and 20."
+              )
+
+            strat = StratState.get(agent)
+            assert strat.status == :completed
+
+            # The result must contain the correct answer
+            result_text = inspect(strat.result)
+            assert result_text =~ "30", "Expected result to contain '30', got: #{result_text}"
+
+            # delegate_task tool was called and its result was scoped in context
+            assert Map.has_key?(strat.context.working, :delegate_task),
+                   "Expected :delegate_task key in context.working — tool was never called successfully"
+
+            # The delegate_task result should not contain error
+            delegate_result = inspect(strat.context.working[:delegate_task])
+
+            refute delegate_result =~ "error",
+                   "delegate_task returned an error: #{delegate_result}"
+
+            # At least 2 iterations: one for tool call, one for final answer
+            assert strat.iteration >= 2,
+                   "Expected >= 2 iterations (tool call + answer), got #{strat.iteration}"
+          end
+        )
+      after
+        ReqCassette.Session.end_shared_session(session)
+      end
     end
   end
 end
