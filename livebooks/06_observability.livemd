@@ -43,8 +43,8 @@ OpenTelemetry spans with OpenInference semantic conventions, viewable in
 
 **Prerequisites:**
 
-- Arize Phoenix running at `http://localhost:6060`
-  (e.g., `docker run -p 6006:6006 -p 6060:6060 arizephoenix/phoenix:latest`)
+- Arize Phoenix running at `http://localhost:6006`
+  (e.g., `docker run -p 6006:6006 -p 4317:4317 arizephoenix/phoenix:latest`)
 - `ANTHROPIC_API_KEY` set for LLM demos
 
 **What you'll see in Phoenix:**
@@ -78,14 +78,14 @@ Application.stop(:opentelemetry_exporter)
 Application.put_env(:opentelemetry, :resource, %{service: %{name: "jido_composer_demo"}})
 Application.put_env(:opentelemetry, :span_processor, :simple)
 Application.put_env(:opentelemetry_exporter, :otlp_protocol, :http_protobuf)
-Application.put_env(:opentelemetry_exporter, :otlp_endpoint, "http://localhost:6060")
+Application.put_env(:opentelemetry_exporter, :otlp_endpoint, "http://localhost:6006")
 
 # Restart OTel with new config (order matters: exporter before SDK)
 {:ok, _} = Application.ensure_all_started(:opentelemetry_exporter)
 {:ok, _} = Application.ensure_all_started(:opentelemetry)
 {:ok, _} = Application.ensure_all_started(:agent_obs)
 
-IO.puts("Setup complete. Traces will export to http://localhost:6060")
+IO.puts("Setup complete. Traces will export to http://localhost:6006")
 ```
 
 ## Define Actions
@@ -310,7 +310,7 @@ IO.puts("Traces flushed to Phoenix.")
 IO.puts("""
 === Verification Checklist ===
 
-Open Phoenix UI at: http://localhost:6060/projects/
+Open Phoenix UI at: http://localhost:6006/projects/
 
 Check the following:
   [ ] Traces appear in the project list
@@ -323,8 +323,8 @@ Check the following:
   [ ] Tool names appear on TOOL spans
 
 If traces don't appear:
-  1. Verify Phoenix is running: curl http://localhost:6060/
-  2. Check OTLP endpoint is reachable on port 6060
+  1. Verify Phoenix is running: curl http://localhost:6006/
+  2. Check OTLP endpoint is reachable on port 6006
   3. The simple span processor exports immediately (no batching delay)
 """)
 ```
