@@ -1,0 +1,495 @@
+# Dynamic Skill Nodes
+
+```elixir
+Mix.install(
+  [
+    {:jido_composer, "~> 0.1"},
+    {:agent_obs, "~> 0.1.4"},
+    {:opentelemetry, "~> 1.3"},
+    {:opentelemetry_api, "~> 1.2"},
+    {:opentelemetry_exporter, "~> 1.6"},
+    {:kino, "~> 0.14"}
+  ],
+  config: [
+    jido: [
+      observability: [
+        tracer: AgentObs.JidoTracer
+      ]
+    ],
+    jido_action: [default_timeout: :timer.minutes(5)],
+    agent_obs: [
+      enabled: true,
+      handlers: [AgentObs.Handlers.Phoenix],
+      event_prefix: [:agent_obs]
+    ],
+    opentelemetry: [
+      span_processor: :simple,
+      resource: [service: [name: "jido_dynamic_skills_demo"]]
+    ],
+    opentelemetry_exporter: [
+      otlp_protocol: :http_protobuf,
+      otlp_endpoint: "http://localhost:6006"
+    ]
+  ]
+)
+```
+
+## Introduction
+
+**Skills** are pure-data capability bundles: a name, description, prompt fragment, and
+list of tool modules. They let you package reusable functionality that can be composed
+at runtime without defining new modules.
+
+**DynamicAgentNode** wraps skill assembly behind the Node interface. When used as a tool
+in a parent Orchestrator, the LLM selects skills by name and provides a task. The node
+looks up the skills, assembles a sub-agent on the fly, runs it, and returns the result.
+
+**When to use runtime assembly vs static DSL nodes:**
+
+- Static DSL (`nodes: [ActionA, ActionB]`) — you know the tools at compile time
+- Skills + `Skill.assemble/2` — you want to compose tools dynamically without a parent
+- DynamicAgentNode — the parent LLM decides which skills a sub-agent needs per query
+
+This guide covers:
+
+1. **Direct Skill Assembly** — Build and query an agent from skills, no orchestrator module
+2. **Dynamic Delegation** — Parent orchestrator delegates to different skill subsets per query
+3. **Multi-Skill Composition** — One query requiring multiple skills merged into a single sub-agent
+
+## Setup
+
+An **Anthropic API key** is required for all demos in this guide.
+
+**Optional:** For trace visualization, run [Arize Phoenix](https://docs.arize.com/phoenix)
+at `http://localhost:6006`:
+
+```
+docker run -p 6006:6006 -p 4317:4317 arizephoenix/phoenix:latest
+```
+
+```elixir
+api_key =
+  System.get_env("ANTHROPIC_API_KEY") || System.get_env("LB_ANTHROPIC_API_KEY") ||
+    raise "Set ANTHROPIC_API_KEY in your environment or Livebook app settings."
+
+Application.put_env(:req_llm, :anthropic_api_key, api_key)
+
+# Configure observability: JidoTracer bridges Jido.Observe spans -> AgentObs -> OTel
+Application.put_env(:jido, :observability, tracer: AgentObs.JidoTracer)
+
+# Configure AgentObs handlers
+Application.put_env(:agent_obs, :enabled, true)
+Application.put_env(:agent_obs, :handlers, [AgentObs.Handlers.Phoenix])
+Application.put_env(:agent_obs, :event_prefix, [:agent_obs])
+
+# Stop OTel apps so we can reconfigure them (they auto-start with defaults)
+Application.stop(:opentelemetry)
+Application.stop(:opentelemetry_exporter)
+
+# Configure OTel SDK: simple processor exports immediately, HTTP protobuf to Phoenix
+Application.put_env(:opentelemetry, :resource, %{service: %{name: "jido_dynamic_skills_demo"}})
+Application.put_env(:opentelemetry, :span_processor, :simple)
+Application.put_env(:opentelemetry_exporter, :otlp_protocol, :http_protobuf)
+Application.put_env(:opentelemetry_exporter, :otlp_endpoint, "http://localhost:6006")
+
+# Restart OTel with new config (order matters: exporter before SDK)
+{:ok, _} = Application.ensure_all_started(:opentelemetry_exporter)
+{:ok, _} = Application.ensure_all_started(:opentelemetry)
+{:ok, _} = Application.ensure_all_started(:agent_obs)
+
+IO.puts("API key configured. Traces will export to http://localhost:6006")
+```
+
+## Shared Actions + Helpers
+
+```elixir
+defmodule Demo.AddAction do
+  use Jido.Action,
+    name: "add",
+    description: "Adds an amount to a value",
+    schema: [
+      value: [type: :float, required: true, doc: "The current value"],
+      amount: [type: :float, required: true, doc: "The amount to add"]
+    ]
+
+  # LLMs send JSON integers (5) not floats (5.0) — coerce before NimbleOptions validates.
+  def on_before_validate_params(params) do
+    {:ok,
+     params
+     |> Map.update(:value, nil, fn v -> if is_integer(v), do: v / 1, else: v end)
+     |> Map.update(:amount, nil, fn v -> if is_integer(v), do: v / 1, else: v end)}
+  end
+
+  def run(%{value: value, amount: amount}, _ctx) do
+    {:ok, %{result: value + amount}}
+  end
+end
+
+defmodule Demo.MultiplyAction do
+  use Jido.Action,
+    name: "multiply",
+    description: "Multiplies a value by an amount",
+    schema: [
+      value: [type: :float, required: true, doc: "The current value"],
+      amount: [type: :float, required: true, doc: "The multiplier"]
+    ]
+
+  # LLMs send JSON integers (5) not floats (5.0) — coerce before NimbleOptions validates.
+  def on_before_validate_params(params) do
+    {:ok,
+     params
+     |> Map.update(:value, nil, fn v -> if is_integer(v), do: v / 1, else: v end)
+     |> Map.update(:amount, nil, fn v -> if is_integer(v), do: v / 1, else: v end)}
+  end
+
+  def run(%{value: value, amount: amount}, _ctx) do
+    {:ok, %{result: value * amount}}
+  end
+end
+
+defmodule Demo.EchoAction do
+  use Jido.Action,
+    name: "echo",
+    description: "Echoes a message string",
+    schema: [
+      message: [type: :string, required: true, doc: "Message to echo"]
+    ]
+
+  def run(%{message: message}, _ctx) do
+    {:ok, %{echoed: message}}
+  end
+end
+
+defmodule Demo.LookupAction do
+  use Jido.Action,
+    name: "lookup",
+    description: "Looks up the price of an item from the catalog",
+    schema: [
+      item: [type: :string, required: true, doc: "Item name to look up (e.g. widget, gadget, gizmo)"]
+    ]
+
+  @prices %{"widget" => 9.99, "gadget" => 24.50, "gizmo" => 15.00}
+
+  def run(%{item: item}, _ctx) do
+    case Map.get(@prices, String.downcase(item)) do
+      nil -> {:error, "Item not found: #{item}. Available: widget, gadget, gizmo"}
+      price -> {:ok, %{item: item, price: price}}
+    end
+  end
+end
+
+defmodule Demo.FormatReportAction do
+  use Jido.Action,
+    name: "format_report",
+    description: "Formats a title and data into a structured report string",
+    schema: [
+      title: [type: :string, required: true, doc: "Report title"],
+      data: [type: :string, required: true, doc: "Report data content"]
+    ]
+
+  def run(%{title: title, data: data}, _ctx) do
+    report = """
+    === #{title} ===
+    #{data}
+    ================
+    """
+
+    {:ok, %{report: String.trim(report)}}
+  end
+end
+
+defmodule Demo.Helpers do
+  defmacro suppress_agent_doctests do
+    quote do
+      @doc false
+      def plugins, do: super()
+      @doc false
+      def capabilities, do: super()
+      @doc false
+      def signal_types, do: super()
+    end
+  end
+end
+
+IO.puts("Actions defined: Add, Multiply, Echo, Lookup, FormatReport")
+```
+
+## Part 1: Direct Skill Assembly
+
+The simplest path — no orchestrator module, no DynamicAgentNode. Create skills as
+data structs, assemble them into an agent, and query it directly.
+
+```elixir
+alias Jido.Composer.Skill
+
+math_skill = %Skill{
+  name: "math",
+  description: "Arithmetic operations",
+  prompt_fragment: "Use the add and multiply tools for calculations. Always use tools for math.",
+  tools: [Demo.AddAction, Demo.MultiplyAction]
+}
+
+echo_skill = %Skill{
+  name: "echo",
+  description: "Echo messages back",
+  prompt_fragment: "Use the echo tool to repeat messages back to the user.",
+  tools: [Demo.EchoAction]
+}
+
+{:ok, agent} =
+  Skill.assemble([math_skill, echo_skill],
+    base_prompt: "You are a helpful assistant. Use your tools to answer questions.",
+    model: "anthropic:claude-sonnet-4-20250514"
+  )
+
+{:ok, _agent, answer} =
+  Jido.Composer.Skill.BaseOrchestrator.query_sync(agent, "What is 12 + 7?")
+
+IO.puts("=== Direct Skill Assembly ===")
+IO.puts("Skills:  math, echo")
+IO.puts("Query:   What is 12 + 7?")
+IO.puts("Answer:  #{answer}")
+IO.puts("\nSkill.assemble/2 composed the prompt fragments, merged the tools,")
+IO.puts("and returned a configured agent ready for query_sync.")
+```
+
+## Part 2: Dynamic Delegation
+
+A parent orchestrator uses a **DynamicAgentNode** as a tool. The LLM selects which
+skills to equip the sub-agent with based on the query. Each query dispatches to a
+different skill subset.
+
+```elixir
+alias Jido.Composer.Skill
+alias Jido.Composer.Node.DynamicAgentNode
+
+math_skill = %Skill{
+  name: "math",
+  description: "Arithmetic operations (add, multiply)",
+  prompt_fragment: "Use the add and multiply tools for calculations. Always use tools for math.",
+  tools: [Demo.AddAction, Demo.MultiplyAction]
+}
+
+echo_skill = %Skill{
+  name: "echo",
+  description: "Echo messages back",
+  prompt_fragment: "Use the echo tool to repeat messages back to the user.",
+  tools: [Demo.EchoAction]
+}
+
+data_skill = %Skill{
+  name: "data",
+  description: "Look up item prices from the catalog",
+  prompt_fragment: "Use the lookup tool to find item prices. Available items: widget, gadget, gizmo.",
+  tools: [Demo.LookupAction]
+}
+
+dynamic_node = %DynamicAgentNode{
+  name: "delegate_task",
+  description:
+    "Delegate a task to a dynamically assembled sub-agent. " <>
+      "Select skills by name to equip the sub-agent. " <>
+      "Available skills: \"math\" (add/multiply), \"echo\" (echo messages), \"data\" (price lookups).",
+  skill_registry: [math_skill, echo_skill, data_skill],
+  assembly_opts: [
+    base_prompt: "You are a specialist sub-agent. Complete the task using your tools.",
+    model: "anthropic:claude-sonnet-4-20250514"
+  ]
+}
+
+defmodule Demo.Coordinator do
+  @moduledoc false
+  use Jido.Composer.Orchestrator,
+    name: "coordinator",
+    description: "Coordinator that delegates tasks to skill-based sub-agents",
+    model: "anthropic:claude-sonnet-4-20250514",
+    nodes: [],
+    system_prompt: """
+    You are a coordinator. You have a delegate_task tool that assembles specialized
+    sub-agents from available skills. Available skills:
+
+    - "math": Addition and multiplication operations
+    - "echo": Echo messages back
+    - "data": Look up item prices
+
+    ALWAYS use the delegate_task tool with the right skill names and task description.
+    Do NOT try to answer directly — always delegate.
+    """,
+    max_iterations: 10
+
+  require Demo.Helpers
+  Demo.Helpers.suppress_agent_doctests()
+end
+
+# Query 1: Math
+agent = Demo.Coordinator.new()
+agent = Demo.Coordinator.configure(agent, nodes: [dynamic_node])
+
+{:ok, _agent, answer1} =
+  Demo.Coordinator.query_sync(agent, "What is 15 + 28?")
+
+IO.puts("=== Dynamic Delegation ===\n")
+IO.puts("Query 1 (math): What is 15 + 28?")
+IO.puts("Answer:  #{answer1}\n")
+
+# Query 2: Data lookup
+agent = Demo.Coordinator.new()
+agent = Demo.Coordinator.configure(agent, nodes: [dynamic_node])
+
+{:ok, _agent, answer2} =
+  Demo.Coordinator.query_sync(agent, "What is the price of a widget?")
+
+IO.puts("Query 2 (data): What is the price of a widget?")
+IO.puts("Answer:  #{answer2}\n")
+
+# Query 3: Echo
+agent = Demo.Coordinator.new()
+agent = Demo.Coordinator.configure(agent, nodes: [dynamic_node])
+
+{:ok, _agent, answer3} =
+  Demo.Coordinator.query_sync(agent, "Echo the message: Hello, skills!")
+
+IO.puts("Query 3 (echo): Echo the message: Hello, skills!")
+IO.puts("Answer:  #{answer3}\n")
+
+IO.puts("Each query got a fresh agent. The parent LLM chose different skills")
+IO.puts("for each task via the delegate_task tool.")
+```
+
+## Part 3: Multi-Skill Composition
+
+A single query that requires multiple skills combined. The parent LLM selects several
+skills, and the sub-agent gets all their tools merged into one agent.
+
+```elixir
+alias Jido.Composer.Skill
+alias Jido.Composer.Node.DynamicAgentNode
+
+math_skill = %Skill{
+  name: "math",
+  description: "Arithmetic operations (add, multiply)",
+  prompt_fragment: "Use the add and multiply tools for calculations. Always use tools for math.",
+  tools: [Demo.AddAction, Demo.MultiplyAction]
+}
+
+data_skill = %Skill{
+  name: "data",
+  description: "Look up item prices from the catalog",
+  prompt_fragment: "Use the lookup tool to find item prices. Available items: widget, gadget, gizmo.",
+  tools: [Demo.LookupAction]
+}
+
+reporting_skill = %Skill{
+  name: "reporting",
+  description: "Format data into structured reports",
+  prompt_fragment: "Use the format_report tool to create structured reports from your findings.",
+  tools: [Demo.FormatReportAction]
+}
+
+dynamic_node = %DynamicAgentNode{
+  name: "delegate_task",
+  description:
+    "Delegate a task to a dynamically assembled sub-agent. " <>
+      "Select skills by name to equip the sub-agent. " <>
+      "Available skills: \"math\" (add/multiply), \"data\" (price lookups), \"reporting\" (format reports). " <>
+      "You can select multiple skills to give the sub-agent combined capabilities.",
+  skill_registry: [math_skill, data_skill, reporting_skill],
+  assembly_opts: [
+    base_prompt: "You are a specialist sub-agent. Complete the task using your tools. Use tools for all operations.",
+    model: "anthropic:claude-sonnet-4-20250514"
+  ]
+}
+
+defmodule Demo.MultiSkillCoordinator do
+  @moduledoc false
+  use Jido.Composer.Orchestrator,
+    name: "multi_skill_coordinator",
+    description: "Coordinator that delegates complex tasks requiring multiple skills",
+    model: "anthropic:claude-sonnet-4-20250514",
+    nodes: [],
+    system_prompt: """
+    You are a coordinator. You have a delegate_task tool that assembles specialized
+    sub-agents from available skills. Available skills:
+
+    - "math": Addition and multiplication operations
+    - "data": Look up item prices from the catalog
+    - "reporting": Format data into structured reports
+
+    You can combine multiple skills in a single delegation. For complex tasks that
+    span multiple capabilities, select ALL relevant skills.
+
+    ALWAYS use the delegate_task tool. Do NOT try to answer directly.
+    """,
+    max_iterations: 10
+
+  require Demo.Helpers
+  Demo.Helpers.suppress_agent_doctests()
+end
+
+agent = Demo.MultiSkillCoordinator.new()
+agent = Demo.MultiSkillCoordinator.configure(agent, nodes: [dynamic_node])
+
+{:ok, _agent, answer} =
+  Demo.MultiSkillCoordinator.query_sync(
+    agent,
+    "Look up the price of a widget and multiply it by 3. Then format a report titled 'Widget Order' with the result."
+  )
+
+IO.puts("=== Multi-Skill Composition ===\n")
+IO.puts("Query: Look up the price of a widget, multiply by 3, format a report")
+IO.puts("Answer: #{answer}\n")
+IO.puts("The parent LLM selected multiple skills (math, data, reporting).")
+IO.puts("The sub-agent received all their tools merged and completed the task.")
+```
+
+## Flush Traces
+
+```elixir
+# Force the OTel span processor to export all buffered spans before exiting.
+# Without this, the BEAM may shut down before spans are sent.
+try do
+  :opentelemetry.get_tracer_provider()
+  |> :otel_tracer_provider.force_flush()
+rescue
+  _ -> :ok
+catch
+  _, _ -> :ok
+end
+
+# Small delay to allow the HTTP export to complete
+Process.sleep(2000)
+
+IO.puts("""
+Traces flushed to Phoenix.
+
+Expected trace trees in Phoenix UI (http://localhost:6006/projects/):
+
+Part 1 — Direct Skill Assembly:
+  AGENT: skill_base_orchestrator
+  +-- LLM: anthropic:claude-sonnet-4-20250514
+  +-- TOOL: add
+
+Parts 2 & 3 — Dynamic Delegation / Multi-Skill:
+  AGENT: coordinator / multi_skill_coordinator
+  +-- LLM: anthropic:claude-sonnet-4-20250514 (parent selects skills)
+  +-- TOOL: delegate_task
+      +-- AGENT: skill_base_orchestrator (sub-agent)
+          +-- LLM: anthropic:claude-sonnet-4-20250514
+          +-- TOOL: add / lookup / format_report / ...
+""")
+```
+
+## Next Steps
+
+You've seen how Skills and DynamicAgentNode enable runtime agent composition:
+
+- **Direct assembly** — `Skill.assemble/2` for ad-hoc agents without defining modules
+- **Dynamic delegation** — Parent orchestrator selects skills per query via DynamicAgentNode
+- **Multi-skill composition** — Combine multiple skills into a single sub-agent
+
+For related patterns, see:
+
+- **Livebook 04** — Static orchestrators, workflow-as-tool, AgentNode
+- **Livebook 05** — Multi-agent pipelines with FanOut and HITL
+- **Livebook 06** — Observability deep-dive with Phoenix trace visualization
+- `Jido.Composer.Skill` and `Jido.Composer.Node.DynamicAgentNode` module docs

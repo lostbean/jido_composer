@@ -66,7 +66,7 @@ defmodule LivemdRunner do
   defp run_standalone(path, cells) do
     total = length(cells)
 
-    script =
+    processed =
       cells
       |> Enum.with_index(1)
       |> Enum.flat_map(fn {cell, idx} ->
@@ -76,8 +76,20 @@ defmodule LivemdRunner do
         else
           label = if mix_install_cell?(cell), do: "Mix.install", else: "#{line_count(cell)} lines"
           IO.puts("  [#{idx}/#{total}] Including (#{label})")
-          [rewrite_mix_install(sanitize_kino(cell), path)]
+          [{rewrite_mix_install(sanitize_kino(cell), path), mix_install_cell?(cell)}]
         end
+      end)
+
+    # The Mix.install cell is emitted directly (runs at script compile time).
+    # All other cells are wrapped in Code.eval_string so they compile and run
+    # sequentially at runtime — after Mix.install has made deps available.
+    # This mirrors Livebook's cell-by-cell evaluation and ensures struct
+    # literals like %Skill{} resolve correctly.
+    script =
+      processed
+      |> Enum.map(fn
+        {cell, true} -> cell
+        {cell, false} -> wrap_eval_string(cell)
       end)
       |> Enum.join("\n\n")
 
@@ -224,6 +236,13 @@ defmodule LivemdRunner do
 
   defp line_count(cell) do
     cell |> String.split("\n") |> length()
+  end
+
+  # Wrap a cell in Code.eval_string so it compiles at runtime (after Mix.install).
+  # This mirrors Livebook's cell-by-cell evaluation: struct literals, macros,
+  # and other compile-time constructs resolve against already-installed deps.
+  defp wrap_eval_string(cell) do
+    "Code.eval_string(#{inspect(cell)}, [], file: \"livebook\", line: 1)"
   end
 
   defp sanitize_kino(cell) do
