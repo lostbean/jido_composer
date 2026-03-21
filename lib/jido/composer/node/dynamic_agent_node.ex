@@ -37,6 +37,7 @@ defmodule Jido.Composer.Node.DynamicAgentNode do
          {:ok, agent} <- Jido.Composer.Skill.assemble(skills, node.assembly_opts) do
       case Jido.Composer.Skill.BaseOrchestrator.query_sync(agent, task) do
         {:ok, _agent, result} -> {:ok, result}
+        {:suspended, _agent, suspension} -> {:error, {:suspended, suspension}}
         {:error, reason} -> {:error, reason}
       end
     end
@@ -65,21 +66,7 @@ defmodule Jido.Composer.Node.DynamicAgentNode do
     %{
       name: node.name,
       description: node.description,
-      parameter_schema: %{
-        "type" => "object",
-        "properties" => %{
-          "task" => %{
-            "type" => "string",
-            "description" => "The task for the sub-agent to accomplish"
-          },
-          "skills" => %{
-            "type" => "array",
-            "items" => %{"type" => "string"},
-            "description" => "List of skill names to equip"
-          }
-        },
-        "required" => ["task", "skills"]
-      }
+      parameter_schema: Jido.Action.Tool.build_parameters_schema(schema(node))
     }
   end
 

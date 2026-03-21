@@ -171,7 +171,11 @@ defmodule Jido.Composer.Orchestrator.Configure do
       %AgentNode{} = node ->
         {AgentNode.name(node), node}
 
-      %node_mod{} = node ->
+      %node_mod{} = node when is_atom(node_mod) ->
+        unless function_exported?(node_mod, :name, 1) do
+          raise ArgumentError, "#{inspect(node_mod)} does not implement name/1"
+        end
+
         {node_mod.name(node), node}
     end)
   end

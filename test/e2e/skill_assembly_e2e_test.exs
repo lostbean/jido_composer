@@ -18,7 +18,7 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
 
   alias Jido.Composer.NodeIO
   alias Jido.Composer.TestActions.{AddAction, MultiplyAction, EchoAction}
-  alias Jido.Composer.TestAgents.TestWorkflowAgent
+  alias Jido.Composer.TestSkills
   alias Jido.Composer.TestSupport.LLMStub
 
   # ── Bare agent for strategy-level cassette tests ──
@@ -29,35 +29,6 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
       name: "skill_cassette_agent",
       description: "Agent for skill assembly cassette tests",
       schema: []
-  end
-
-  # ── Skill definitions ──
-
-  defp math_skill do
-    %Skill{
-      name: "math",
-      description: "Perform arithmetic operations like addition and multiplication",
-      prompt_fragment: "You can perform math operations using the add and multiply tools.",
-      tools: [AddAction, MultiplyAction]
-    }
-  end
-
-  defp echo_skill do
-    %Skill{
-      name: "echo",
-      description: "Echo messages back to the user",
-      prompt_fragment: "You can echo messages using the echo tool.",
-      tools: [EchoAction]
-    }
-  end
-
-  defp pipeline_skill do
-    %Skill{
-      name: "pipeline",
-      description: "Run data transformation pipelines",
-      prompt_fragment: "You can run data pipelines using the test_workflow_agent tool.",
-      tools: [TestWorkflowAgent]
-    }
   end
 
   # ── DynamicAgentNode factory ──
@@ -223,7 +194,9 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
           "e2e_skill_assembly_math",
           CassetteHelper.shared_cassette_opts(session),
           fn plug ->
-            dynamic_node = build_dynamic_node([math_skill(), echo_skill()], plug)
+            dynamic_node =
+              build_dynamic_node([TestSkills.math_skill(), TestSkills.echo_skill()], plug)
+
             agent = init_skill_orchestrator(plug, dynamic_node)
 
             agent =
@@ -274,7 +247,7 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
           CassetteHelper.shared_cassette_opts(session),
           fn plug ->
             dynamic_node =
-              build_dynamic_node([math_skill(), pipeline_skill()], plug)
+              build_dynamic_node([TestSkills.math_skill(), TestSkills.pipeline_skill()], plug)
 
             agent = init_skill_orchestrator(plug, dynamic_node)
 
@@ -451,7 +424,7 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
       dynamic_node = %DynamicAgentNode{
         name: "delegate_task",
         description: "Delegate a task to a sub-agent.",
-        skill_registry: [echo_skill()],
+        skill_registry: [TestSkills.echo_skill()],
         assembly_opts: [
           base_prompt: custom_base_prompt,
           model: "anthropic:claude-sonnet-4-20250514",
@@ -517,7 +490,7 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
         ])
 
       # Registry has both math and echo, but parent will only select echo
-      dynamic_node = build_dynamic_node([math_skill(), echo_skill()], plug)
+      dynamic_node = build_dynamic_node([TestSkills.math_skill(), TestSkills.echo_skill()], plug)
       agent = init_skill_orchestrator(plug, dynamic_node)
       agent = execute_loop(agent, "Echo test message")
 
@@ -590,7 +563,7 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
           {:final_answer, "Task completed: 3.0"}
         ])
 
-      dynamic_node = build_dynamic_node([math_skill(), echo_skill()], plug)
+      dynamic_node = build_dynamic_node([TestSkills.math_skill(), TestSkills.echo_skill()], plug)
       agent = init_skill_orchestrator(plug, dynamic_node)
       agent = execute_loop(agent, "Add 1+2 and echo the result")
 
@@ -707,14 +680,11 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
              "Expected sub-agent to receive ordering instructions in system prompt"
 
       # Verify tool calls happened in correct order by examining the conversation
-      # in sequential sub-agent requests
-      sub_messages =
+      # history in later sub-agent requests (which accumulate prior assistant turns).
+      # Collect all tool_use names across all sub-agent requests in order.
+      all_tool_calls =
         sub_agent_requests
         |> Enum.flat_map(fn req -> req["messages"] || [] end)
-
-      # Find the tool_use messages from assistant turns (in order)
-      tool_call_names =
-        sub_messages
         |> Enum.filter(fn msg -> msg["role"] == "assistant" end)
         |> Enum.flat_map(fn msg ->
           (msg["content"] || [])
@@ -722,21 +692,20 @@ defmodule Jido.Composer.E2E.SkillAssemblyE2ETest do
           |> Enum.map(fn c -> c["name"] end)
         end)
 
-      # multiply should come before add
-      case tool_call_names do
-        [] ->
-          # First sub-agent request won't have prior tool calls in messages,
-          # but subsequent ones will. Verify via the stub response order instead.
-          :ok
+      # Also verify via context.working that both tools ran with expected results
+      assert %{result: multiply_result} = strat.context.working[:delegate_task]
+      assert multiply_result =~ "57"
 
-        names ->
-          multiply_idx = Enum.find_index(names, &(&1 == "multiply"))
-          add_idx = Enum.find_index(names, &(&1 == "add"))
+      # If conversation history was captured, verify multiply came before add
+      if all_tool_calls != [] do
+        multiply_idx = Enum.find_index(all_tool_calls, &(&1 == "multiply"))
+        add_idx = Enum.find_index(all_tool_calls, &(&1 == "add"))
 
-          if multiply_idx && add_idx do
-            assert multiply_idx < add_idx,
-                   "Expected multiply before add, but got order: #{inspect(names)}"
-          end
+        assert multiply_idx != nil, "Expected multiply tool call in conversation history"
+        assert add_idx != nil, "Expected add tool call in conversation history"
+
+        assert multiply_idx < add_idx,
+               "Expected multiply before add, but got order: #{inspect(all_tool_calls)}"
       end
     end
   end
