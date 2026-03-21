@@ -172,6 +172,14 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
     end
   end
 
+  describe "to_tool/1 with non-Node struct" do
+    test "raises ArgumentError for a struct without to_tool_spec" do
+      assert_raise ArgumentError, ~r/does not implement to_tool_spec/, fn ->
+        AgentTool.to_tool(%URI{path: "/test"})
+      end
+    end
+  end
+
   describe "to_tool/1 with DynamicAgentNode" do
     test "returns ReqLLM.Tool struct with name and description" do
       node = %DynamicAgentNode{

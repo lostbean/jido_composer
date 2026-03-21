@@ -33,6 +33,10 @@ defmodule Jido.Composer.Orchestrator.AgentTool do
   end
 
   def to_tool(%mod{} = node) when is_atom(mod) do
+    unless function_exported?(mod, :to_tool_spec, 1) do
+      raise ArgumentError, "#{inspect(mod)} does not implement to_tool_spec/1"
+    end
+
     spec = mod.to_tool_spec(node)
 
     ReqLLM.Tool.new!(

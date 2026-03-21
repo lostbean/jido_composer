@@ -156,6 +156,21 @@ defmodule Jido.Composer.Node.DynamicAgentNodeTest do
       assert "task" in spec.parameter_schema["required"]
       assert "skills" in spec.parameter_schema["required"]
     end
+
+    test "parameter_schema is consistent with schema/1" do
+      node = %DynamicAgentNode{
+        name: "delegate",
+        description: "Delegate",
+        skill_registry: []
+      }
+
+      schema = DynamicAgentNode.schema(node)
+      spec = DynamicAgentNode.to_tool_spec(node)
+
+      # to_tool_spec should produce the same JSON schema as build_parameters_schema
+      expected_schema = Jido.Action.Tool.build_parameters_schema(schema)
+      assert spec.parameter_schema == expected_schema
+    end
   end
 
   describe "Node behaviour" do
@@ -212,6 +227,61 @@ defmodule Jido.Composer.Node.DynamicAgentNodeTest do
       context = %{task: "Do something", skills: ["nonexistent"]}
       assert {:error, reason} = DynamicAgentNode.run(node, context, [])
       assert reason =~ "nonexistent"
+    end
+
+    test "suspended sub-agent returns error tuple" do
+      # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
+      stub_name = :"dynamic_run_suspended_#{System.unique_integer([:positive])}"
+
+      # Simulate the sub-agent suspending (e.g. HITL approval gate)
+      plug =
+        LLMStub.setup_req_stub(stub_name, [
+          {:tool_calls,
+           [
+             %{
+               id: "call_1",
+               name: "add",
+               arguments: %{"value" => 1.0, "amount" => 2.0}
+             }
+           ]},
+          # The sub-agent's orchestrator will call the action, get result,
+          # then the next LLM turn returns a suspend_action tool call.
+          # For simplicity, we test via a skill that uses SuspendAction.
+          {:tool_calls,
+           [
+             %{
+               id: "call_2",
+               name: "suspend",
+               arguments: %{"checkpoint" => "needs_approval"}
+             }
+           ]}
+        ])
+
+      alias Jido.Composer.Skill
+      alias Jido.Composer.TestActions.{AddAction, SuspendAction}
+
+      suspend_skill = %Skill{
+        name: "suspendable",
+        description: "A skill that can suspend",
+        prompt_fragment: "You can suspend using the suspend tool.",
+        tools: [AddAction, SuspendAction]
+      }
+
+      node = %DynamicAgentNode{
+        name: "delegate",
+        description: "Delegate",
+        skill_registry: [suspend_skill],
+        assembly_opts: [
+          model: "anthropic:claude-sonnet-4-20250514",
+          req_options: [plug: plug]
+        ]
+      }
+
+      context = %{task: "Add then suspend", skills: ["suspendable"]}
+      result = DynamicAgentNode.run(node, context, [])
+
+      # Should not crash — suspended state should be returned as an error
+      assert {:error, {:suspended, _suspension}} = result
     end
 
     test "multiple skills combine tools" do
