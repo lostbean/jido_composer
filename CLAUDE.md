@@ -49,6 +49,10 @@ support arbitrary nesting.
 
 Use `npx openspec <args>` to use openspec.
 
+### Keeping Usage Rules Current
+
+When changes affect the public API (new modules, new DSL options, new node types, changed contracts), update `usage-rules.md` to reflect them. This file is the authoritative reference for how the library is used.
+
 ### Git Commit Conventions
 
 **ALWAYS run `mix precommit` before committing.** This must pass cleanly.
@@ -84,6 +88,9 @@ Livebooks in `livebooks/` serve as runnable demos, ordered by complexity:
 3. `03_approval_workflow` — HITL suspend/resume + checkpoint (no API key)
 4. `04_llm_orchestrator` — Orchestrator, workflow-as-tool, AgentNode (API key)
 5. `05_multi_agent_pipeline` — Full stack: FanOut + agents + HITL + checkpoint (API key)
+6. `06_observability` — OpenTelemetry tracing with Arize Phoenix (API key + Phoenix)
+7. `07_jido_ai_bridge` — Jido AI agents inside Composer workflows (API key)
+8. `08_dynamic_skill_nodes` — Skill assembly + DynamicAgentNode delegation (API key + Phoenix)
 
 **Verify livebooks run correctly:**
 
@@ -91,9 +98,14 @@ Livebooks in `livebooks/` serve as runnable demos, ordered by complexity:
 - `mix run scripts/run_livemd.exs livebooks/0[1-3]*.livemd` — non-LLM only
 - `mix run scripts/run_livemd.exs livebooks/*.livemd` — all (needs `ANTHROPIC_API_KEY`)
 
+**Arize Phoenix (for observability livebooks):**
+
+- `docker compose up -d` — start Phoenix at `http://localhost:6006`
+
 **Guidelines:**
 
 - Each livebook is one focused use case, not a feature catalog
+- Use `{:jido_composer, ">= 0.0.0"}` in `Mix.install` — the runner rewrites it to `path:` for local dev
 - Use `IO.puts`/`IO.inspect` for output; Kino widgets are optional (script skips them)
 - Use full module paths inside `defmodule` bodies (aliases don't cross module boundaries in Livebook)
 - Always verify after editing: `mix run scripts/run_livemd.exs livebooks/<file>.livemd`
