@@ -3,7 +3,7 @@
 ```elixir
 Mix.install(
   [
-    {:jido_composer, "~> 0.1"},
+    {:jido_composer, ">= 0.0.0"},
     {:kino, "~> 0.14"}
   ],
   config: [
