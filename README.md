@@ -112,7 +112,7 @@ re-spawning, even for deeply nested agent hierarchies.
 ```elixir
 def deps do
   [
-    {:jido_composer, "~> 0.1.0"}
+    {:jido_composer, "~> 0.4"}
   ]
 end
 ```
@@ -125,6 +125,7 @@ end
 | + human gate         | Workflow + HumanNode             | Approval workflows   |
 | + adaptive step      | Workflow containing Orchestrator | Code review pipeline |
 | + deterministic tool | Orchestrator containing Workflow | Customer support     |
+| + dynamic assembly   | Orchestrator + DynamicAgentNode  | Skill-based dispatch |
 | Fully adaptive       | Orchestrator                     | Research agent       |
 
 ## Quick Start: Workflow
@@ -195,6 +196,59 @@ agent = MathAssistant.new()
 {:ok, _agent, answer} = MathAssistant.query_sync(agent, "What is 5 + 3?")
 ```
 
+## Quick Start: Dynamic Skills
+
+Package capabilities as data and assemble agents at runtime:
+
+```elixir
+alias Jido.Composer.Skill
+
+math_skill = %Skill{
+  name: "math",
+  description: "Arithmetic operations",
+  prompt_fragment: "Use add and multiply tools for calculations.",
+  tools: [AddAction, MultiplyAction]
+}
+
+data_skill = %Skill{
+  name: "data",
+  description: "Price lookups",
+  prompt_fragment: "Use lookup to find item prices.",
+  tools: [LookupAction]
+}
+
+# Assemble an agent from skills — no module definition needed
+{:ok, agent} = Skill.assemble([math_skill, data_skill],
+  base_prompt: "You are a helpful assistant.",
+  model: "anthropic:claude-sonnet-4-20250514"
+)
+
+{:ok, _agent, answer} = Jido.Composer.Skill.BaseOrchestrator.query_sync(
+  agent, "What is the price of a widget times 3?"
+)
+```
+
+For parent-delegated skill selection, use **DynamicAgentNode** — the parent LLM
+picks which skills to equip a sub-agent with per query:
+
+```elixir
+alias Jido.Composer.Node.DynamicAgentNode
+
+dynamic_node = %DynamicAgentNode{
+  name: "delegate_task",
+  description: "Delegate to a sub-agent with selected skills",
+  skill_registry: [math_skill, data_skill],
+  assembly_opts: [
+    base_prompt: "Complete the task using your tools.",
+    model: "anthropic:claude-sonnet-4-20250514"
+  ]
+}
+
+agent = MyCoordinator.new()
+agent = MyCoordinator.configure(agent, nodes: [dynamic_node])
+{:ok, _agent, answer} = MyCoordinator.query_sync(agent, "Look up the widget price and double it.")
+```
+
 ## Composer vs Jido AI
 
 Both libraries are part of the [Jido](https://github.com/agentjido/jido)
@@ -227,7 +281,8 @@ to get structured flow control around open-ended reasoning. See the
 - [Testing](guides/testing.md) — ReqCassette, LLMStub, test layers
 - [Composer vs Jido AI](guides/composer-vs-jido-ai.md) — When to use which, how
   they combine
-- Interactive demos in `livebooks/`
+- Interactive demos in `livebooks/` (ETL, branching, HITL, orchestrators,
+  multi-agent pipelines, observability, Jido AI bridge, dynamic skills)
 
 ## License
 
