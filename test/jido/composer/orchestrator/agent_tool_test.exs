@@ -173,8 +173,8 @@ defmodule Jido.Composer.Orchestrator.AgentToolTest do
   end
 
   describe "to_tool/1 with non-Node struct" do
-    test "raises ArgumentError for a struct without to_tool_spec" do
-      assert_raise ArgumentError, ~r/does not implement to_tool_spec/, fn ->
+    test "raises ArgumentError for a struct that does not implement Node behaviour" do
+      assert_raise ArgumentError, ~r/does not implement the Node behaviour/, fn ->
         AgentTool.to_tool(%URI{path: "/test"})
       end
     end

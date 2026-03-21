@@ -51,6 +51,7 @@ defmodule Jido.Composer.Orchestrator.Configure do
   | `:model`          | `String.t()`         | Replaces the model identifier                        |
   | `:temperature`    | `float()`            | Replaces the temperature                             |
   | `:max_tokens`     | `integer()`          | Replaces max tokens                                  |
+  | `:max_iterations` | `integer()`          | Replaces max ReAct loop iterations                   |
   | `:req_options`    | `keyword()`          | Replaces HTTP options                                |
   | `:conversation`   | `ReqLLM.Context.t()` | Sets or replaces conversation context                |
   """
@@ -60,7 +61,7 @@ defmodule Jido.Composer.Orchestrator.Configure do
   alias Jido.Composer.Node.AgentNode
   alias Jido.Composer.Orchestrator.AgentTool
 
-  @configurable_keys ~w(system_prompt nodes model temperature max_tokens req_options conversation)a
+  @configurable_keys ~w(system_prompt nodes model temperature max_tokens max_iterations req_options conversation)a
 
   @doc """
   Applies runtime overrides to an orchestrator agent's strategy state.
@@ -74,6 +75,7 @@ defmodule Jido.Composer.Orchestrator.Configure do
     * `:model` — replaces the model identifier
     * `:temperature` — replaces the temperature
     * `:max_tokens` — replaces max tokens
+    * `:max_iterations` — replaces max ReAct loop iterations
     * `:req_options` — replaces HTTP options (e.g. for cassette injection)
     * `:conversation` — sets or replaces conversation context
 
@@ -110,7 +112,7 @@ defmodule Jido.Composer.Orchestrator.Configure do
     |> Enum.map(fn
       %ActionNode{action_module: mod} -> mod
       %AgentNode{agent_module: mod} -> mod
-      node -> node
+      %mod{} -> mod
     end)
   end
 
@@ -171,12 +173,8 @@ defmodule Jido.Composer.Orchestrator.Configure do
       %AgentNode{} = node ->
         {AgentNode.name(node), node}
 
-      %node_mod{} = node when is_atom(node_mod) ->
-        unless function_exported?(node_mod, :name, 1) do
-          raise ArgumentError, "#{inspect(node_mod)} does not implement name/1"
-        end
-
-        {node_mod.name(node), node}
+      %_mod{} = node ->
+        {Jido.Composer.Node.dispatch_name(node), node}
     end)
   end
 

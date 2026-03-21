@@ -47,6 +47,34 @@ defmodule Jido.Composer.Node do
 
   @optional_callbacks [schema: 1, input_type: 1, output_type: 1, to_directive: 3, to_tool_spec: 1]
 
+  @doc "Returns `true` if `module` declares the `Jido.Composer.Node` behaviour."
+  @spec node?(module()) :: boolean()
+  def node?(module) do
+    Code.ensure_loaded?(module) &&
+      function_exported?(module, :__info__, 1) &&
+      __MODULE__ in (module.__info__(:attributes)
+                     |> Keyword.get_values(:behaviour)
+                     |> List.flatten())
+  end
+
+  @doc """
+  Extracts the name from a Node struct.
+
+  Validates that the struct's module implements the Node behaviour before
+  calling `name/1`. Raises `ArgumentError` if it does not.
+
+  Used by `AgentTool`, `Configure`, and `Strategy` to handle custom Node
+  structs without duplicating the dispatch + validation logic.
+  """
+  @spec dispatch_name(struct()) :: String.t()
+  def dispatch_name(%mod{} = node) when is_atom(mod) do
+    unless node?(mod) do
+      raise ArgumentError, "#{inspect(mod)} does not implement the Node behaviour"
+    end
+
+    mod.name(node)
+  end
+
   @doc "Returns `true` if `module` is a compiled `Jido.Agent` module."
   @spec agent_module?(module()) :: boolean()
   def agent_module?(module) do

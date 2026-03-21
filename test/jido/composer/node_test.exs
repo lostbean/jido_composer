@@ -97,4 +97,30 @@ defmodule Jido.Composer.NodeTest do
       assert {:schema, 1} in optional
     end
   end
+
+  describe "node?/1" do
+    test "returns true for a module that declares the Node behaviour" do
+      assert Node.node?(ValidNode)
+    end
+
+    test "returns false for a module that does not declare the Node behaviour" do
+      refute Node.node?(URI)
+    end
+
+    test "returns false for a non-existent module" do
+      refute Node.node?(NonExistentModule12345)
+    end
+  end
+
+  describe "dispatch_name/1" do
+    test "extracts name from a ValidNode struct" do
+      assert Node.dispatch_name(%ValidNode{}) == "valid_node"
+    end
+
+    test "raises ArgumentError for a struct that does not implement Node" do
+      assert_raise ArgumentError, ~r/does not implement the Node behaviour/, fn ->
+        Node.dispatch_name(%URI{path: "/test"})
+      end
+    end
+  end
 end

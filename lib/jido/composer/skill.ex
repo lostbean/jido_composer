@@ -46,34 +46,32 @@ defmodule Jido.Composer.Skill do
     * `:max_tokens` — max tokens (passed to configure)
     * `:req_options` — HTTP options (passed to configure)
   """
-  @spec assemble([t()], keyword()) :: {:ok, Jido.Agent.t()}
+  @allowed_opts ~w(base_prompt model temperature max_tokens max_iterations req_options)a
+
+  @spec assemble([t()], keyword()) :: {:ok, Jido.Agent.t()} | {:error, term()}
   def assemble(skills, opts \\ []) when is_list(skills) and is_list(opts) do
-    {base_prompt, configure_opts} = Keyword.pop(opts, :base_prompt)
+    with :ok <- validate_opts(opts) do
+      {base_prompt, configure_opts} = Keyword.pop(opts, :base_prompt)
 
-    system_prompt = compose_prompt(skills, base_prompt)
-    tools = collect_tools(skills)
+      system_prompt = compose_prompt(skills, base_prompt)
+      tools = collect_tools(skills)
 
-    agent = Jido.Composer.Skill.BaseOrchestrator.new()
+      agent = Jido.Composer.Skill.BaseOrchestrator.new()
 
-    configure_overrides =
-      [{:system_prompt, system_prompt}, {:nodes, tools}] ++
-        Keyword.take(configure_opts, [:model, :temperature, :max_tokens, :req_options])
+      configure_overrides =
+        [{:system_prompt, system_prompt}, {:nodes, tools}] ++
+          Keyword.take(configure_opts, [
+            :model,
+            :temperature,
+            :max_tokens,
+            :max_iterations,
+            :req_options
+          ])
 
-    agent = Jido.Composer.Skill.BaseOrchestrator.configure(agent, configure_overrides)
+      agent = Jido.Composer.Skill.BaseOrchestrator.configure(agent, configure_overrides)
 
-    # Apply max_iterations via direct strategy state update if provided
-    agent =
-      case Keyword.fetch(configure_opts, :max_iterations) do
-        {:ok, max_iter} ->
-          Jido.Agent.Strategy.State.update(agent, fn state ->
-            Map.put(state, :max_iterations, max_iter)
-          end)
-
-        :error ->
-          agent
-      end
-
-    {:ok, agent}
+      {:ok, agent}
+    end
   end
 
   defp compose_prompt([], nil), do: ""
@@ -88,6 +86,21 @@ defmodule Jido.Composer.Skill do
   defp compose_prompt(skills, base_prompt) do
     fragments = Enum.map_join(skills, "\n\n", & &1.prompt_fragment)
     "#{base_prompt}\n\n## Capabilities\n\n#{fragments}"
+  end
+
+  defp validate_opts(opts) do
+    case Keyword.keys(opts) -- @allowed_opts do
+      [] ->
+        :ok
+
+      unknown ->
+        {:error,
+         %ArgumentError{
+           message:
+             "unknown assemble option(s): #{inspect(unknown)}. " <>
+               "Allowed options: #{inspect(@allowed_opts)}"
+         }}
+    end
   end
 
   defp collect_tools(skills) do

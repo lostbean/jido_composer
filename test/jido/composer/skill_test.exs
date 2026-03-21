@@ -194,6 +194,16 @@ defmodule Jido.Composer.SkillTest do
       assert state.max_iterations == 5
       assert state.temperature == 0.3
     end
+
+    test "returns error for unknown configure option" do
+      skill = TestSkills.math_skill()
+
+      assert {:error, %ArgumentError{}} =
+               Skill.assemble([skill],
+                 model: "anthropic:claude-sonnet-4-20250514",
+                 bogus_option: "bad"
+               )
+    end
   end
 
   # Helper to extract action/agent modules from an assembled agent

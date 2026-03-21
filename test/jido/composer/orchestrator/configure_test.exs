@@ -186,6 +186,16 @@ defmodule Jido.Composer.Orchestrator.ConfigureTest do
     end
   end
 
+  describe "configure/2 max_iterations override" do
+    test "replaces max_iterations" do
+      agent = ConfigOrchestrator.new()
+      agent = ConfigOrchestrator.configure(agent, max_iterations: 20)
+
+      state = StratState.get(agent)
+      assert state.max_iterations == 20
+    end
+  end
+
   describe "configure/2 error handling" do
     test "raises on unknown key" do
       agent = ConfigOrchestrator.new()
