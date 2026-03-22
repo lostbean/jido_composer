@@ -14,9 +14,9 @@ with any other at any depth.
 - All nodes implement `context → context` (endomorphism monoid over maps,
   composed via Kleisli arrows).
 - Node types: **ActionNode** (wraps `Jido.Action`), **AgentNode** (wraps
-  `Jido.Agent`), **FanOutNode** (parallel branches), **HumanNode** (suspend for
-  human input), **DynamicAgentNode** (assembles sub-agents from skills at
-  runtime).
+  `Jido.Agent`), **FanOutNode** (parallel branches), **MapNode** (traverse —
+  same action over a runtime list), **HumanNode** (suspend for human input),
+  **DynamicAgentNode** (assembles sub-agents from skills at runtime).
 - Nodes return `{:ok, context}`, `{:ok, context, outcome_atom}`, or
   `{:error, reason}`. HumanNode returns `{:ok, context, :suspend}`.
 - Context layers: each node's output merges under its key via deep merge. Access
@@ -47,6 +47,11 @@ with any other at any depth.
   Transition map must cover all possible outcomes.
 - FanOutNode: `fork_fns` returns list of `{branch_key, fun}` pairs. Results
   merge under each branch key.
+- MapNode: applies the same action to each element of a list from context.
+  `MapNode.new(name: :process, over: [:generate, :items], action: MyAction)`.
+  `over` can be an atom (top-level key) or a list of atoms (nested path).
+  Results are collected as `%{results: [r0, r1, ...]}`. Uses FanOutBranch
+  directives and FanOut.State internally. Empty lists produce `%{results: []}`.
 - HumanNode: always returns `:suspend` outcome. Pair with `SuspendForHuman`
   directive for approval gates.
 - Terminal states: `:done` and `:failed` are convention defaults (with `:done`

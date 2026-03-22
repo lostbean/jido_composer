@@ -162,7 +162,7 @@ defmodule Jido.Composer.FanOut.StateTest do
   end
 
   describe "merge_results/1" do
-    test "delegates to FanOutNode.merge_results" do
+    test "merges with deep_merge strategy" do
       state =
         make_fan_out_state()
         |> FanOutState.branch_completed(:add, %{result: 3.0})
@@ -171,6 +171,37 @@ defmodule Jido.Composer.FanOut.StateTest do
       merged = FanOutState.merge_results(state)
       assert merged[:add][:result] == 3.0
       assert merged[:echo][:echoed] == "hi"
+    end
+
+    test "merges with :ordered_list strategy" do
+      state =
+        make_fan_out_state()
+        |> Map.put(:merge, :ordered_list)
+        |> FanOutState.branch_completed(:item_0, %{doubled: 2})
+        |> FanOutState.branch_completed(:item_1, %{doubled: 4})
+        |> FanOutState.branch_completed(:item_2, %{doubled: 6})
+
+      merged = FanOutState.merge_results(state)
+      assert merged == %{results: [%{doubled: 2}, %{doubled: 4}, %{doubled: 6}]}
+    end
+
+    test ":ordered_list sorts by item index" do
+      state =
+        make_fan_out_state()
+        |> Map.put(:merge, :ordered_list)
+        |> FanOutState.branch_completed(:item_2, %{v: 3})
+        |> FanOutState.branch_completed(:item_0, %{v: 1})
+        |> FanOutState.branch_completed(:item_1, %{v: 2})
+
+      merged = FanOutState.merge_results(state)
+      assert merged == %{results: [%{v: 1}, %{v: 2}, %{v: 3}]}
+    end
+  end
+
+  describe "total_branches" do
+    test "is computed from node branches" do
+      state = make_fan_out_state()
+      assert state.total_branches == 2
     end
   end
 

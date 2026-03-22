@@ -6,7 +6,6 @@ defmodule Jido.Composer.FanOut.State do
   Encapsulates branch completion, suspension, queueing, and merge logic.
   """
 
-  alias Jido.Composer.Node.FanOutNode
   alias Jido.Composer.Suspension
 
   @derive Jason.Encoder
@@ -15,6 +14,7 @@ defmodule Jido.Composer.FanOut.State do
   defstruct [
     :id,
     :node,
+    :total_branches,
     pending_branches: MapSet.new(),
     completed_results: %{},
     suspended_branches: %{},
@@ -25,7 +25,8 @@ defmodule Jido.Composer.FanOut.State do
 
   @type t :: %__MODULE__{
           id: String.t(),
-          node: FanOutNode.t(),
+          node: struct(),
+          total_branches: non_neg_integer() | nil,
           pending_branches: MapSet.t(),
           completed_results: %{atom() => term()},
           suspended_branches: %{atom() => %{suspension: Suspension.t(), partial_result: term()}},
@@ -35,19 +36,24 @@ defmodule Jido.Composer.FanOut.State do
         }
 
   @doc "Creates a new FanOut.State from dispatched and queued branches."
-  @spec new(String.t(), FanOutNode.t(), MapSet.t(), [{atom(), term()}]) :: t()
-  def new(id, fan_out_node, dispatched_names, queued_branches) do
+  @spec new(String.t(), struct(), MapSet.t(), [{atom(), term()}]) :: t()
+  def new(id, node, dispatched_names, queued_branches) do
     %__MODULE__{
       id: id,
-      node: fan_out_node,
+      node: node,
+      total_branches: compute_total_branches(node),
       pending_branches: dispatched_names,
       completed_results: %{},
       suspended_branches: %{},
       queued_branches: queued_branches,
-      merge: fan_out_node.merge,
-      on_error: fan_out_node.on_error
+      merge: node.merge,
+      on_error: node.on_error
     }
   end
+
+  defp compute_total_branches(%{branches: branches}) when is_list(branches), do: length(branches)
+  defp compute_total_branches(%{total_branches: n}) when is_integer(n), do: n
+  defp compute_total_branches(_), do: nil
 
   @doc "Record a successful branch completion."
   @spec branch_completed(t(), atom(), term()) :: t()
@@ -93,7 +99,7 @@ defmodule Jido.Composer.FanOut.State do
 
   def drain_queue(%__MODULE__{} = state) do
     max =
-      (state.node.max_concurrency || length(state.node.branches)) -
+      (state.node.max_concurrency || state.total_branches || 0) -
         MapSet.size(state.pending_branches)
 
     if max <= 0 do
@@ -127,7 +133,36 @@ defmodule Jido.Composer.FanOut.State do
   @doc "Merge completed results using the configured merge strategy."
   @spec merge_results(t()) :: map()
   def merge_results(%__MODULE__{} = state) do
-    FanOutNode.merge_results(state.completed_results, state.merge)
+    do_merge(state.completed_results, state.merge)
+  end
+
+  defp do_merge(completed_results, :deep_merge) do
+    completed_results
+    |> Enum.to_list()
+    |> Enum.reduce(%{}, fn
+      {name, %Jido.Composer.NodeIO{} = io}, acc ->
+        DeepMerge.deep_merge(acc, %{name => Jido.Composer.NodeIO.to_map(io)})
+
+      {name, result}, acc when is_map(result) ->
+        DeepMerge.deep_merge(acc, %{name => result})
+
+      {name, result}, acc ->
+        Map.put(acc, name, result)
+    end)
+  end
+
+  defp do_merge(completed_results, :ordered_list) do
+    completed_results
+    |> Enum.to_list()
+    |> Enum.sort_by(fn {name, _} ->
+      name |> Atom.to_string() |> String.replace_prefix("item_", "") |> String.to_integer()
+    end)
+    |> Enum.map(fn {_name, result} -> result end)
+    |> then(&%{results: &1})
+  end
+
+  defp do_merge(completed_results, merge_fn) when is_function(merge_fn, 1) do
+    completed_results |> Enum.to_list() |> merge_fn.()
   end
 
   @doc "Check if a suspended branch matches the given suspension_id."
