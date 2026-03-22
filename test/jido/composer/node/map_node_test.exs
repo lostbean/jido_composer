@@ -79,6 +79,16 @@ defmodule Jido.Composer.Node.MapNodeTest do
       assert {:error, _} = MapNode.new(name: :process, over: :items, action: NotAModule)
     end
 
+    test "rejects invalid on_error value" do
+      assert {:error, "on_error must be :fail_fast or :collect_partial"} =
+               MapNode.new(
+                 name: :process,
+                 over: :items,
+                 action: DoubleValueAction,
+                 on_error: :bogus
+               )
+    end
+
     test "defaults timeout to 30_000" do
       {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
       assert node.timeout == 30_000

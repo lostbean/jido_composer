@@ -78,6 +78,9 @@ defmodule Jido.Composer.Node.MapNode do
       not action_module?(action) ->
         {:error, "#{inspect(action)} is not a valid Jido.Action module"}
 
+      Keyword.get(opts, :on_error, :fail_fast) not in [:fail_fast, :collect_partial] ->
+        {:error, "on_error must be :fail_fast or :collect_partial"}
+
       true ->
         {:ok,
          %__MODULE__{
@@ -208,16 +211,19 @@ defmodule Jido.Composer.Node.MapNode do
   defp prepare_element_params(element), do: %{item: element}
 
   defp process_results(results, :fail_fast) do
-    Enum.reduce_while(results, {:ok, []}, fn
-      {:ok, {:ok, result}}, {:ok, acc} ->
-        {:cont, {:ok, acc ++ [result]}}
+    case Enum.reduce_while(results, {:ok, []}, fn
+           {:ok, {:ok, result}}, {:ok, acc} ->
+             {:cont, {:ok, [result | acc]}}
 
-      {:ok, {:error, reason}}, _acc ->
-        {:halt, {:error, {:element_failed, reason}}}
+           {:ok, {:error, reason}}, _acc ->
+             {:halt, {:error, {:element_failed, reason}}}
 
-      {:exit, reason}, _acc ->
-        {:halt, {:error, {:element_crashed, reason}}}
-    end)
+           {:exit, reason}, _acc ->
+             {:halt, {:error, {:element_crashed, reason}}}
+         end) do
+      {:ok, reversed} -> {:ok, Enum.reverse(reversed)}
+      {:error, _} = error -> error
+    end
   end
 
   defp process_results(results, :collect_partial) do

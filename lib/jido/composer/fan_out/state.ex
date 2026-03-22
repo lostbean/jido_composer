@@ -52,7 +52,6 @@ defmodule Jido.Composer.FanOut.State do
   end
 
   defp compute_total_branches(%{branches: branches}) when is_list(branches), do: length(branches)
-  defp compute_total_branches(%{total_branches: n}) when is_integer(n), do: n
   defp compute_total_branches(_), do: nil
 
   @doc "Record a successful branch completion."
@@ -151,11 +150,15 @@ defmodule Jido.Composer.FanOut.State do
     end)
   end
 
+  # Used by MapNode — branch names follow the `item_N` convention.
   defp do_merge(completed_results, :ordered_list) do
     completed_results
     |> Enum.to_list()
     |> Enum.sort_by(fn {name, _} ->
-      name |> Atom.to_string() |> String.replace_prefix("item_", "") |> String.to_integer()
+      case name |> Atom.to_string() |> String.split("item_", parts: 2) do
+        [_, index_str] -> String.to_integer(index_str)
+        _ -> 0
+      end
     end)
     |> Enum.map(fn {_name, result} -> result end)
     |> then(&%{results: &1})
