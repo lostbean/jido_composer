@@ -20,6 +20,9 @@ shared by all participants.
   control spectrum
 - [Composition](composition.md) — Nesting mechanics and cross-boundary
   communication
+- [Composition Constructors](composition-constructors.md) — The six building
+  blocks (sequence, parallel, choice, traverse, identity, bind) and how they
+  compose
 - [Use Cases](use-cases.md) — Concrete scenarios: ETL pipelines, research
   coordinators, mixed nesting, multi-agent collaboration
 
@@ -59,6 +62,8 @@ shared by all participants.
 
 - [Skills](skills/README.md) — Reusable capability bundles (prompt + tools)
   for runtime agent assembly via DynamicAgentNode
+- [Traverse](traverse/README.md) — MapNode design: applying a node across a
+  runtime-determined collection
 
 ## Observability
 

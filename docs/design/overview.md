@@ -42,10 +42,12 @@ graph TB
         SKL["Skill<br/>(capability bundle)"]
         DAN["DynamicAgentNode"]
 
+        MN["MapNode"]
         Node --> AN
         Node --> AGN
         Node --> HN
         Node --> FN
+        Node --> MN
         Node --> DAN
         DAN --> SKL
         DAN --> ORC
@@ -104,6 +106,7 @@ All user-facing modules live under this namespace:
 | `Jido.Composer.Node.AgentNode`         | [Agent adapter](nodes/README.md#agentnode) — [dual-path execution](nodes/README.md#dual-path-execution) |
 | `Jido.Composer.Node.HumanNode`         | [Human decision gate](hitl/human-node.md)                                                               |
 | `Jido.Composer.Node.FanOutNode`        | [Parallel branch execution](nodes/README.md#fanoutnode) — directive-based                               |
+| `Jido.Composer.Node.MapNode`           | [Traverse constructor](composition-constructors.md#traverse) — maps action over runtime collection      |
 | `Jido.Composer.NodeIO`                 | [Typed output envelope](nodes/typed-io.md) preserving monoidal structure                                |
 | `Jido.Composer.Context`                | [Layered context](nodes/context-flow.md#context-layers) (ambient, working, fork)                        |
 | `Jido.Composer.Suspension`             | [Generalized suspension metadata](hitl/README.md#generalized-suspension)                                |

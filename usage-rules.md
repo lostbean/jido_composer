@@ -14,9 +14,9 @@ with any other at any depth.
 - All nodes implement `context → context` (endomorphism monoid over maps,
   composed via Kleisli arrows).
 - Node types: **ActionNode** (wraps `Jido.Action`), **AgentNode** (wraps
-  `Jido.Agent`), **FanOutNode** (parallel branches), **HumanNode** (suspend for
-  human input), **DynamicAgentNode** (assembles sub-agents from skills at
-  runtime).
+  `Jido.Agent`), **FanOutNode** (parallel branches), **MapNode** (traverse —
+  same action over a runtime list), **HumanNode** (suspend for human input),
+  **DynamicAgentNode** (assembles sub-agents from skills at runtime).
 - Nodes return `{:ok, context}`, `{:ok, context, outcome_atom}`, or
   `{:error, reason}`. HumanNode returns `{:ok, context, :suspend}`.
 - Context layers: each node's output merges under its key via deep merge. Access
@@ -47,11 +47,42 @@ with any other at any depth.
   Transition map must cover all possible outcomes.
 - FanOutNode: `fork_fns` returns list of `{branch_key, fun}` pairs. Results
   merge under each branch key.
+- MapNode: applies the same action to each element of a list from context.
+  `MapNode.new(name: :process, over: [:generate, :items], action: MyAction)`.
+  `over` can be an atom (top-level key) or a list of atoms (nested path).
+  Results are collected as `%{results: [r0, r1, ...]}`. Uses FanOutBranch
+  directives and FanOut.State internally. Empty lists produce `%{results: []}`.
+  - Input preparation: map elements are merged into action params; non-map
+    elements are wrapped as `%{item: element}`.
+  - Missing context key or non-list value → treated as empty list.
+  - Use MapNode when the collection size is unknown at definition time and every
+    element gets the same action. Use FanOutNode when branches are heterogeneous
+    and fixed at definition time.
 - HumanNode: always returns `:suspend` outcome. Pair with `SuspendForHuman`
   directive for approval gates.
 - Terminal states: `:done` and `:failed` are convention defaults (with `:done`
   as success state). Custom `terminal_states` require pairing with
   `success_states`; providing one without the other is a compile error.
+
+## Composition Constructors
+
+Five constructors plus one escape hatch cover the full range of workflow shapes:
+
+| Constructor | What It Does                       | Graph Defined At | DSL Expression                    |
+| ----------- | ---------------------------------- | ---------------- | --------------------------------- |
+| Sequence    | Do A, then B                       | Compile time     | `transitions` map                 |
+| Parallel    | Do A and B simultaneously          | Compile time     | `FanOutNode` with `branches:`     |
+| Choice      | Do A or B based on outcome         | Compile time     | Custom outcomes + transitions     |
+| Traverse    | Apply A to each item in a list     | Compile time     | `MapNode` with `over:`, `action:` |
+| Identity    | Pass through unchanged             | Compile time     | No-op action                      |
+| Bind        | Compute which workflow to run next | Runtime          | Orchestrator DSL                  |
+
+- Constructors 1–5 → Workflow. Static graph defined at `defmodule` time. Data
+  flows through at runtime (outcomes drive choice, collection sizes drive
+  traverse), but graph structure is fixed.
+- Bind → Orchestrator. Execution path discovered at runtime by LLM.
+- Mix both: Workflow with Orchestrator as a node, or Orchestrator invoking
+  Workflows as tools.
 
 ## Orchestrator Patterns
 

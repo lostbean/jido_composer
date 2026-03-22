@@ -33,6 +33,7 @@ defmodule Jido.Composer.Workflow.Strategy do
   alias Jido.Composer.Node.AgentNode
   alias Jido.Composer.Node.FanOutNode
   alias Jido.Composer.Node.HumanNode
+  alias Jido.Composer.Node.MapNode
   alias Jido.Composer.Suspension
   alias Jido.Composer.Workflow.Machine
   alias Jido.Composer.Workflow.Obs
@@ -525,6 +526,9 @@ defmodule Jido.Composer.Workflow.Strategy do
         })
 
       %FanOutNode{} ->
+        Keyword.put(base, :fan_out_id, generate_fan_out_id())
+
+      %MapNode{} ->
         Keyword.put(base, :fan_out_id, generate_fan_out_id())
 
       _ ->

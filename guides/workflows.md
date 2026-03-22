@@ -107,6 +107,47 @@ nodes: %{
 | `max_concurrency` | `integer`                        | unlimited     | Concurrent branch limit           |
 | `timeout`         | `ms \| :infinity`                | `30_000`      | Per-branch timeout                |
 
+### MapNode
+
+Applies the same action to each element of a runtime-determined collection:
+
+```elixir
+{:ok, map_node} = Jido.Composer.Node.MapNode.new(
+  name: :process_items,
+  over: [:generate, :items],    # path to list in context
+  action: ProcessItemAction,
+  max_concurrency: 4,
+  timeout: 30_000,
+  on_error: :fail_fast
+)
+
+nodes: %{
+  generate: GenerateAction,
+  process_items: map_node,
+  aggregate: AggregateAction
+}
+```
+
+**MapNode options:**
+
+| Option            | Type                             | Default      | Description                             |
+| ----------------- | -------------------------------- | ------------ | --------------------------------------- |
+| `name`            | `atom`                           | required     | State name in the workflow              |
+| `over`            | `atom \| [atom]`                 | required     | Context key or path to the list         |
+| `action`          | `module`                         | required     | `Jido.Action` module to run per element |
+| `max_concurrency` | `integer`                        | list length  | Concurrent element limit                |
+| `timeout`         | `ms`                             | `30_000`     | Per-element timeout                     |
+| `on_error`        | `:fail_fast \| :collect_partial` | `:fail_fast` | Error handling policy                   |
+
+**Result shape:** Each element's result is collected into an ordered list at `ctx[:state_name][:results]`.
+
+**Input preparation:** Map elements are merged directly into the action params. Non-map elements are wrapped as `%{item: element}`. The full workflow context is also merged, so the action can access upstream results.
+
+**Edge cases:** If the context key is missing or not a list, MapNode treats it as an empty list and produces `%{results: []}`.
+
+> For fixed heterogeneous branches (different actions per branch), use FanOutNode above.
+> For homogeneous processing over a variable-length collection, use MapNode.
+
 ### HumanNode
 
 Pauses the workflow for human input:

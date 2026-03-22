@@ -14,7 +14,43 @@ Choose the right composition pattern based on how much decision-making you want 
 | Guided adaptive               | Orchestrator with constrained tools        | Math assistant with specific tool set             |
 | Fully adaptive                | Orchestrator wrapping Orchestrators        | Coordinator delegating to specialist agents       |
 
-## Nesting Patterns
+## Composition Constructors
+
+Every composition in Jido Composer is built from five fundamental constructors plus one escape hatch. These are the primitives from which all workflow shapes are assembled. Understanding them as a unified framework — rather than encountering them piecemeal — helps you see what the library can express and choose the right tool for each situation.
+
+The five constructors are **sequence** (do A then B), **parallel** (do A and B simultaneously), **choice** (do A or B based on outcome), **traverse** (apply A to every item in a collection), and **identity** (pass through unchanged). The escape hatch is **bind** — the Orchestrator's ability to compute which workflow to run next via LLM decisions.
+
+### Workflow (Compile-Time) vs Orchestrator (Runtime)
+
+The key distinction in Composer is **when the execution graph is defined**:
+
+- **Workflow** = compile-time composition. All five constructors (sequence, parallel, choice, traverse, identity) define a static graph via the DSL macro. The graph — nodes, transitions, terminal states — is fixed at `defmodule` time. Data flows through the graph at runtime (outcomes drive choice, collection sizes drive traverse), but the **structure** never changes.
+- **Orchestrator** = runtime composition. The LLM decides which tools to invoke, in what order, with what arguments. The set of available tools is declared, but the execution path is discovered at runtime.
+
+| Aspect                | Workflow (compile-time)             | Orchestrator (runtime)  |
+| --------------------- | ----------------------------------- | ----------------------- |
+| Graph defined at      | `defmodule` (macro expansion)       | Runtime (LLM decisions) |
+| Static analysis       | Yes — dead ends, unreachable states | Only tool availability  |
+| Visualization         | Full FSM diagram                    | Available tools only    |
+| Determinism           | Same input → same path              | LLM may vary            |
+| Data-driven variation | Outcomes, collection sizes          | Everything              |
+
+**Mix of both** → Workflow with an Orchestrator as one node, or an Orchestrator that invokes Workflows as tools. See the nesting patterns below.
+
+### Data-Driven Behavior Within Static Graphs
+
+Some constructors have data-driven behavior at runtime, but this is **not** runtime composition — the graph structure is still fixed at compile time:
+
+- **Choice**: which branch is taken depends on the outcome returned at runtime, but all possible branches are declared in the transitions map.
+- **Traverse (MapNode)**: how many iterations run depends on the collection size in context, but the fact that a MapNode exists at that position is fixed.
+
+### Runtime Configuration (Not Runtime Graph Construction)
+
+Composer also supports runtime configuration of **existing** patterns — adjusting parameters without changing structure:
+
+- **Orchestrator `configure/2`** — Override strategy state after `new/0`. Use for tool selection, RBAC filtering, or dynamic system prompts. This changes _which tools are available_, not the orchestrator's fundamental nature.
+- **`Skill.assemble/2`** — Build an orchestrator agent from capability bundles at runtime, without defining a module. See the [Dynamic Skills](../README.md#quick-start-dynamic-skills) section.
+- **DynamicAgentNode** — The parent LLM selects which skills to equip a sub-agent with per query.
 
 ### Workflow Inside Orchestrator
 
@@ -177,6 +213,50 @@ Branch results are merged under their respective keys:
 # context[:review][:legal] => %{risk: :low, ...}
 # context[:review][:background] => %{clear: true, ...}
 ```
+
+### MapNode in a Pipeline
+
+Use MapNode to process a runtime-determined collection within a workflow:
+
+```elixir
+alias Jido.Composer.Node.MapNode
+
+{:ok, process_node} = MapNode.new(
+  name: :process,
+  over: [:extract, :items],
+  action: ProcessItemAction
+)
+
+defmodule ExtractMapAggregate do
+  use Jido.Composer.Workflow,
+    name: "extract_map_aggregate",
+    nodes: %{
+      extract: ExtractAction,
+      process: process_node,         # MapNode — runs per item
+      aggregate: AggregateAction
+    },
+    transitions: %{
+      {:extract, :ok} => :process,
+      {:process, :ok} => :aggregate,
+      {:aggregate, :ok} => :done,
+      {:_, :error} => :failed
+    },
+    initial: :extract
+end
+
+# After extract: ctx[:extract][:items] => [%{id: 1}, %{id: 2}, %{id: 3}]
+# After process: ctx[:process][:results] => [result_1, result_2, result_3]
+```
+
+### MapNode vs FanOutNode
+
+| Aspect          | FanOutNode                          | MapNode                                |
+| --------------- | ----------------------------------- | -------------------------------------- |
+| Branch count    | Fixed at definition time            | Determined at runtime                  |
+| Branch identity | Each branch is different            | All branches are the same              |
+| Result shape    | Named map (`ctx[:state][:branch]`)  | Ordered list (`ctx[:state][:results]`) |
+| Use case        | Heterogeneous parallel tasks        | Homogeneous data processing            |
+| Example         | Security + compliance + perf review | Process each item in a list            |
 
 ## Jido.AI Agents as Nodes
 

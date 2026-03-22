@@ -91,6 +91,8 @@ Livebooks in `livebooks/` serve as runnable demos, ordered by complexity:
 6. `06_observability` — OpenTelemetry tracing with Arize Phoenix (API key + Phoenix)
 7. `07_jido_ai_bridge` — Jido AI agents inside Composer workflows (API key)
 8. `08_dynamic_skill_nodes` — Skill assembly + DynamicAgentNode delegation (API key + Phoenix)
+9. `09_traverse_and_mapping` — MapNode: mapping actions over runtime collections (no API key)
+10. `10_composition_patterns` — Combining constructors, compile-time vs runtime composition (no API key)
 
 **Verify livebooks run correctly:**
 

@@ -122,6 +122,7 @@ end
 | Level                | Pattern                          | Example              |
 | -------------------- | -------------------------------- | -------------------- |
 | Fully deterministic  | Workflow                         | ETL pipeline         |
+| + runtime mapping    | Workflow + MapNode               | Batch processing     |
 | + human gate         | Workflow + HumanNode             | Approval workflows   |
 | + adaptive step      | Workflow containing Orchestrator | Code review pipeline |
 | + deterministic tool | Orchestrator containing Workflow | Customer support     |
@@ -272,8 +273,8 @@ to get structured flow control around open-ended reasoning. See the
 - [Human-in-the-Loop](guides/hitl.md) — HumanNode, approval gates, suspension,
   persistence
 - [Getting Started](guides/getting-started.md) — First workflow in 5 minutes
-- [Workflows Guide](guides/workflows.md) — All DSL options, fan-out, custom
-  outcomes
+- [Workflows Guide](guides/workflows.md) — All DSL options, fan-out, MapNode
+  (traverse), custom outcomes
 - [Orchestrators Guide](guides/orchestrators.md) — LLM config, tool approval,
   streaming
 - [Observability](guides/observability.md) — OTel spans, tracer setup, span
