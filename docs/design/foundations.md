@@ -97,11 +97,14 @@ morphism, and the FSM [transition table](workflow/state-machine.md#transition-lo
 is a **routing function** that maps `(State, Outcome) -> NextState`. This is
 analogous to a **copairing** in a category with coproducts.
 
-## Arrow Combinators: Parallel and Fan-Out
+## Composition Constructors
 
-Beyond sequential composition, we support:
+Beyond sequential Kleisli composition, we support four additional constructors
+that together form the complete vocabulary for building compositions. See
+[Composition Constructors](composition-constructors.md) for the user-facing
+guide.
 
-### Fan-out (product / `&&&`)
+### Parallel — Fan-out (product / `&&&`)
 
 ```
 fanout(f, g)(ctx) = merge(f(ctx), g(ctx))
@@ -114,10 +117,33 @@ type — it encapsulates concurrent execution behind the standard Node interface
 In the [Orchestrator](orchestrator/README.md), the LLM can invoke multiple
 tools simultaneously.
 
+### Choice — Coproduct / copairing (`|||`)
+
 `split (*** )` and `choice (|||)` appear concretely as scoped per-node outputs
 and outcome-driven FSM transitions. They are not separate runtime primitives;
 the [Node](nodes/README.md) interface + transition table provide the concrete
 syntax.
+
+### Traverse — Applicative map over collections
+
+```
+traverse(f, items) = [f(item₀), f(item₁), ..., f(itemₙ)]
+```
+
+Apply the same node to each element of a runtime-determined collection. This
+is the categorical `traverse` operation: given a morphism `A -> F B` and a
+structure `T A`, produce `F (T B)`. In jido_composer,
+[MapNode](nodes/README.md#mapnode) provides this as a first-class Node type.
+
+Traverse is distinct from fan-out. Fan-out runs a fixed set of **different**
+nodes in parallel — the branch count and identity are known at definition time.
+Traverse runs the **same** node over a variable-length collection — the count
+is determined at runtime from context data.
+
+This distinction matters algebraically: fan-out is a product (finite,
+fixed-arity), while traverse is an applicative map (variable-arity,
+homogeneous). Conflating them would braid "which nodes to run" with "how many
+times to run them" — two independent concerns.
 
 ## The Orchestrator as Free Category
 
@@ -229,6 +255,7 @@ closes even when composing nodes with heterogeneous output types.
 | Error handling       | Kleisli category (Result monad) | `{:error, reason}` short-circuits; `{:_, :error} => :failed`                         |
 | Branching            | Coproduct / copairing           | Outcome atoms + FSM transition table                                                 |
 | Parallel execution   | Product / fan-out (`&&&`)       | [FanOutNode](nodes/README.md#fanoutnode) — concurrent branches, merge results        |
+| Collection map       | Applicative traverse            | [MapNode](nodes/README.md#mapnode) — same node applied to each element of a list     |
 | Pass-through         | Identity morphism               | `fn ctx -> {:ok, ctx} end`                                                           |
 | Deterministic flow   | Concrete morphism chain         | Workflow (compile-time FSM)                                                          |
 | Dynamic composition  | Free category                   | Orchestrator (LLM selects morphisms at runtime)                                      |

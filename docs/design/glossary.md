@@ -161,6 +161,15 @@ Internal action (Jido.Composer.Orchestrator.LLMAction) that calls
 via RunInstruction; there is no facade layer. See
 [LLM Integration](orchestrator/llm-integration.md).
 
+### MapNode
+
+A [Node](#node) type that applies the same action to each element of a
+runtime-determined collection and collects the results as an ordered list.
+Implements the [traverse](composition-constructors.md#traverse) composition
+constructor. Distinct from [FanOutNode](#fanoutnode), which runs a fixed set of
+different branches — MapNode runs the same operation N times where N is
+determined at runtime. See [Traverse](traverse/README.md).
+
 ### Machine
 
 The pure FSM data structure used by the [Workflow](#workflow) pattern. Holds
@@ -316,6 +325,14 @@ defaults `:done` and `:failed` apply (with `:done` as the success state). When
 custom terminal states are provided, `success_states` must also be specified to
 indicate which terminal states represent successful completion. See
 [State Machine — Terminal States](workflow/state-machine.md#terminal-states).
+
+### Traverse
+
+A [composition constructor](composition-constructors.md#traverse) that applies
+the same [Node](#node) to each element of a collection. The collection size is
+determined at runtime, but the node is fixed at definition time. Implemented by
+[MapNode](#mapnode). Analogous to "map" over a list — apply one operation to
+every element, collect all results.
 
 ### Tool
 

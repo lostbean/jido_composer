@@ -74,6 +74,8 @@ types for compile-time compatibility checking. See
 - `AgentNode`: wraps a `Jido.Agent` with sync/async/streaming execution modes.
 - `HumanNode`: emits `:suspend` for human approval/decision.
 - `FanOutNode`: runs named branches concurrently and merges results.
+- `MapNode`: applies the same action to each element of a runtime-determined
+  list. See [Traverse](../traverse/README.md).
 - `DynamicAgentNode`: assembles and executes a temporary Orchestrator from
   selected [Skills](../skills/README.md) at runtime.
 
@@ -287,13 +289,40 @@ result and the merge completes. See
 
 **Relationship to arrow combinators**: FanOutNode is the concrete implementation
 of the fan-out (`&&&`) combinator described in
-[Foundations](../foundations.md#arrow-combinators-parallel-and-fan-out). It makes
+[Foundations](../foundations.md#composition-constructors). It makes
 the theoretical combinator available as a first-class Node type.
 
 **When to use FanOutNode vs. an Orchestrator**: Use FanOutNode when the set of
 parallel branches is known at definition time and results need deterministic
 merging. Use an Orchestrator when the LLM should dynamically decide which tools
 to invoke concurrently.
+
+### MapNode
+
+A Node that applies the same action to each element of a runtime-determined
+collection, collecting results as an ordered list. MapNode implements the
+[traverse](../composition-constructors.md#traverse) composition constructor.
+
+| Field             | Type                   | Purpose                                                |
+| ----------------- | ---------------------- | ------------------------------------------------------ |
+| `name`            | `String.t()`           | Node identifier                                        |
+| `over`            | `atom()`               | Context key holding the list to iterate                |
+| `action`          | `module()`             | `Jido.Action` module to apply to each element          |
+| `max_concurrency` | `pos_integer()` \| nil | Maximum elements running simultaneously (default: all) |
+| `timeout`         | `pos_integer()`        | Per-element timeout in ms (default: 30_000)            |
+
+**Relationship to FanOutNode**: Both provide concurrent execution, but they
+solve different problems. FanOutNode runs a _fixed set of different_ branches
+(parallel). MapNode runs the _same operation_ over a _variable-length
+collection_ (traverse). They differ in branch count (fixed vs. runtime), branch
+identity (named vs. indexed), and result shape (named map vs. ordered list).
+
+**When to use MapNode**: When a previous step produces a list of items and each
+item needs the same processing. Examples: "for each issue found, generate a
+fix", "for each document chunk, extract entities", "for each user, send
+notification."
+
+For the full design, see [Traverse](../traverse/README.md).
 
 ## Design Decisions
 
