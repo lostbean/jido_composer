@@ -19,6 +19,43 @@ defmodule Jido.Composer.Node.MapNode do
   - `:max_concurrency` — limit parallel tasks (default: list length)
   - `:timeout` — per-element timeout in ms (default: 30_000)
   - `:on_error` — `:fail_fast` (default) or `:collect_partial`
+
+  ## Example
+
+      {:ok, map_node} = MapNode.new(
+        name: :process,
+        over: [:extract, :items],
+        action: DoubleValueAction
+      )
+
+      # Use in a workflow:
+      nodes: %{
+        extract: ExtractAction,
+        process: map_node,
+        aggregate: AggregateAction
+      }
+
+      # After execution:
+      # ctx[:process][:results] => [%{value: 2}, %{value: 4}, %{value: 6}]
+
+  ## Input Preparation
+
+  Each element from the collection is prepared as action params:
+
+  - **Map elements** are merged directly into the flattened context
+    (`Map.merge(flat_context, element)`), so the action receives both the
+    element's keys and the upstream context.
+  - **Non-map elements** (integers, strings, etc.) are wrapped as
+    `%{item: element}` and merged into the context.
+
+  ## Edge Cases
+
+  - **Empty list**: produces `%{results: []}` and completes with `:ok`.
+  - **Missing key**: if the `over` path doesn't resolve to a list (key is
+    missing, value is `nil`, or value is not a list), it's treated as an
+    empty list.
+  - **Nested path**: `over: [:step_a, :sub_key, :items]` uses `get_in/2`
+    to traverse arbitrarily deep context structures.
   """
 
   @behaviour Jido.Composer.Node

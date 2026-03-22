@@ -118,7 +118,7 @@ A concrete example: "identify all issues in a document, then for each issue,
 generate a fix suggestion." The number of issues is unknown until the first
 step runs. Every issue gets the same "generate fix" operation. This is traverse.
 
-> **Status**: Traverse is the next constructor to be implemented. See the
+> **Status**: Implemented as `MapNode`. See the
 > [traverse design](traverse/README.md) for details.
 
 ### Identity
