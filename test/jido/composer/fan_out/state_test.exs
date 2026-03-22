@@ -196,6 +196,18 @@ defmodule Jido.Composer.FanOut.StateTest do
       merged = FanOutState.merge_results(state)
       assert merged == %{results: [%{v: 1}, %{v: 2}, %{v: 3}]}
     end
+
+    test ":ordered_list merge preserves error tuples from collect_partial" do
+      state =
+        make_fan_out_state()
+        |> Map.put(:merge, :ordered_list)
+        |> FanOutState.branch_completed(:item_0, %{v: 1})
+        |> FanOutState.branch_error(:item_1, :failed)
+        |> FanOutState.branch_completed(:item_2, %{v: 3})
+
+      merged = FanOutState.merge_results(state)
+      assert merged == %{results: [%{v: 1}, {:error, :failed}, %{v: 3}]}
+    end
   end
 
   describe "total_branches" do
