@@ -126,35 +126,8 @@ defmodule Jido.Composer.Node.MapNodeTest do
       assert {:error, _} = MapNode.new(name: :process, node: DoubleValueAction)
     end
 
-    test "requires node (or action)" do
+    test "requires node" do
       assert {:error, _} = MapNode.new(name: :process, over: :items)
-    end
-  end
-
-  describe "new/1 — backward compat :action option" do
-    test ":action is accepted and auto-wraps in ActionNode" do
-      assert {:ok, node} =
-               MapNode.new(name: :process, over: :items, action: DoubleValueAction)
-
-      assert %ActionNode{action_module: DoubleValueAction} = node.node
-    end
-
-    test ":node takes precedence over :action" do
-      {:ok, add_ten_node} = ActionNode.new(AddTenAction)
-
-      assert {:ok, node} =
-               MapNode.new(
-                 name: :process,
-                 over: :items,
-                 node: add_ten_node,
-                 action: DoubleValueAction
-               )
-
-      assert %ActionNode{action_module: AddTenAction} = node.node
-    end
-
-    test "rejects invalid action module" do
-      assert {:error, _} = MapNode.new(name: :process, over: :items, action: NotAModule)
     end
   end
 

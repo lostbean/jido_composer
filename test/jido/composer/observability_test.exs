@@ -12,7 +12,8 @@ defmodule Jido.Composer.ObservabilityTest do
 
   alias Jido.Composer.TestActions.{
     AddAction,
-    EchoAction
+    EchoAction,
+    NoopAction
   }
 
   alias Jido.Composer.TestSupport.LLMStub
@@ -745,6 +746,62 @@ defmodule Jido.Composer.ObservabilityTest do
       # tool:stop then iteration:stop
       assert_receive {:telemetry_event, [:jido, :composer, :tool, :stop], _, _}
       assert_receive {:telemetry_event, [:jido, :composer, :iteration, :stop], _, _}
+    end
+  end
+
+  describe "MapNode workflow spans" do
+    test "MapNode emits agent :start, tool :start on dispatch, agent :stop on completion" do
+      {:ok, map_node} =
+        Jido.Composer.Node.MapNode.new(
+          name: :process,
+          over: :items,
+          node: NoopAction
+        )
+
+      nodes = %{process: map_node}
+      transitions = %{{:process, :ok} => :done}
+
+      agent =
+        init_workflow(nodes, transitions, initial: :process, terminal_states: [:done, :failed])
+
+      # Start workflow — emits agent :start and tool :start (MapNode dispatch)
+      {agent, directives} =
+        WorkflowStrategy.cmd(
+          agent,
+          [make_instruction(:workflow_start, %{items: [%{value: 1}]})],
+          ctx()
+        )
+
+      assert_receive {:telemetry_event, [:jido, :composer, :agent, :start], _m, _meta}
+      assert_receive {:telemetry_event, [:jido, :composer, :tool, :start], _m, metadata}
+      assert metadata[:node_name] != nil
+
+      # Feed all fan-out branch results
+      Enum.reduce(directives, agent, fn
+        %Jido.Composer.Directive.FanOutBranch{} = branch, acc ->
+          result = branch.child_node.__struct__.run(branch.child_node, branch.params, [])
+
+          {acc2, _} =
+            WorkflowStrategy.cmd(
+              acc,
+              [
+                make_instruction(:fan_out_branch_result, %{
+                  branch_name: branch.branch_name,
+                  result: result
+                })
+              ],
+              ctx()
+            )
+
+          acc2
+
+        _other, acc ->
+          acc
+      end)
+
+      # Fan-out completion reaches terminal state → agent :stop
+      assert_receive {:telemetry_event, [:jido, :composer, :agent, :stop], measurements, _meta}
+      assert measurements[:status] == :success
     end
   end
 

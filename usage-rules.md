@@ -15,7 +15,7 @@ with any other at any depth.
   composed via Kleisli arrows).
 - Node types: **ActionNode** (wraps `Jido.Action`), **AgentNode** (wraps
   `Jido.Agent`), **FanOutNode** (parallel branches), **MapNode** (traverse —
-  same action over a runtime list), **HumanNode** (suspend for human input),
+  same node over a runtime list), **HumanNode** (suspend for human input),
   **DynamicAgentNode** (assembles sub-agents from skills at runtime).
 - Nodes return `{:ok, context}`, `{:ok, context, outcome_atom}`, or
   `{:error, reason}`. HumanNode returns `{:ok, context, :suspend}`.
@@ -60,7 +60,9 @@ with any other at any depth.
   - Use MapNode when the collection size is unknown at definition time and every
     element gets the same processing. Use FanOutNode when branches are
     heterogeneous and fixed at definition time.
-  - `:action` is accepted as a deprecated alias for `:node`.
+  - When using AgentNode as MapNode's child, the agent must be `:sync` mode
+    (the default). Async/streaming modes are not directly runnable via `run/3`
+    and will error.
 - HumanNode: always returns `:suspend` outcome. Pair with `SuspendForHuman`
   directive for approval gates.
 - Terminal states: `:done` and `:failed` are convention defaults (with `:done`

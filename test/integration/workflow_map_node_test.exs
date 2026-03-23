@@ -69,7 +69,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeTest do
       MapNode.new(
         name: :process,
         over: [:generate, :items],
-        action: DoubleValueAction
+        node: DoubleValueAction
       )
 
     use Jido.Composer.Workflow,
@@ -94,7 +94,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeTest do
       MapNode.new(
         name: :compute,
         over: :items,
-        action: DoubleValueAction
+        node: DoubleValueAction
       )
 
     use Jido.Composer.Workflow,
@@ -115,7 +115,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeTest do
       MapNode.new(
         name: :process,
         over: :items,
-        action: FailElementAction
+        node: FailElementAction
       )
 
     use Jido.Composer.Workflow,
@@ -136,7 +136,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeTest do
       MapNode.new(
         name: :process,
         over: :missing_key,
-        action: DoubleValueAction
+        node: DoubleValueAction
       )
 
     use Jido.Composer.Workflow,

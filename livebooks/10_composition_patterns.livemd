@@ -173,7 +173,7 @@ alias Jido.Composer.Node.MapNode
 {:ok, enrich_node} = MapNode.new(
   name: :enrich,
   over: [:validate, :items],
-  action: Demo.EnrichAction
+  node: Demo.EnrichAction
 )
 
 defmodule Demo.ComposedPipeline do
@@ -271,7 +271,7 @@ alias Jido.Composer.Node.MapNode
 {:ok, enrich_node_v2} = MapNode.new(
   name: :enrich,
   over: [:validate, :items],
-  action: Demo.EnrichAction
+  node: Demo.EnrichAction
 )
 
 defmodule Demo.ValidPathPipeline do
@@ -427,7 +427,7 @@ end
 {:ok, double_node} = MapNode.new(
   name: :double,
   over: [:generate, :items],
-  action: Demo.DoubleValueAction
+  node: Demo.DoubleValueAction
 )
 
 defmodule Demo.DoubleSumWorkflow do

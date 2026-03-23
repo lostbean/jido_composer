@@ -16,7 +16,6 @@ defmodule Jido.Composer.Node.MapNode do
   - `:name` — state name (required)
   - `:over` — context key or path to the list (`atom()` or `[atom()]`)
   - `:node` — any Node struct, or a bare `Jido.Action` module (auto-wrapped)
-  - `:action` — deprecated alias for `:node` (bare action module only)
   - `:max_concurrency` — limit parallel tasks (default: list length)
   - `:timeout` — per-element timeout in ms (default: 30_000)
   - `:on_error` — `:fail_fast` (default) or `:collect_partial`
@@ -239,20 +238,9 @@ defmodule Jido.Composer.Node.MapNode do
   # -- Private helpers --
 
   defp resolve_node(opts) do
-    node_opt = Keyword.get(opts, :node)
-    action_opt = Keyword.get(opts, :action)
-
-    cond do
-      # :node takes precedence
-      not is_nil(node_opt) ->
-        wrap_node(node_opt)
-
-      # :action backward compat
-      not is_nil(action_opt) ->
-        wrap_action_module(action_opt)
-
-      true ->
-        {:error, "node or action is required"}
+    case Keyword.get(opts, :node) do
+      nil -> {:error, "node is required"}
+      node_opt -> wrap_node(node_opt)
     end
   end
 

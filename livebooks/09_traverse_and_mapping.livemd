@@ -15,9 +15,10 @@ Mix.install(
 ## Introduction
 
 **MapNode** implements the **traverse** composition constructor — it takes a collection
-from context and runs a single action against every element. Unlike FanOutNode (which
-runs N different branches known at definition time), MapNode runs one action N times
-over a collection discovered at runtime.
+from context and runs a single **node** against every element. The `node:` field accepts
+any Node struct (ActionNode, FanOutNode, AgentNode, HumanNode) or a bare action module
+(auto-wrapped in ActionNode). Unlike FanOutNode (which runs N different branches known
+at definition time), MapNode runs one node N times over a collection discovered at runtime.
 
 | Aspect          | FanOutNode                   | MapNode                     |
 | --------------- | ---------------------------- | --------------------------- |
@@ -57,6 +58,15 @@ defmodule Demo.DoubleValueAction do
   def run(%{value: v}, _ctx), do: {:ok, %{value: v * 2}}
 end
 
+defmodule Demo.AddTenAction do
+  use Jido.Action,
+    name: "add_ten",
+    description: "Adds ten to a value",
+    schema: [value: [type: :integer, required: true]]
+
+  def run(%{value: v}, _ctx), do: {:ok, %{result: v + 10}}
+end
+
 # Suppress doctests from Jido.Agent
 defmodule Demo.Helpers do
   defmacro suppress_agent_doctests do
@@ -82,7 +92,7 @@ alias Jido.Composer.Node.MapNode
 {:ok, map_node} = MapNode.new(
   name: :double,
   over: :items,
-  action: Demo.DoubleValueAction
+  node: Demo.DoubleValueAction
 )
 
 # Run directly with a flat context
@@ -101,7 +111,7 @@ alias Jido.Composer.Node.MapNode
 {:ok, map_node} = MapNode.new(
   name: :double,
   over: [:generate, :items],
-  action: Demo.DoubleValueAction
+  node: Demo.DoubleValueAction
 )
 
 # Simulate context from a prior "generate" step
@@ -121,7 +131,7 @@ alias Jido.Composer.Node.MapNode
 {:ok, double_node} = MapNode.new(
   name: :double,
   over: [:generate, :items],
-  action: Demo.DoubleValueAction
+  node: Demo.DoubleValueAction
 )
 
 defmodule Demo.GenerateDoubleWorkflow do
@@ -158,7 +168,7 @@ IO.puts("Doubled results: #{inspect(ctx[:double][:results])}")
 
 MapNode handles two types of collection elements differently:
 
-- **Map elements** are merged into the action params (the action sees the map's keys directly)
+- **Map elements** are merged into the node params (the action sees the map's keys directly)
 - **Non-map elements** (integers, strings, etc.) are wrapped as `%{item: element}`
 
 ```elixir
@@ -182,7 +192,7 @@ defmodule Demo.InspectParamsAction do
 end
 
 # Map elements — keys merge directly
-{:ok, map_node} = MapNode.new(name: :inspect, over: :items, action: Demo.InspectParamsAction)
+{:ok, map_node} = MapNode.new(name: :inspect, over: :items, node: Demo.InspectParamsAction)
 {:ok, result_maps} = MapNode.run(map_node, %{items: [%{name: "Alice"}, %{name: "Bob"}]})
 
 IO.puts("=== Map Elements ===")
@@ -228,14 +238,14 @@ end
 items = [%{value: 1}, %{value: -2}, %{value: 3}]
 
 # Fail-fast: stops at first error
-{:ok, ff_node} = MapNode.new(name: :ff, over: :items, action: Demo.MaybeFailAction, on_error: :fail_fast)
+{:ok, ff_node} = MapNode.new(name: :ff, over: :items, node: Demo.MaybeFailAction, on_error: :fail_fast)
 ff_result = MapNode.run(ff_node, %{items: items})
 
 IO.puts("=== Fail-Fast ===")
 IO.puts("Result: #{inspect(ff_result)}")
 
 # Collect-partial: continues past errors
-{:ok, cp_node} = MapNode.new(name: :cp, over: :items, action: Demo.MaybeFailAction, on_error: :collect_partial)
+{:ok, cp_node} = MapNode.new(name: :cp, over: :items, node: Demo.MaybeFailAction, on_error: :collect_partial)
 {:ok, cp_result} = MapNode.run(cp_node, %{items: items})
 
 IO.puts("\n=== Collect-Partial ===")
@@ -271,11 +281,11 @@ end
 items = Enum.map(1..6, fn i -> %{value: i} end)
 
 # Sequential (max_concurrency: 1)
-{:ok, seq_node} = MapNode.new(name: :seq, over: :items, action: Demo.SlowAction, max_concurrency: 1)
+{:ok, seq_node} = MapNode.new(name: :seq, over: :items, node: Demo.SlowAction, max_concurrency: 1)
 {seq_us, {:ok, _}} = :timer.tc(fn -> MapNode.run(seq_node, %{items: items}) end)
 
 # Parallel (max_concurrency: 6)
-{:ok, par_node} = MapNode.new(name: :par, over: :items, action: Demo.SlowAction, max_concurrency: 6)
+{:ok, par_node} = MapNode.new(name: :par, over: :items, node: Demo.SlowAction, max_concurrency: 6)
 {par_us, {:ok, _}} = :timer.tc(fn -> MapNode.run(par_node, %{items: items}) end)
 
 IO.puts("=== Backpressure Comparison (6 items × 100ms each) ===\n")
@@ -284,7 +294,44 @@ IO.puts("Parallel   (max_concurrency: 6): #{div(par_us, 1000)}ms")
 IO.puts("Speedup: #{Float.round(seq_us / par_us, 1)}x")
 ```
 
-## Part 5: MapNode vs FanOutNode
+## Part 5: Node-over-Node Composition
+
+MapNode's `node:` field accepts **any** Node struct, not just actions. This enables
+powerful composition: map a FanOutNode over a collection to run multiple branches
+per element.
+
+```elixir
+alias Jido.Composer.Node.{ActionNode, FanOutNode, MapNode}
+
+# Build a FanOutNode that computes double AND add-ten for a single element
+{:ok, double_node} = ActionNode.new(Demo.DoubleValueAction)
+{:ok, add_ten_node} = ActionNode.new(Demo.AddTenAction)
+
+{:ok, fan_out} = FanOutNode.new(
+  name: "compute_both",
+  branches: [double: double_node, add_ten: add_ten_node]
+)
+
+# Map that FanOutNode over a collection — each element gets BOTH computations
+{:ok, map_node} = MapNode.new(
+  name: :process,
+  over: :items,
+  node: fan_out
+)
+
+{:ok, result} = MapNode.run(map_node, %{items: [%{value: 5}, %{value: 10}, %{value: 15}]})
+
+IO.puts("=== Node-over-Node: FanOutNode mapped over collection ===\n")
+
+for {r, i} <- Enum.with_index(result[:results]) do
+  IO.puts("  Item #{i}: double=#{inspect(r[:double])}, add_ten=#{inspect(r[:add_ten])}")
+end
+
+IO.puts("\nEach element got its own FanOutNode with two branches.")
+IO.puts("Result shape: ordered list of maps, each map keyed by branch name.")
+```
+
+## Part 6: MapNode vs FanOutNode
 
 Here's the same problem solved both ways to illustrate when each is appropriate.
 
@@ -317,16 +364,16 @@ IO.puts("=== FanOutNode: Two different actions ===")
 IO.puts("Double branch: #{inspect(elem(fan_result, 1)[:double])}")
 IO.puts("Square branch: #{inspect(elem(fan_result, 1)[:square])}")
 
-# MapNode: ONE action applied to MANY items
+# MapNode: ONE node applied to MANY items
 {:ok, map_node} = MapNode.new(
   name: :process,
   over: :items,
-  action: Demo.DoubleValueAction
+  node: Demo.DoubleValueAction
 )
 
 {:ok, map_result} = MapNode.run(map_node, %{items: [%{value: 1}, %{value: 2}, %{value: 3}]})
 
-IO.puts("\n=== MapNode: One action, many items ===")
+IO.puts("\n=== MapNode: One node, many items ===")
 IO.puts("Results: #{inspect(map_result[:results])}")
 
 IO.puts("\n=== When to use which ===")
@@ -338,11 +385,12 @@ IO.puts("MapNode:    variable set of SAME operation (homogeneous)")
 
 You've learned how to:
 
-- Map an action over a runtime-determined collection with MapNode
+- Map any node over a runtime-determined collection with MapNode
 - Use top-level keys and nested paths with `over:`
 - Handle map vs non-map element preparation
 - Choose between fail-fast and collect-partial error policies
 - Control concurrency with `max_concurrency`
+- Compose nodes: map a FanOutNode over a collection (node-over-node)
 - Decide between MapNode and FanOutNode
 
 Next guides:

@@ -114,6 +114,10 @@ AgentNode supports three configuration modes for directive-based execution:
 | `:async`          | Returns execution error (`not directly runnable`)   | SpawnAgent lifecycle, parent does not block            |
 | `:streaming`      | Returns execution error (`not directly runnable`)   | SpawnAgent lifecycle with upstream state notifications |
 
+Only `:sync` mode supports direct `run/3` execution. This matters when AgentNode
+is used as a child of MapNode or FanOutNode — these call `run/3` on each element,
+so the wrapped agent **must** use `:sync` mode (the default).
+
 `signal_type` overrides the default signal sent to children; `on_state` (streaming
 mode) controls which child states emit upstream events.
 

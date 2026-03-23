@@ -7,6 +7,8 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
   alias Jido.Composer.Directive.Suspend, as: SuspendDirective
 
   alias Jido.Composer.Node.ActionNode
+  alias Jido.Composer.Node.AgentNode
+  alias Jido.Composer.Node.HumanNode
   alias Jido.Composer.Node.MapNode
   alias Jido.Composer.Suspension
   alias Jido.Composer.Workflow.Strategy
@@ -79,7 +81,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
       MapNode.new(
         name: :compute,
         over: :items,
-        action: SuspendingElementAction
+        node: SuspendingElementAction
       )
 
     use Jido.Composer.Workflow,
@@ -99,7 +101,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
       MapNode.new(
         name: :compute,
         over: :items,
-        action: DoubleValueAction,
+        node: DoubleValueAction,
         max_concurrency: 1
       )
 
@@ -120,7 +122,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
       MapNode.new(
         name: :compute,
         over: :items,
-        action: MaybeFailAction,
+        node: MaybeFailAction,
         on_error: :collect_partial
       )
 
@@ -381,7 +383,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
                 MapNode.new(
                   name: :compute,
                   over: :items,
-                  action: DoubleValueAction,
+                  node: DoubleValueAction,
                   max_concurrency: 1
                 ),
                 1
@@ -498,7 +500,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
         MapNode.new(
           name: :compute,
           over: :items,
-          action: DoubleValueAction
+          node: DoubleValueAction
         )
 
       fan_out_state = %{
@@ -539,7 +541,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
         MapNode.new(
           name: :compute,
           over: :items,
-          action: DoubleValueAction,
+          node: DoubleValueAction,
           max_concurrency: 2,
           timeout: 60_000,
           on_error: :collect_partial
@@ -619,6 +621,267 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
       assert %{value: 1.0} = Enum.at(results, 0)
       assert {:error, _} = Enum.at(results, 1)
       assert %{value: 3.0} = Enum.at(results, 2)
+    end
+  end
+
+  # ══════════════════════════════════════════════════════════════
+  # Additional cross-feature coverage
+  # ══════════════════════════════════════════════════════════════
+
+  # -- HumanNode child workflow --
+
+  defmodule HumanNodeChildMapWorkflow do
+    {:ok, human_node} =
+      HumanNode.new(
+        name: "approve_item",
+        description: "Approve each item",
+        prompt: "Approve this item?"
+      )
+
+    {:ok, map_node} =
+      MapNode.new(
+        name: :compute,
+        over: :items,
+        node: human_node
+      )
+
+    use Jido.Composer.Workflow,
+      name: "human_node_child_map",
+      description: "MapNode with HumanNode child — every element suspends",
+      nodes: %{compute: map_node},
+      transitions: %{
+        {:compute, :ok} => :done,
+        {:compute, :error} => :failed,
+        {:_, :error} => :failed
+      },
+      initial: :compute
+  end
+
+  # -- AgentNode child workflow --
+
+  defmodule SimpleWorkflowAgent do
+    use Jido.Composer.Workflow,
+      name: "simple_workflow_agent",
+      description: "Doubles a value via single-step workflow",
+      nodes: %{compute: DoubleValueAction},
+      transitions: %{
+        {:compute, :ok} => :done,
+        {:_, :error} => :failed
+      },
+      initial: :compute
+  end
+
+  defmodule AgentNodeChildMapWorkflow do
+    {:ok, agent_node} = AgentNode.new(SimpleWorkflowAgent, mode: :sync)
+
+    {:ok, map_node} =
+      MapNode.new(
+        name: :compute,
+        over: :items,
+        node: agent_node
+      )
+
+    use Jido.Composer.Workflow,
+      name: "agent_node_child_map",
+      description: "MapNode with AgentNode child",
+      nodes: %{compute: map_node},
+      transitions: %{
+        {:compute, :ok} => :done,
+        {:compute, :error} => :failed,
+        {:_, :error} => :failed
+      },
+      initial: :compute
+  end
+
+  # -- Fail-fast strategy workflow --
+
+  defmodule FailFastStrategyMapWorkflow do
+    {:ok, map_node} =
+      MapNode.new(
+        name: :compute,
+        over: :items,
+        node: MaybeFailAction,
+        on_error: :fail_fast
+      )
+
+    use Jido.Composer.Workflow,
+      name: "fail_fast_strategy_map",
+      description: "MapNode with fail_fast through strategy",
+      nodes: %{compute: map_node},
+      transitions: %{
+        {:compute, :ok} => :done,
+        {:compute, :error} => :failed,
+        {:_, :error} => :failed
+      },
+      initial: :compute
+  end
+
+  describe "MapNode with HumanNode child" do
+    test "every element suspends, resume each, ordered merge" do
+      agent = HumanNodeChildMapWorkflow.new()
+
+      {agent, directives} =
+        HumanNodeChildMapWorkflow.run(agent, %{
+          items: [%{label: "item_a"}, %{label: "item_b"}]
+        })
+
+      assert length(directives) == 2
+      assert Enum.all?(directives, &match?(%FanOutBranch{}, &1))
+
+      # Execute all branches — all will suspend (HumanNode always suspends)
+      {agent, _directives} =
+        feed_branch_results(HumanNodeChildMapWorkflow, agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :waiting
+      assert map_size(strat.fan_out.suspended_branches) == 2
+
+      # Resume each branch
+      suspended_list = Enum.to_list(strat.fan_out.suspended_branches)
+
+      {_, %{suspension: sus_0}} =
+        Enum.find(suspended_list, fn {name, _} -> name == :item_0 end)
+
+      {_, %{suspension: sus_1}} =
+        Enum.find(suspended_list, fn {name, _} -> name == :item_1 end)
+
+      {agent, _} =
+        HumanNodeChildMapWorkflow.cmd(
+          agent,
+          {:suspend_resume,
+           %{suspension_id: sus_0.id, outcome: :ok, data: %{approved: true, order: 0}}}
+        )
+
+      # Still waiting — item_1 is suspended
+      strat = StratState.get(agent)
+      assert strat.status == :waiting
+
+      {agent, _} =
+        HumanNodeChildMapWorkflow.cmd(
+          agent,
+          {:suspend_resume,
+           %{suspension_id: sus_1.id, outcome: :ok, data: %{approved: true, order: 1}}}
+        )
+
+      strat = StratState.get(agent)
+      assert strat.machine.status == :done
+      assert strat.fan_out == nil
+
+      ctx = strat.machine.context.working
+      results = ctx[:compute][:results]
+      assert is_list(results)
+      assert length(results) == 2
+
+      [r0, r1] = results
+      assert r0[:order] == 0
+      assert r1[:order] == 1
+    end
+  end
+
+  describe "MapNode with AgentNode child" do
+    test "maps workflow agent over collection via run_sync" do
+      agent = AgentNodeChildMapWorkflow.new()
+
+      assert {:ok, result} =
+               AgentNodeChildMapWorkflow.run_sync(agent, %{
+                 items: [%{value: 3.0}, %{value: 7.0}]
+               })
+
+      results = result[:compute][:results]
+      assert is_list(results)
+      assert length(results) == 2
+
+      # SimpleWorkflowAgent doubles via DoubleValueAction into :compute key
+      [r0, r1] = results
+      assert r0[:compute][:doubled] == 6.0
+      assert r1[:compute][:doubled] == 14.0
+    end
+  end
+
+  describe "MapNode fail-fast through strategy" do
+    test "first branch error transitions to :failed, remaining cancelled" do
+      agent = FailFastStrategyMapWorkflow.new()
+
+      {agent, directives} =
+        FailFastStrategyMapWorkflow.run(agent, %{
+          items: [
+            %{value: 1.0, should_fail: false},
+            %{value: 2.0, should_fail: true},
+            %{value: 3.0, should_fail: false}
+          ]
+        })
+
+      assert length(directives) == 3
+      assert Enum.all?(directives, &match?(%FanOutBranch{}, &1))
+
+      # Feed branch results — item_1 will fail
+      {agent, _directives} =
+        feed_branch_results(FailFastStrategyMapWorkflow, agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.machine.status == :failed
+      assert StratState.status(agent) == :failure
+      assert strat.fan_out == nil
+    end
+  end
+
+  describe "MapNode full checkpoint round-trip" do
+    test "checkpoint mid-suspension, restore from binary, resume to completion" do
+      agent = SuspendingMapWorkflow.new()
+
+      # 2 items: one succeeds (tokens=5), one suspends (tokens=0)
+      {agent, directives} =
+        SuspendingMapWorkflow.run(agent, %{
+          items: [%{tokens: 5}, %{tokens: 0}]
+        })
+
+      # Execute all branches — item_1 will suspend
+      {agent, _directives} =
+        feed_branch_results(SuspendingMapWorkflow, agent, directives)
+
+      strat = StratState.get(agent)
+      assert strat.status == :waiting
+      assert map_size(strat.fan_out.suspended_branches) == 1
+
+      # Checkpoint: prepare → serialize → deserialize
+      cleaned = Checkpoint.prepare_for_checkpoint(strat)
+      binary = :erlang.term_to_binary(cleaned, [:compressed])
+      restored = :erlang.binary_to_term(binary)
+
+      # Verify checkpoint preserves critical state
+      assert restored.status == :waiting
+      assert restored.fan_out != nil
+      assert restored.fan_out.merge == :ordered_list
+      assert map_size(restored.fan_out.completed_results) == 1
+      assert map_size(restored.fan_out.suspended_branches) == 1
+
+      # Inject restored state back into agent
+      agent = StratState.put(agent, restored)
+
+      # Get suspension id from restored state
+      [{_branch, %{suspension: suspension}}] =
+        Enum.to_list(restored.fan_out.suspended_branches)
+
+      # Resume the suspended branch
+      {agent, _} =
+        SuspendingMapWorkflow.cmd(
+          agent,
+          {:suspend_resume,
+           %{
+             suspension_id: suspension.id,
+             outcome: :ok,
+             data: %{processed: true}
+           }}
+        )
+
+      strat = StratState.get(agent)
+      assert strat.machine.status == :done
+      assert strat.fan_out == nil
+
+      ctx = strat.machine.context.working
+      results = ctx[:compute][:results]
+      assert is_list(results)
+      assert length(results) == 2
     end
   end
 end
