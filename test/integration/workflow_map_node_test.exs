@@ -196,11 +196,8 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeTest do
     run_directive_loop(agent_module, agent, final_directives)
   end
 
-  defp execute_fan_out_branch(%FanOutBranch{instruction: %Jido.Instruction{} = instr}) do
-    case execute_instruction(instr) do
-      %{status: :ok, result: result} -> {:ok, result}
-      %{status: :error, result: %{error: reason}} -> {:error, reason}
-    end
+  defp execute_fan_out_branch(%FanOutBranch{child_node: child_node, params: params}) do
+    child_node.__struct__.run(child_node, params || %{}, [])
   end
 
   defp execute_instruction(%Jido.Instruction{action: action_module, params: params}) do

@@ -1,21 +1,22 @@
 defmodule Jido.Composer.Node.MapNode do
   @moduledoc """
-  Applies the same action to each element of a runtime-determined list.
+  Applies the same node to each element of a runtime-determined list.
 
   MapNode implements the **traverse** composition constructor — it takes a
   collection from context (resolved via the `over` path) and runs a single
-  action against every element. Results are collected as an ordered list
+  node against every element. Results are collected as an ordered list
   under `%{results: [...]}`.
 
   Unlike `FanOutNode` (which runs N different branches known at definition
-  time), MapNode runs one action N times over a collection discovered at
+  time), MapNode runs one node N times over a collection discovered at
   runtime.
 
   ## Options
 
   - `:name` — state name (required)
   - `:over` — context key or path to the list (`atom()` or `[atom()]`)
-  - `:action` — `Jido.Action` module to run per element
+  - `:node` — any Node struct, or a bare `Jido.Action` module (auto-wrapped)
+  - `:action` — deprecated alias for `:node` (bare action module only)
   - `:max_concurrency` — limit parallel tasks (default: list length)
   - `:timeout` — per-element timeout in ms (default: 30_000)
   - `:on_error` — `:fail_fast` (default) or `:collect_partial`
@@ -25,7 +26,7 @@ defmodule Jido.Composer.Node.MapNode do
       {:ok, map_node} = MapNode.new(
         name: :process,
         over: [:extract, :items],
-        action: DoubleValueAction
+        node: DoubleValueAction
       )
 
       # Use in a workflow:
@@ -62,14 +63,15 @@ defmodule Jido.Composer.Node.MapNode do
 
   alias Jido.Composer.Directive.FanOutBranch
   alias Jido.Composer.FanOut.State, as: FanOutState
+  alias Jido.Composer.Node.ActionNode
 
   @default_timeout 30_000
 
-  @enforce_keys [:name, :over, :action]
+  @enforce_keys [:name, :over, :node]
   defstruct [
     :name,
     :over,
-    :action,
+    :node,
     :max_concurrency,
     merge: :ordered_list,
     on_error: :fail_fast,
@@ -79,7 +81,7 @@ defmodule Jido.Composer.Node.MapNode do
   @type t :: %__MODULE__{
           name: atom(),
           over: atom() | [atom()],
-          action: module(),
+          node: struct(),
           max_concurrency: pos_integer() | nil,
           merge: :ordered_list,
           on_error: :fail_fast | :collect_partial,
@@ -100,7 +102,8 @@ defmodule Jido.Composer.Node.MapNode do
   def new(opts) do
     name = Keyword.get(opts, :name)
     over = Keyword.get(opts, :over)
-    action = Keyword.get(opts, :action)
+
+    on_error = Keyword.get(opts, :on_error, :fail_fast)
 
     cond do
       is_nil(name) ->
@@ -109,37 +112,38 @@ defmodule Jido.Composer.Node.MapNode do
       is_nil(over) ->
         {:error, "over is required"}
 
-      is_nil(action) ->
-        {:error, "action is required"}
-
-      not action_module?(action) ->
-        {:error, "#{inspect(action)} is not a valid Jido.Action module"}
-
-      Keyword.get(opts, :on_error, :fail_fast) not in [:fail_fast, :collect_partial] ->
+      on_error not in [:fail_fast, :collect_partial] ->
         {:error, "on_error must be :fail_fast or :collect_partial"}
 
       true ->
-        {:ok,
-         %__MODULE__{
-           name: name,
-           over: over,
-           action: action,
-           max_concurrency: Keyword.get(opts, :max_concurrency),
-           timeout: Keyword.get(opts, :timeout, @default_timeout),
-           on_error: Keyword.get(opts, :on_error, :fail_fast)
-         }}
+        case resolve_node(opts) do
+          {:ok, resolved_node} ->
+            {:ok,
+             %__MODULE__{
+               name: name,
+               over: over,
+               node: resolved_node,
+               max_concurrency: Keyword.get(opts, :max_concurrency),
+               timeout: Keyword.get(opts, :timeout, @default_timeout),
+               on_error: on_error
+             }}
+
+          {:error, _} = error ->
+            error
+        end
     end
   end
 
   @impl true
   @spec run(t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
-  def run(%__MODULE__{} = node, context, _opts \\ []) do
-    items = resolve_items(context, node.over)
+  def run(%__MODULE__{} = map_node, context, _opts \\ []) do
+    items = resolve_items(context, map_node.over)
 
     if items == [] do
       {:ok, %{results: []}}
     else
-      concurrency = node.max_concurrency || length(items)
+      concurrency = map_node.max_concurrency || length(items)
+      child_node = map_node.node
 
       results =
         items
@@ -147,16 +151,16 @@ defmodule Jido.Composer.Node.MapNode do
         |> Task.async_stream(
           fn {element, _index} ->
             element_params = prepare_element_params(element)
-            Jido.Exec.run(node.action, element_params)
+            child_node.__struct__.run(child_node, element_params)
           end,
-          timeout: node.timeout,
+          timeout: map_node.timeout,
           on_timeout: :kill_task,
           ordered: true,
           max_concurrency: concurrency
         )
         |> Enum.to_list()
 
-      case process_results(results, node.on_error) do
+      case process_results(results, map_node.on_error) do
         {:ok, ordered_results} -> {:ok, %{results: ordered_results}}
         {:error, reason} -> {:error, reason}
       end
@@ -169,16 +173,17 @@ defmodule Jido.Composer.Node.MapNode do
 
   @impl true
   @spec description(t()) :: String.t()
-  def description(%__MODULE__{action: action, over: over}) do
+  def description(%__MODULE__{node: child_node, over: over}) do
     over_str = if is_list(over), do: Enum.join(over, "."), else: to_string(over)
-    "Map #{inspect(action)} over #{over_str}"
+    node_name = child_node.__struct__.name(child_node)
+    "Map #{node_name} over #{over_str}"
   end
 
   @impl true
   @spec to_directive(t(), map(), keyword()) :: Jido.Composer.Node.directive_result()
-  def to_directive(%__MODULE__{} = node, flat_context, opts) do
+  def to_directive(%__MODULE__{} = map_node, flat_context, opts) do
     fan_out_id = Keyword.fetch!(opts, :fan_out_id)
-    items = resolve_items(flat_context, node.over)
+    items = resolve_items(flat_context, map_node.over)
 
     if items == [] do
       result_action = Keyword.get(opts, :result_action, :workflow_node_result)
@@ -190,6 +195,8 @@ defmodule Jido.Composer.Node.MapNode do
 
       {:ok, [directive]}
     else
+      child_node = map_node.node
+
       all_branches =
         items
         |> Enum.with_index()
@@ -201,23 +208,21 @@ defmodule Jido.Composer.Node.MapNode do
           directive = %FanOutBranch{
             fan_out_id: fan_out_id,
             branch_name: branch_name,
-            instruction: %Jido.Instruction{
-              action: node.action,
-              params: params
-            },
+            child_node: child_node,
+            params: params,
             result_action: :fan_out_branch_result,
-            timeout: node.timeout
+            timeout: map_node.timeout
           }
 
           {branch_name, directive}
         end)
 
-      max_concurrency = node.max_concurrency || length(all_branches)
+      max_concurrency = map_node.max_concurrency || length(all_branches)
       {to_dispatch, to_queue} = Enum.split(all_branches, max_concurrency)
 
       dispatched_names = Enum.map(to_dispatch, fn {name, _} -> name end) |> MapSet.new()
 
-      fan_out_state = FanOutState.new(fan_out_id, node, dispatched_names, to_queue)
+      fan_out_state = FanOutState.new(fan_out_id, map_node, dispatched_names, to_queue)
 
       directives = Enum.map(to_dispatch, fn {_name, directive} -> directive end)
       {:ok, directives, fan_out: fan_out_state}
@@ -229,6 +234,42 @@ defmodule Jido.Composer.Node.MapNode do
   def to_tool_spec(%__MODULE__{}), do: nil
 
   # -- Private helpers --
+
+  defp resolve_node(opts) do
+    node_opt = Keyword.get(opts, :node)
+    action_opt = Keyword.get(opts, :action)
+
+    cond do
+      # :node takes precedence
+      not is_nil(node_opt) ->
+        wrap_node(node_opt)
+
+      # :action backward compat
+      not is_nil(action_opt) ->
+        wrap_action_module(action_opt)
+
+      true ->
+        {:error, "node or action is required"}
+    end
+  end
+
+  defp wrap_node(node) when is_struct(node), do: {:ok, node}
+
+  defp wrap_node(module) when is_atom(module) do
+    wrap_action_module(module)
+  end
+
+  defp wrap_node(other) do
+    {:error, "#{inspect(other)} is not a valid Node struct or Action module"}
+  end
+
+  defp wrap_action_module(module) when is_atom(module) do
+    if action_module?(module) do
+      ActionNode.new(module)
+    else
+      {:error, "#{inspect(module)} is not a valid Jido.Action module"}
+    end
+  end
 
   defp resolve_items(context, over) when is_atom(over) do
     case Map.get(context, over) do
@@ -252,6 +293,9 @@ defmodule Jido.Composer.Node.MapNode do
            {:ok, {:ok, result}}, {:ok, acc} ->
              {:cont, {:ok, [result | acc]}}
 
+           {:ok, {:ok, result, _outcome}}, {:ok, acc} ->
+             {:cont, {:ok, [result | acc]}}
+
            {:ok, {:error, reason}}, _acc ->
              {:halt, {:error, {:element_failed, reason}}}
 
@@ -267,6 +311,7 @@ defmodule Jido.Composer.Node.MapNode do
     ordered =
       Enum.map(results, fn
         {:ok, {:ok, result}} -> result
+        {:ok, {:ok, result, _outcome}} -> result
         {:ok, {:error, reason}} -> {:error, reason}
         {:exit, reason} -> {:error, {:crashed, reason}}
       end)

@@ -6,6 +6,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
   alias Jido.Composer.Directive.FanOutBranch
   alias Jido.Composer.Directive.Suspend, as: SuspendDirective
 
+  alias Jido.Composer.Node.ActionNode
   alias Jido.Composer.Node.MapNode
   alias Jido.Composer.Suspension
   alias Jido.Composer.Workflow.Strategy
@@ -135,10 +136,51 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
       initial: :compute
   end
 
+  defmodule AddTenAction do
+    @moduledoc false
+    use Jido.Action,
+      name: "add_ten",
+      description: "Adds ten to a value",
+      schema: [value: [type: :float, required: true]]
+
+    def run(%{value: value}, _context) do
+      {:ok, %{result: value + 10}}
+    end
+  end
+
+  defmodule FanOutChildMapWorkflow do
+    {:ok, double_node} = ActionNode.new(DoubleValueAction)
+    {:ok, add_ten_node} = ActionNode.new(AddTenAction)
+
+    {:ok, fan_out} =
+      Jido.Composer.Node.FanOutNode.new(
+        name: "inner_fan_out",
+        branches: [double: double_node, add_ten: add_ten_node]
+      )
+
+    {:ok, map_node} =
+      MapNode.new(
+        name: :compute,
+        over: :items,
+        node: fan_out
+      )
+
+    use Jido.Composer.Workflow,
+      name: "fan_out_child_map",
+      description: "MapNode with FanOutNode child",
+      nodes: %{compute: map_node},
+      transitions: %{
+        {:compute, :ok} => :done,
+        {:compute, :error} => :failed,
+        {:_, :error} => :failed
+      },
+      initial: :compute
+  end
+
   # -- Helpers --
 
-  defp execute_fan_out_branch(%FanOutBranch{instruction: %Jido.Instruction{} = instr}) do
-    case Jido.Exec.run(instr.action, instr.params) do
+  defp execute_fan_out_branch(%FanOutBranch{child_node: child_node, params: params}) do
+    case child_node.__struct__.run(child_node, params || %{}, []) do
       {:ok, result} ->
         if Map.has_key?(result, :__suspension__) do
           suspension = result.__suspension__
@@ -295,6 +337,36 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
       [r0, r1] = results
       assert r0[:order] == 0
       assert r1[:order] == 1
+    end
+  end
+
+  describe "MapNode with FanOutNode child (node-over-node)" do
+    test "maps fan-out over collection via run_sync" do
+      agent = FanOutChildMapWorkflow.new()
+
+      assert {:ok, result} =
+               FanOutChildMapWorkflow.run_sync(agent, %{
+                 items: [%{value: 5.0}, %{value: 10.0}]
+               })
+
+      results = result[:compute][:results]
+      assert is_list(results)
+      assert length(results) == 2
+
+      # Each element was processed by a FanOutNode with double + add_ten branches
+      [r0, r1] = results
+      assert r0[:double][:doubled] == 10.0
+      assert r0[:add_ten][:result] == 15.0
+      assert r1[:double][:doubled] == 20.0
+      assert r1[:add_ten][:result] == 20.0
+    end
+
+    test "empty collection returns empty results" do
+      agent = FanOutChildMapWorkflow.new()
+
+      assert {:ok, result} = FanOutChildMapWorkflow.run_sync(agent, %{items: []})
+
+      assert result[:compute][:results] == []
     end
   end
 
@@ -479,7 +551,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeCrossFeatureTest do
       assert %MapNode{} = restored
       assert restored.name == :compute
       assert restored.over == :items
-      assert restored.action == DoubleValueAction
+      assert %ActionNode{action_module: DoubleValueAction} = restored.node
       assert restored.merge == :ordered_list
       assert restored.timeout == 60_000
       assert restored.on_error == :collect_partial

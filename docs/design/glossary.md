@@ -108,10 +108,12 @@ Delivered to the suspended flow as a [Signal](#signal). See
 ### FanOutBranch
 
 A [Directive](#directive) representing a single branch of a
-[FanOutNode](#fanoutnode). The [Workflow Strategy](workflow/strategy.md)
-decomposes a FanOutNode into individual FanOutBranch directives, each containing
-either a RunInstruction (for ActionNode branches) or a SpawnAgent (for AgentNode
-branches). This keeps the strategy pure by deferring execution to the runtime.
+[FanOutNode](#fanoutnode) or element of a [MapNode](#mapnode). Each
+FanOutBranch carries a `child_node` (any [Node](#node) struct) and `params`
+(execution context map). The executor dispatches uniformly through the Node
+interface — there is no special-casing by node type. This keeps the strategy
+pure and ensures all directives are serializable for
+[checkpointing](#checkpoint-structure).
 
 ### FanOutNode
 
@@ -163,12 +165,15 @@ via RunInstruction; there is no facade layer. See
 
 ### MapNode
 
-A [Node](#node) type that applies the same action to each element of a
+A [Node](#node) type that applies the same node to each element of a
 runtime-determined collection and collects the results as an ordered list.
 Implements the [traverse](composition-constructors.md#traverse) composition
-constructor. Distinct from [FanOutNode](#fanoutnode), which runs a fixed set of
-different branches — MapNode runs the same operation N times where N is
-determined at runtime. See [Traverse](traverse/README.md).
+constructor. The `node` field accepts any Node struct — ActionNode, AgentNode,
+FanOutNode, HumanNode, etc. — enabling full compositional nesting. Bare action
+modules are auto-wrapped in [ActionNode](#actionnode). Distinct from
+[FanOutNode](#fanoutnode), which runs a fixed set of different branches —
+MapNode runs the same node N times where N is determined at runtime. See
+[Traverse](traverse/README.md).
 
 ### Machine
 
@@ -330,7 +335,9 @@ indicate which terminal states represent successful completion. See
 
 A [composition constructor](composition-constructors.md#traverse) that applies
 the same [Node](#node) to each element of a collection. The collection size is
-determined at runtime, but the node is fixed at definition time. Implemented by
+determined at runtime, but the node is fixed at definition time. The mapped
+node can be any Node type — an action, an agent, a fan-out, or even a human
+gate — enabling per-element sub-compositions. Implemented by
 [MapNode](#mapnode). Analogous to "map" over a list — apply one operation to
 every element, collect all results.
 

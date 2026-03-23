@@ -244,23 +244,10 @@ defmodule Jido.Composer.Workflow.DSL do
   end
 
   defp execute_fan_out_branch(%Jido.Composer.Directive.FanOutBranch{
-         instruction: {:function, fun, context}
+         child_node: child_node,
+         params: params
        }) do
-    fun.(context)
-  end
-
-  defp execute_fan_out_branch(%Jido.Composer.Directive.FanOutBranch{
-         instruction: %Jido.Instruction{} = instr
-       }) do
-    case execute_sync(instr) do
-      %{status: :ok, result: result} -> {:ok, result}
-      %{status: :error, result: %{error: reason}} -> {:error, reason}
-    end
-  end
-
-  defp execute_fan_out_branch(%Jido.Composer.Directive.FanOutBranch{spawn_agent: spawn_info})
-       when not is_nil(spawn_info) do
-    Jido.Composer.Node.execute_child_sync(spawn_info.agent, spawn_info.opts)
+    child_node.__struct__.run(child_node, params || %{}, [])
   end
 
   defp execute_sync(%Jido.Instruction{action: action_module, params: params}) do

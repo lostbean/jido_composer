@@ -96,14 +96,20 @@ can draw the full graph before running anything.
 **Apply the same operation to each item in a collection.**
 
 ```
-              ┌─── A(item₁) ───┐
-[items] ──────┼─── A(item₂) ───┼─── [results]
-              └─── A(item₃) ───┘
+              ┌─── N(item₁) ───┐
+[items] ──────┼─── N(item₂) ───┼─── [results]
+              └─── N(item₃) ───┘
 ```
 
 This is the "map" operation — given a list of items from a previous step, run
 the same node on each item (potentially in parallel), and collect all results
 into a list.
+
+The mapped node can be any Node type — an action, an agent, a fan-out, a
+human gate, or any other composition. This means traverse composes with all
+other constructors: you can map a sub-workflow over a collection, or map a
+fan-out over elements for per-element parallel processing, or map a human gate
+for per-element approval.
 
 Traverse differs from Parallel in two important ways:
 

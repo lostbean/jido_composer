@@ -1346,29 +1346,32 @@ defmodule Jido.Composer.E2E.E2ETest do
     end
 
     defp execute_fanout_branch_cassette(
-           %Jido.Composer.Directive.FanOutBranch{instruction: %Jido.Instruction{} = instr},
-           _plug
+           %Jido.Composer.Directive.FanOutBranch{
+             child_node: %Jido.Composer.Node.AgentNode{agent_module: agent_module},
+             params: params
+           },
+           plug
          ) do
-      case Jido.Exec.run(instr.action, instr.params) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> {:error, reason}
+      context = params || %{}
+
+      cond do
+        function_exported?(agent_module, :query_sync, 3) ->
+          run_child_orchestrator_with_cassette_fanout(agent_module, context, plug)
+
+        function_exported?(agent_module, :run_sync, 2) ->
+          child_agent = agent_module.new()
+          agent_module.run_sync(child_agent, context)
+
+        true ->
+          {:error, :agent_not_sync_runnable}
       end
     end
 
     defp execute_fanout_branch_cassette(
-           %Jido.Composer.Directive.FanOutBranch{spawn_agent: spawn_info},
-           plug
-         )
-         when not is_nil(spawn_info) do
-      context = Map.get(spawn_info.opts, :context, %{})
-      child_module = spawn_info.agent
-
-      if function_exported?(child_module, :query_sync, 3) do
-        run_child_orchestrator_with_cassette_fanout(child_module, context, plug)
-      else
-        child_agent = child_module.new()
-        child_module.run_sync(child_agent, context)
-      end
+           %Jido.Composer.Directive.FanOutBranch{child_node: child_node, params: params},
+           _plug
+         ) do
+      child_node.__struct__.run(child_node, params || %{}, [])
     end
 
     defp run_child_orchestrator_with_cassette_fanout(child_module, context, plug) do

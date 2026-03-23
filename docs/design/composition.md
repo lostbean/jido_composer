@@ -144,13 +144,13 @@ and results flow back up via `emit_to_parent`.
 When a nested agent [suspends](hitl/README.md) (for human input, rate limits,
 or any other reason), the pause interacts with the composition model:
 
-| Behaviour                     | Description                                                                                                                                                          |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Parent isolation**          | The parent does not know the child is paused — it was already waiting for the child result. The [isolation property](#communication-across-boundaries) is preserved. |
-| **Concurrent work**           | An Orchestrator can dispatch non-gated tool calls while a gated tool call awaits approval. Work proceeds in parallel where possible.                                 |
-| **FanOut partial completion** | A [FanOutNode](nodes/README.md#fanoutnode) tracks completed and suspended branches independently. Merge happens when all branches resolve.                           |
-| **Cascading checkpoint**      | If the child hibernates during a long pause, it signals the parent, which may also hibernate. See [Persistence](hitl/persistence.md).                                |
-| **Cascading cancellation**    | If a suspension is rejected or cancelled, the effect is internalized within the child. The parent sees a normal result or error — not a special outcome.             |
+| Behaviour                     | Description                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Parent isolation**          | The parent does not know the child is paused — it was already waiting for the child result. The [isolation property](#communication-across-boundaries) is preserved.           |
+| **Concurrent work**           | An Orchestrator can dispatch non-gated tool calls while a gated tool call awaits approval. Work proceeds in parallel where possible.                                           |
+| **FanOut partial completion** | [FanOutNode](nodes/README.md#fanoutnode) and [MapNode](nodes/README.md#mapnode) track completed and suspended branches independently. Merge happens when all branches resolve. |
+| **Cascading checkpoint**      | If the child hibernates during a long pause, it signals the parent, which may also hibernate. See [Persistence](hitl/persistence.md).                                          |
+| **Cascading cancellation**    | If a suspension is rejected or cancelled, the effect is internalized within the child. The parent sees a normal result or error — not a special outcome.                       |
 
 For the complete analysis of suspension across nested agent trees, including race
 conditions, timeout interactions, and FanOut partial completion, see

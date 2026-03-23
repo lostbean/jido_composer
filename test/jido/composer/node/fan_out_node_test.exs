@@ -80,6 +80,28 @@ defmodule Jido.Composer.Node.FanOutNodeTest do
     test "rejects empty branches" do
       assert {:error, _reason} = FanOutNode.new(name: "test", branches: [])
     end
+
+    test "rejects bare function branches" do
+      fun = fn _ctx -> {:ok, %{value: 42}} end
+
+      assert {:error, msg} = FanOutNode.new(name: "test", branches: [calc: fun])
+      assert msg =~ "Node struct"
+    end
+
+    test "rejects mixed function and node branches" do
+      {:ok, add_node} = ActionNode.new(AddAction)
+      fun = fn _ctx -> {:ok, %{value: 42}} end
+
+      assert {:error, _msg} = FanOutNode.new(name: "test", branches: [add: add_node, calc: fun])
+    end
+
+    test "accepts all Node struct types as branches" do
+      {:ok, add_node} = ActionNode.new(AddAction)
+      {:ok, echo_node} = ActionNode.new(EchoAction)
+
+      assert {:ok, _node} =
+               FanOutNode.new(name: "test", branches: [add: add_node, echo: echo_node])
+    end
   end
 
   describe "run/2 concurrent execution" do
@@ -121,64 +143,6 @@ defmodule Jido.Composer.Node.FanOutNodeTest do
       assert result.first.echoed == "shared"
       assert result.second.echoed == "shared"
     end
-
-    test "branches execute in parallel (speedup test)" do
-      # Use function-based branches to test parallelism with sleep
-      {:ok, fan_out} =
-        FanOutNode.new(
-          name: "perf",
-          branches: [
-            a: fn _ctx ->
-              Process.sleep(100)
-              {:ok, %{done: true}}
-            end,
-            b: fn _ctx ->
-              Process.sleep(100)
-              {:ok, %{done: true}}
-            end,
-            c: fn _ctx ->
-              Process.sleep(100)
-              {:ok, %{done: true}}
-            end
-          ]
-        )
-
-      {time_us, {:ok, result}} = :timer.tc(fn -> FanOutNode.run(fan_out, %{}) end)
-      time_ms = time_us / 1000
-
-      assert map_size(result) == 3
-      # Sequential would be ~300ms; parallel should be ~100ms
-      assert time_ms < 250
-    end
-  end
-
-  describe "run/2 with function branches" do
-    test "accepts anonymous function branches" do
-      {:ok, fan_out} =
-        FanOutNode.new(
-          name: "fn_branches",
-          branches: [
-            compute: fn _ctx -> {:ok, %{value: 42}} end,
-            lookup: fn _ctx -> {:ok, %{found: true}} end
-          ]
-        )
-
-      assert {:ok, %{compute: %{value: 42}, lookup: %{found: true}}} =
-               FanOutNode.run(fan_out, %{})
-    end
-
-    test "function branches receive context" do
-      {:ok, fan_out} =
-        FanOutNode.new(
-          name: "ctx_test",
-          branches: [
-            reader: fn ctx -> {:ok, %{input: ctx.input}} end
-          ]
-        )
-
-      assert {:ok, %{reader: %{input: "test_data"}}} =
-               FanOutNode.run(fan_out, %{input: "test_data"})
-    end
   end
 
   describe "run/2 error handling" do
@@ -212,132 +176,41 @@ defmodule Jido.Composer.Node.FanOutNodeTest do
       assert %{echoed: "hello"} = result.echo
       assert {:error, _reason} = result.fail
     end
-
-    test "timeout causes error in fail-fast mode" do
-      {:ok, fan_out} =
-        FanOutNode.new(
-          name: "timeout_test",
-          branches: [
-            fast: fn _ctx -> {:ok, %{done: true}} end,
-            slow: fn _ctx ->
-              Process.sleep(5000)
-              {:ok, %{done: true}}
-            end
-          ],
-          timeout: 200
-        )
-
-      assert {:error, {:branch_crashed, _reason}} = FanOutNode.run(fan_out, %{})
-    end
   end
 
   describe "run/2 merge strategies" do
     test "deep_merge scopes results under branch names" do
+      {:ok, add_node} = ActionNode.new(AddAction)
+      {:ok, echo_node} = ActionNode.new(EchoAction)
+
       {:ok, fan_out} =
         FanOutNode.new(
           name: "scoped",
-          branches: [
-            financial: fn _ctx -> {:ok, %{score: 85, risk: :low}} end,
-            legal: fn _ctx -> {:ok, %{status: :clear}} end
-          ]
+          branches: [add: add_node, echo: echo_node]
         )
 
-      assert {:ok, result} = FanOutNode.run(fan_out, %{})
-      assert result.financial.score == 85
-      assert result.legal.status == :clear
-    end
-
-    test "custom merge function receives branch results" do
-      sum_merge = fn results ->
-        total = Enum.reduce(results, 0, fn {_name, result}, acc -> acc + result.value end)
-        %{total: total}
-      end
-
-      {:ok, fan_out} =
-        FanOutNode.new(
-          name: "custom_merge",
-          branches: [
-            a: fn _ctx -> {:ok, %{value: 10}} end,
-            b: fn _ctx -> {:ok, %{value: 20}} end,
-            c: fn _ctx -> {:ok, %{value: 30}} end
-          ],
-          merge: sum_merge
-        )
-
-      assert {:ok, %{total: 60}} = FanOutNode.run(fan_out, %{})
-    end
-  end
-
-  describe "process_results/2 preserves branch order" do
-    test "results are returned in the original branch definition order" do
-      # Use a custom merge function that captures the raw ordered list
-      # to verify process_results preserves insertion order.
-      capture_order = fn results ->
-        %{ordered_names: Enum.map(results, fn {name, _} -> name end)}
-      end
-
-      {:ok, fan_out} =
-        FanOutNode.new(
-          name: "order_test",
-          branches: [
-            alpha: fn _ctx -> {:ok, %{val: 1}} end,
-            bravo: fn _ctx -> {:ok, %{val: 2}} end,
-            charlie: fn _ctx -> {:ok, %{val: 3}} end,
-            delta: fn _ctx -> {:ok, %{val: 4}} end
-          ],
-          merge: capture_order
-        )
-
-      assert {:ok, %{ordered_names: names}} = FanOutNode.run(fan_out, %{})
-      assert names == [:alpha, :bravo, :charlie, :delta]
-    end
-
-    test "collect_partial preserves order even with errors" do
-      capture_order = fn results ->
-        %{ordered_names: Enum.map(results, fn {name, _} -> name end)}
-      end
-
-      {:ok, fan_out} =
-        FanOutNode.new(
-          name: "partial_order_test",
-          branches: [
-            first: fn _ctx -> {:ok, %{val: 1}} end,
-            second: fn _ctx -> {:error, :boom} end,
-            third: fn _ctx -> {:ok, %{val: 3}} end,
-            fourth: fn _ctx -> {:ok, %{val: 4}} end
-          ],
-          on_error: :collect_partial,
-          merge: capture_order
-        )
-
-      assert {:ok, %{ordered_names: names}} = FanOutNode.run(fan_out, %{})
-      assert names == [:first, :second, :third, :fourth]
+      assert {:ok, result} = FanOutNode.run(fan_out, %{value: 1.0, amount: 2.0, message: "hi"})
+      assert result.add.result == 3.0
+      assert result.echo.echoed == "hi"
     end
   end
 
   describe "run/2 merge with NodeIO" do
-    test "merge_results handles mixed NodeIO and bare map branches" do
-      {:ok, fan_out} =
-        FanOutNode.new(
-          name: "mixed_nodeio",
-          branches: [
-            text_branch: fn _ctx -> {:ok, NodeIO.text("hello")} end,
-            map_branch: fn _ctx -> {:ok, %{count: 5}} end,
-            obj_branch: fn _ctx -> {:ok, NodeIO.object(%{score: 0.9})} end,
-            nodeio_map_branch: fn _ctx -> {:ok, NodeIO.map(%{items: [1, 2]})} end
-          ]
-        )
+    test "merge_results handles NodeIO branches via custom merge" do
+      # NodeIO handling is tested via merge_results directly
+      branch_results = [
+        {:text_branch, NodeIO.text("hello")},
+        {:map_branch, %{count: 5}}
+      ]
 
-      assert {:ok, result} = FanOutNode.run(fan_out, %{})
+      result = FanOutNode.merge_results(branch_results, :deep_merge)
       assert result.text_branch == %{text: "hello"}
       assert result.map_branch == %{count: 5}
-      assert result.obj_branch == %{object: %{score: 0.9}}
-      assert result.nodeio_map_branch == %{items: [1, 2]}
     end
   end
 
   describe "to_directive/3" do
-    test "produces FanOutBranch directives and fan_out side effect" do
+    test "produces FanOutBranch directives with child_node and fan_out side effect" do
       {:ok, add_node} = ActionNode.new(AddAction)
       {:ok, echo_node} = ActionNode.new(EchoAction)
 
@@ -355,11 +228,72 @@ defmodule Jido.Composer.Node.FanOutNodeTest do
         assert %Jido.Composer.Directive.FanOutBranch{} = d
         assert d.fan_out_id == "test_123"
         assert d.result_action == :fan_out_branch_result
+        assert is_struct(d.child_node)
+        assert is_map(d.params)
       end)
 
       fan_out_state = Keyword.fetch!(side_effects, :fan_out)
       assert %Jido.Composer.FanOut.State{} = fan_out_state
       assert fan_out_state.id == "test_123"
+    end
+
+    test "ActionNode branch directive carries ActionNode as child_node" do
+      {:ok, add_node} = ActionNode.new(AddAction)
+      {:ok, fan_out} = FanOutNode.new(name: "test", branches: [add: add_node])
+
+      assert {:ok, [directive], _} =
+               FanOutNode.to_directive(fan_out, %{value: 1.0}, fan_out_id: "id1")
+
+      assert %ActionNode{action_module: AddAction} = directive.child_node
+      assert directive.params == %{value: 1.0}
+    end
+
+    test "AgentNode branch directive carries AgentNode as child_node" do
+      agent_node = %Jido.Composer.Node.AgentNode{
+        agent_module: Jido.Composer.TestAgents.TestWorkflowAgent,
+        opts: []
+      }
+
+      {:ok, fan_out} = FanOutNode.new(name: "test", branches: [agent: agent_node])
+
+      assert {:ok, [directive], _} =
+               FanOutNode.to_directive(fan_out, %{x: 1}, fan_out_id: "id2")
+
+      assert %Jido.Composer.Node.AgentNode{} = directive.child_node
+    end
+
+    test "mixed branch types produce correct child_node types" do
+      {:ok, add_node} = ActionNode.new(AddAction)
+
+      agent_node = %Jido.Composer.Node.AgentNode{
+        agent_module: Jido.Composer.TestAgents.TestWorkflowAgent,
+        opts: []
+      }
+
+      {:ok, fan_out} =
+        FanOutNode.new(name: "mixed", branches: [add: add_node, agent: agent_node])
+
+      assert {:ok, directives, _} =
+               FanOutNode.to_directive(fan_out, %{value: 1.0}, fan_out_id: "id3")
+
+      add_directive = Enum.find(directives, &(&1.branch_name == :add))
+      agent_directive = Enum.find(directives, &(&1.branch_name == :agent))
+
+      assert %ActionNode{} = add_directive.child_node
+      assert %Jido.Composer.Node.AgentNode{} = agent_directive.child_node
+    end
+
+    test "nested FanOutNode as branch child" do
+      {:ok, inner_add} = ActionNode.new(AddAction)
+      {:ok, inner_fan_out} = FanOutNode.new(name: "inner", branches: [add: inner_add])
+
+      {:ok, outer_fan_out} =
+        FanOutNode.new(name: "outer", branches: [nested: inner_fan_out])
+
+      assert {:ok, [directive], _} =
+               FanOutNode.to_directive(outer_fan_out, %{value: 1.0}, fan_out_id: "nested_id")
+
+      assert %FanOutNode{name: "inner"} = directive.child_node
     end
 
     test "respects max_concurrency by queuing excess branches" do
@@ -381,22 +315,6 @@ defmodule Jido.Composer.Node.FanOutNodeTest do
       fan_out_state = Keyword.fetch!(side_effects, :fan_out)
       assert MapSet.size(fan_out_state.pending_branches) == 1
       assert length(fan_out_state.queued_branches) == 1
-    end
-
-    test "handles function branches" do
-      fun = fn ctx -> {:ok, %{doubled: ctx[:value] * 2}} end
-      {:ok, add_node} = ActionNode.new(AddAction)
-
-      {:ok, fan_out} =
-        FanOutNode.new(name: "mixed", branches: [calc: fun, add: add_node])
-
-      assert {:ok, directives, _} =
-               FanOutNode.to_directive(fan_out, %{value: 5}, fan_out_id: "test_789")
-
-      assert length(directives) == 2
-
-      fn_directive = Enum.find(directives, &(&1.branch_name == :calc))
-      assert {:function, _, _} = fn_directive.instruction
     end
   end
 

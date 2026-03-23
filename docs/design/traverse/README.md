@@ -26,16 +26,23 @@ two concerns together — "which nodes to run" and "how many times to run them."
 
 ### MapNode
 
-A new node type that implements the traverse constructor:
+A node type that implements the traverse constructor:
 
 ```
 MapNode
-├── name          — node identifier
-├── over          — context key holding the list to iterate
-├── action        — action module to apply to each element
+├── name            — node identifier
+├── over            — context key holding the list to iterate
+├── node            — any Node struct to apply to each element
 ├── max_concurrency — concurrency limit (optional)
-└── timeout       — per-element timeout (optional)
+└── timeout         — per-element timeout (optional)
 ```
+
+The `node` field accepts any struct implementing the
+[Node](../nodes/README.md) behaviour — ActionNode, AgentNode, FanOutNode,
+HumanNode, or any other Node type. This makes MapNode a proper composition
+constructor: it composes a node over a runtime collection, just as FanOutNode
+composes nodes over fixed branches. Bare action modules are auto-wrapped in
+ActionNode for convenience.
 
 All fields are **values** — no functions stored in the struct. The node is
 fully inspectable and serializable, like every other node type.
@@ -52,13 +59,13 @@ fully inspectable and serializable, like every other node type.
                     ┌──────────▼───────────┐
                     │      MapNode         │
                     │  over: :items        │
-                    │  action: ProcessItem │
+                    │  node: ProcessNode   │
                     └──────────┬───────────┘
                                │
               ┌────────────────┼────────────────┐
               │                │                │
      ┌────────▼───────┐ ┌─────▼────────┐ ┌─────▼────────┐
-     │ ProcessItem    │ │ ProcessItem  │ │ ProcessItem  │
+     │ ProcessNode   │ │ ProcessNode  │ │ ProcessNode  │
      │ (item₀)        │ │ (item₁)      │ │ (item₂)      │
      └────────┬───────┘ └─────┬────────┘ └─────┬────────┘
               │                │                │
@@ -71,14 +78,14 @@ fully inspectable and serializable, like every other node type.
 ```
 
 1. MapNode reads the list from `context[over]`
-2. For each element, it runs `action` with the element merged into the context
+2. For each element, it runs the child node with the element merged into context
 3. All elements run concurrently (up to `max_concurrency`)
 4. Results are collected in order as a list
 5. The list is stored under the MapNode's scope key in the context
 
 ### Input Preparation
 
-Each element needs to be presented to the action as a context map. MapNode
+Each element needs to be presented to the child node as a context map. MapNode
 uses a simple convention:
 
 - If the element is a map, it is merged into the base context
@@ -112,16 +119,20 @@ returns `{:ok, %{results: []}}` — an empty list. No error, no skip.
 
 ## Relationship to Other Constructors
 
-MapNode composes with all other constructors:
+MapNode composes with all other constructors. Because the `node` field accepts
+any Node struct, traverse can nest any other constructor:
 
-| Composition                     | Example                                              |
-| ------------------------------- | ---------------------------------------------------- |
-| Sequence → Traverse             | Extract items, then process each                     |
-| Traverse → Choice               | Process items, then branch on aggregate result       |
-| Traverse → Parallel             | Process items, then run fixed reviews on aggregation |
-| Parallel with Traverse branches | FanOutNode branch contains a MapNode                 |
-| Bind containing Traverse        | Orchestrator invokes a workflow that uses MapNode    |
-| Traverse of AgentNodes          | Apply a child agent to each item                     |
+| Composition                     | Example                                                       |
+| ------------------------------- | ------------------------------------------------------------- |
+| Sequence → Traverse             | Extract items, then process each                              |
+| Traverse → Choice               | Process items, then branch on aggregate result                |
+| Traverse → Parallel             | Process items, then run fixed reviews on aggregation          |
+| Parallel with Traverse branches | FanOutNode branch contains a MapNode                          |
+| Bind containing Traverse        | Orchestrator invokes a workflow that uses MapNode             |
+| Traverse of AgentNodes          | Apply a child agent to each item                              |
+| Traverse of FanOutNodes         | For each item, run multiple parallel sub-operations           |
+| Traverse of HumanNodes          | For each item, request independent human approval             |
+| Traverse of sub-workflows       | For each item, run a full multi-step pipeline (via AgentNode) |
 
 MapNode is a Node, so it appears as a single state in the
 [Machine](../workflow/state-machine.md). The FSM sees one step; the node
@@ -131,12 +142,13 @@ internally handles the fan-out and collection.
 
 Like FanOutNode, the [Workflow Strategy](../workflow/strategy.md) decomposes
 MapNode into individual directives — one per element. This keeps the strategy
-pure and allows elements to be any executable type (actions or agents).
+pure and allows elements to be any node type.
 
 MapNode reuses the existing `FanOutBranch` directive infrastructure. Each
-element becomes a FanOutBranch with an auto-generated branch name
-(`:item_0`, `:item_1`, etc.). The strategy tracks pending elements and
-collects results using the same `FanOut.State` machinery.
+element becomes a FanOutBranch carrying the child Node struct and per-element
+params, with an auto-generated branch name (`:item_0`, `:item_1`, etc.). The
+strategy tracks pending elements and collects results using the same
+`FanOut.State` machinery.
 
 The key difference from FanOutNode's directive generation: MapNode reads the
 list from context at dispatch time (`to_directive/3`), not at creation time.
@@ -167,12 +179,16 @@ system:
 
 ### In Scope
 
-- MapNode struct with `name`, `over`, `action`, `max_concurrency`, `timeout`
+- MapNode struct with `name`, `over`, `node`, `max_concurrency`, `timeout`
+- The `node` field accepts any Node struct (ActionNode, AgentNode, FanOutNode,
+  HumanNode, etc.). Bare action modules are auto-wrapped in ActionNode.
 - `run/3` for sync execution (used by tests, FanOut branches)
 - `to_directive/3` for strategy-based execution (reusing FanOutBranch)
 - Element-level concurrency control via `max_concurrency`
 - Integration with Workflow DSL as a valid node type
 - Empty collection handling
+- Node-over-node composition: mapping a FanOutNode, AgentNode, or HumanNode
+  over a runtime collection
 
 ### Out of Scope (for now)
 
@@ -180,6 +196,5 @@ system:
   is a Node, but no special support needed
 - Custom result aggregation (reduce) — use a subsequent ActionNode
 - Streaming/incremental results — would require a different directive model
-- AgentNode elements — deferred until ActionNode elements are proven
 - Element-specific context transformation functions — keep input preparation
   simple

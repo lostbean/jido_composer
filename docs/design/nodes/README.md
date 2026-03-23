@@ -74,7 +74,7 @@ types for compile-time compatibility checking. See
 - `AgentNode`: wraps a `Jido.Agent` with sync/async/streaming execution modes.
 - `HumanNode`: emits `:suspend` for human approval/decision.
 - `FanOutNode`: runs named branches concurrently and merges results.
-- `MapNode`: applies the same action to each element of a runtime-determined
+- `MapNode`: applies the same node to each element of a runtime-determined
   list. See [Traverse](../traverse/README.md).
 - `DynamicAgentNode`: assembles and executes a temporary Orchestrator from
   selected [Skills](../skills/README.md) at runtime.
@@ -231,26 +231,26 @@ appears as a single state to the FSM but internally spawns multiple branches.
 
 FanOutNode carries per-instance configuration:
 
-| Field             | Type                                        | Purpose                                                         |
-| ----------------- | ------------------------------------------- | --------------------------------------------------------------- |
-| `name`            | `String.t()`                                | Node identifier                                                 |
-| `branches`        | `[{atom(), Node.t() \| (map() -> result)}]` | Named child branches (keyword-list style) executed concurrently |
-| `merge`           | `(results -> map())` \| `:deep_merge`       | Strategy for combining branch results (default: `:deep_merge`)  |
-| `timeout`         | `pos_integer()` \| `:infinity`              | Maximum wait time for all branches (default: 30_000)            |
-| `on_error`        | `:fail_fast` \| `:collect_partial`          | Error handling policy (default: `:fail_fast`)                   |
-| `max_concurrency` | `pos_integer()` \| `nil`                    | Maximum branches running simultaneously (default: unbounded)    |
+| Field             | Type                                  | Purpose                                                         |
+| ----------------- | ------------------------------------- | --------------------------------------------------------------- |
+| `name`            | `String.t()`                          | Node identifier                                                 |
+| `branches`        | `[{atom(), Node.t()}]`                | Named child branches (keyword-list style) executed concurrently |
+| `merge`           | `(results -> map())` \| `:deep_merge` | Strategy for combining branch results (default: `:deep_merge`)  |
+| `timeout`         | `pos_integer()` \| `:infinity`        | Maximum wait time for all branches (default: 30_000)            |
+| `on_error`        | `:fail_fast` \| `:collect_partial`    | Error handling policy (default: `:fail_fast`)                   |
+| `max_concurrency` | `pos_integer()` \| `nil`              | Maximum branches running simultaneously (default: unbounded)    |
 
 #### Directive-Based Execution
 
 The [Workflow Strategy](../workflow/strategy.md) decomposes FanOutNode into
 individual `FanOutBranch` directives — one per branch. This keeps the strategy
-pure (no inline `Task.async_stream`) and enables branches to be any node type,
-including AgentNodes.
+pure (no inline `Task.async_stream`) and enables branches to be any node type.
 
-Each branch becomes a `FanOutBranch` directive:
-
-- Action branch -> `RunInstruction` with flattened context
-- Agent branch -> `SpawnAgent` with forked child context
+Each `FanOutBranch` directive carries the branch's Node struct (`child_node`)
+and execution context (`params`). The executor dispatches uniformly through the
+Node interface: `child_node.__struct__.run(child_node, params, [])`. There is
+no special-casing by node type in the directive — each node carries its own
+execution semantics.
 
 The strategy tracks pending branches and collects results as they arrive. When
 all branches complete, results are merged and the FSM transitions.
@@ -299,28 +299,35 @@ to invoke concurrently.
 
 ### MapNode
 
-A Node that applies the same action to each element of a runtime-determined
+A Node that applies the same node to each element of a runtime-determined
 collection, collecting results as an ordered list. MapNode implements the
 [traverse](../composition-constructors.md#traverse) composition constructor.
 
-| Field             | Type                   | Purpose                                                |
-| ----------------- | ---------------------- | ------------------------------------------------------ |
-| `name`            | `String.t()`           | Node identifier                                        |
-| `over`            | `atom()`               | Context key holding the list to iterate                |
-| `action`          | `module()`             | `Jido.Action` module to apply to each element          |
-| `max_concurrency` | `pos_integer()` \| nil | Maximum elements running simultaneously (default: all) |
-| `timeout`         | `pos_integer()`        | Per-element timeout in ms (default: 30_000)            |
+| Field             | Type                   | Purpose                                                            |
+| ----------------- | ---------------------- | ------------------------------------------------------------------ |
+| `name`            | `String.t()`           | Node identifier                                                    |
+| `over`            | `atom()` \| `[atom()]` | Context key or path holding the list to iterate                    |
+| `node`            | `struct()`             | Any Node struct to apply to each element (auto-wraps bare actions) |
+| `max_concurrency` | `pos_integer()` \| nil | Maximum elements running simultaneously (default: all)             |
+| `timeout`         | `pos_integer()`        | Per-element timeout in ms (default: 30_000)                        |
+
+The `node` field accepts any struct implementing the Node behaviour. This
+means MapNode can map an ActionNode, AgentNode, FanOutNode, HumanNode, or
+any other Node type over a collection. Bare action modules are accepted for
+convenience and auto-wrapped in ActionNode. This makes MapNode a proper
+composition constructor — it participates in the same algebra as all other
+constructors, composing nodes uniformly.
 
 **Relationship to FanOutNode**: Both provide concurrent execution, but they
 solve different problems. FanOutNode runs a _fixed set of different_ branches
-(parallel). MapNode runs the _same operation_ over a _variable-length
+(parallel). MapNode runs the _same node_ over a _variable-length
 collection_ (traverse). They differ in branch count (fixed vs. runtime), branch
 identity (named vs. indexed), and result shape (named map vs. ordered list).
 
 **When to use MapNode**: When a previous step produces a list of items and each
 item needs the same processing. Examples: "for each issue found, generate a
-fix", "for each document chunk, extract entities", "for each user, send
-notification."
+fix", "for each document chunk, extract entities", "for each user, run an
+approval workflow."
 
 For the full design, see [Traverse](../traverse/README.md).
 

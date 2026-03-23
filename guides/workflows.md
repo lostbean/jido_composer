@@ -98,24 +98,24 @@ nodes: %{
 
 **FanOutNode options:**
 
-| Option            | Type                             | Default       | Description                       |
-| ----------------- | -------------------------------- | ------------- | --------------------------------- |
-| `name`            | `string`                         | required      | Branch group identifier           |
-| `branches`        | `keyword`                        | required      | `[{name, node_or_function}, ...]` |
-| `merge`           | `:deep_merge \| function`        | `:deep_merge` | How to merge branch results       |
-| `on_error`        | `:fail_fast \| :collect_partial` | `:fail_fast`  | Error handling policy             |
-| `max_concurrency` | `integer`                        | unlimited     | Concurrent branch limit           |
-| `timeout`         | `ms \| :infinity`                | `30_000`      | Per-branch timeout                |
+| Option            | Type                             | Default       | Description                  |
+| ----------------- | -------------------------------- | ------------- | ---------------------------- |
+| `name`            | `string`                         | required      | Branch group identifier      |
+| `branches`        | `keyword`                        | required      | `[{name, node_struct}, ...]` |
+| `merge`           | `:deep_merge \| function`        | `:deep_merge` | How to merge branch results  |
+| `on_error`        | `:fail_fast \| :collect_partial` | `:fail_fast`  | Error handling policy        |
+| `max_concurrency` | `integer`                        | unlimited     | Concurrent branch limit      |
+| `timeout`         | `ms \| :infinity`                | `30_000`      | Per-branch timeout           |
 
 ### MapNode
 
-Applies the same action to each element of a runtime-determined collection:
+Applies the same node to each element of a runtime-determined collection:
 
 ```elixir
 {:ok, map_node} = Jido.Composer.Node.MapNode.new(
   name: :process_items,
   over: [:generate, :items],    # path to list in context
-  action: ProcessItemAction,
+  node: ProcessItemAction,      # any Node struct or bare action module
   max_concurrency: 4,
   timeout: 30_000,
   on_error: :fail_fast
@@ -128,20 +128,24 @@ nodes: %{
 }
 ```
 
+The `node` field accepts any Node struct (ActionNode, AgentNode, FanOutNode,
+HumanNode, etc.) or a bare action module (auto-wrapped in ActionNode). This
+enables mapping sub-workflows, agents, or approval gates over a collection.
+
 **MapNode options:**
 
-| Option            | Type                             | Default      | Description                             |
-| ----------------- | -------------------------------- | ------------ | --------------------------------------- |
-| `name`            | `atom`                           | required     | State name in the workflow              |
-| `over`            | `atom \| [atom]`                 | required     | Context key or path to the list         |
-| `action`          | `module`                         | required     | `Jido.Action` module to run per element |
-| `max_concurrency` | `integer`                        | list length  | Concurrent element limit                |
-| `timeout`         | `ms`                             | `30_000`     | Per-element timeout                     |
-| `on_error`        | `:fail_fast \| :collect_partial` | `:fail_fast` | Error handling policy                   |
+| Option            | Type                             | Default      | Description                                     |
+| ----------------- | -------------------------------- | ------------ | ----------------------------------------------- |
+| `name`            | `atom`                           | required     | State name in the workflow                      |
+| `over`            | `atom \| [atom]`                 | required     | Context key or path to the list                 |
+| `node`            | `struct \| module`               | required     | Node struct or action module to run per element |
+| `max_concurrency` | `integer`                        | list length  | Concurrent element limit                        |
+| `timeout`         | `ms`                             | `30_000`     | Per-element timeout                             |
+| `on_error`        | `:fail_fast \| :collect_partial` | `:fail_fast` | Error handling policy                           |
 
 **Result shape:** Each element's result is collected into an ordered list at `ctx[:state_name][:results]`.
 
-**Input preparation:** Map elements are merged directly into the action params. Non-map elements are wrapped as `%{item: element}`. The full workflow context is also merged, so the action can access upstream results.
+**Input preparation:** Map elements are merged directly into the node params. Non-map elements are wrapped as `%{item: element}`. The full workflow context is also merged, so the node can access upstream results.
 
 **Edge cases:** If the context key is missing or not a list, MapNode treats it as an empty list and produces `%{results: []}`.
 

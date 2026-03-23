@@ -137,30 +137,35 @@ sequenceDiagram
     Strategy->>Strategy: scope result under state name, transition, continue
 ```
 
-## Execution Flow: FanOutNode
+## Execution Flow: FanOutNode and MapNode
 
-When the current state's node is a [FanOutNode](../nodes/README.md#fanoutnode),
-the strategy decomposes it into individual
-[FanOutBranch](../glossary.md#fanoutbranch) directives — one per branch — rather
-than calling `run/3` inline. Each `FanOutBranch` directive contains either a
-RunInstruction (for ActionNode branches) or a SpawnAgent (for AgentNode
-branches). This keeps the strategy pure and enables branches to be any node
-type, including AgentNodes.
+When the current state's node is a [FanOutNode](../nodes/README.md#fanoutnode)
+or [MapNode](../nodes/README.md#mapnode), the strategy decomposes it into
+individual [FanOutBranch](../glossary.md#fanoutbranch) directives — one per
+branch (FanOutNode) or one per element (MapNode) — rather than calling `run/3`
+inline.
+
+Each `FanOutBranch` directive carries a `child_node` (the Node struct to
+execute) and `params` (the execution context). The executor dispatches
+uniformly: `child_node.__struct__.run(child_node, params, [])`. There is no
+special-casing by node type in the directive — each node carries its own
+execution semantics. This keeps the strategy pure, ensures all directives are
+serializable for checkpointing, and enables branches to be any Node type.
 
 ```mermaid
 sequenceDiagram
     participant Strategy
     participant Runtime
-    participant BranchA as Branch A (Action)
-    participant BranchB as Branch B (Agent)
+    participant BranchA as Branch A (ActionNode)
+    participant BranchB as Branch B (AgentNode)
 
     Strategy->>Runtime: FanOutBranch directives (A, B)
-    Runtime->>BranchA: RunInstruction
-    Runtime->>BranchB: SpawnAgent
+    Runtime->>BranchA: child_node.run(node, params, [])
+    Runtime->>BranchB: child_node.run(node, params, [])
     BranchA-->>Runtime: result
     Runtime->>Strategy: cmd(:fan_out_branch_result, A)
     Strategy->>Strategy: Store result, check completion
-    BranchB-->>Runtime: emit_to_parent(result)
+    BranchB-->>Runtime: result
     Runtime->>Strategy: cmd(:fan_out_branch_result, B)
     Strategy->>Strategy: All done — merge results, transition
 ```
@@ -178,13 +183,10 @@ The strategy tracks fan-out state:
 | `on_error`           | Error policy (`:fail_fast` or `:collect_partial`) |
 
 When all branches complete, results are merged and the FSM transitions. The
-strategy clears its `fan_out` state.
-
-For ActionNode branches, the strategy emits a RunInstruction directive. For
-AgentNode branches, the strategy emits a SpawnAgent directive with
-[forked context](../nodes/context-flow.md#fork-functions). Branch results are
-tagged with `{:fan_out, fan_out_id, branch_name}` to disambiguate from regular
-child results.
+strategy clears its `fan_out` state. Both FanOutNode and MapNode use this same
+machinery — they differ only in how branches are determined (fixed at
+definition vs. resolved from context at runtime) and how results are merged
+(named map vs. ordered list).
 
 ### Backpressure
 

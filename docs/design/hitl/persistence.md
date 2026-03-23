@@ -54,20 +54,20 @@ The entire agent state — including strategy state under `__strategy__` — is
 persisted via `Jido.Persist.hibernate/2`. The checkpoint captures the logical
 state of the computation at the moment of suspension.
 
-| Data                                        | Location                           | Serializable?                                                           |
-| ------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------- |
-| Machine status, context, history            | `__strategy__.machine`             | Yes (atoms, maps, timestamps)                                           |
-| Orchestrator conversation, tools, iteration | `__strategy__.*`                   | Yes (LLM module must ensure conversation state is serializable)         |
-| Pending Suspension                          | `__strategy__.pending_suspension`  | Yes (no PIDs, no closures)                                              |
-| FanOut state (completed + suspended)        | `__strategy__.fan_out`             | Yes (`FanOut.State` struct — results, branch names, Suspension structs) |
-| Child references and phases                 | `__strategy__.children`            | Yes (`Children` struct with `refs` and `phases` maps)                   |
-| Fork functions                              | `Context.fork_fns`                 | Yes (MFA tuples by design)                                              |
-| Approval policy (closure)                   | Orchestrator state                 | **No** — stripped on checkpoint, reattached from DSL on restore         |
-| Execution thread                            | Stored separately via Thread       | Yes (append-only log)                                                   |
-| Gated tool calls                            | `__strategy__.approval_gate`       | Yes (`ApprovalGate` struct — gated calls + approval requests)           |
-| Suspended tool calls                        | `__strategy__.suspended_calls`     | Yes (suspension + tool call data)                                       |
-| Orchestrator status                         | `__strategy__.status`              | Yes (atom — includes `:awaiting_tools_and_approval` for mixed states)   |
-| Child process PIDs                          | `__parent__`, AgentServer children | **No** — replaced by ChildRef                                           |
+| Data                                        | Location                           | Serializable?                                                                                                             |
+| ------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Machine status, context, history            | `__strategy__.machine`             | Yes (atoms, maps, timestamps)                                                                                             |
+| Orchestrator conversation, tools, iteration | `__strategy__.*`                   | Yes (LLM module must ensure conversation state is serializable)                                                           |
+| Pending Suspension                          | `__strategy__.pending_suspension`  | Yes (no PIDs, no closures)                                                                                                |
+| FanOut state (completed + suspended)        | `__strategy__.fan_out`             | Yes (`FanOut.State` struct — results, branch names, Suspension structs, queued FanOutBranch directives with Node structs) |
+| Child references and phases                 | `__strategy__.children`            | Yes (`Children` struct with `refs` and `phases` maps)                                                                     |
+| Fork functions                              | `Context.fork_fns`                 | Yes (MFA tuples by design)                                                                                                |
+| Approval policy (closure)                   | Orchestrator state                 | **No** — stripped on checkpoint, reattached from DSL on restore                                                           |
+| Execution thread                            | Stored separately via Thread       | Yes (append-only log)                                                                                                     |
+| Gated tool calls                            | `__strategy__.approval_gate`       | Yes (`ApprovalGate` struct — gated calls + approval requests)                                                             |
+| Suspended tool calls                        | `__strategy__.suspended_calls`     | Yes (suspension + tool call data)                                                                                         |
+| Orchestrator status                         | `__strategy__.status`              | Yes (atom — includes `:awaiting_tools_and_approval` for mixed states)                                                     |
+| Child process PIDs                          | `__parent__`, AgentServer children | **No** — replaced by ChildRef                                                                                             |
 
 ## ParentRef PID Handling
 

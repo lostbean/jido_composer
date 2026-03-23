@@ -1,21 +1,21 @@
 defmodule Jido.Composer.Directive.FanOutBranch do
   @moduledoc """
-  Directive emitted per-branch when the Workflow strategy encounters a FanOutNode.
+  Directive emitted per-branch when the Workflow strategy encounters a FanOutNode
+  or MapNode.
 
-  Each FanOutBranch carries either an `instruction` (for ActionNode branches)
-  or a `spawn_agent` (for AgentNode branches), but not both. The runtime
-  executes these concurrently and feeds results back via the
-  `fan_out_branch_result` command.
+  Each FanOutBranch carries a `child_node` (any Node struct) and `params`
+  (execution context map). The runtime dispatches execution uniformly via
+  `child_node.__struct__.run(child_node, params, [])`.
   """
 
-  @enforce_keys [:fan_out_id, :branch_name]
-  defstruct [:fan_out_id, :branch_name, :instruction, :spawn_agent, :result_action, :timeout]
+  @enforce_keys [:fan_out_id, :branch_name, :child_node]
+  defstruct [:fan_out_id, :branch_name, :child_node, :params, :result_action, :timeout]
 
   @type t :: %__MODULE__{
           fan_out_id: String.t(),
           branch_name: atom(),
-          instruction: Jido.Instruction.t() | nil,
-          spawn_agent: map() | nil,
+          child_node: struct(),
+          params: map() | nil,
           result_action: atom() | nil,
           timeout: pos_integer() | nil
         }

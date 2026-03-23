@@ -34,7 +34,7 @@ defmodule Jido.Composer.Node.FanOutNode do
     on_error: :fail_fast
   ]
 
-  @type branch :: {atom(), struct() | (map() -> Jido.Composer.Node.result())}
+  @type branch :: {atom(), struct()}
   @type merge :: :deep_merge | (list({atom(), map()}) -> map())
 
   @type t :: %__MODULE__{
@@ -58,6 +58,9 @@ defmodule Jido.Composer.Node.FanOutNode do
       is_nil(branches) || branches == [] ->
         {:error, "branches must be a non-empty keyword list"}
 
+      not all_node_structs?(branches) ->
+        {:error, "all branches must be Node structs, not functions"}
+
       true ->
         {:ok,
          %__MODULE__{
@@ -79,8 +82,8 @@ defmodule Jido.Composer.Node.FanOutNode do
     results =
       node.branches
       |> Task.async_stream(
-        fn {branch_name, branch} ->
-          result = execute_branch(branch, context)
+        fn {branch_name, branch_node} ->
+          result = branch_node.__struct__.run(branch_node, context)
           {branch_name, result}
         end,
         timeout: node.timeout,
@@ -118,15 +121,10 @@ defmodule Jido.Composer.Node.FanOutNode do
 
     all_branches =
       Enum.map(node.branches, fn {branch_name, branch_node} ->
+        params = prepare_branch_params(branch_node, flat_context, structured_context)
+
         directive =
-          build_branch_directive(
-            fan_out_id,
-            branch_name,
-            branch_node,
-            flat_context,
-            structured_context,
-            node.timeout
-          )
+          build_branch_directive(fan_out_id, branch_name, branch_node, params, node.timeout)
 
         {branch_name, directive}
       end)
@@ -147,67 +145,37 @@ defmodule Jido.Composer.Node.FanOutNode do
   @spec to_tool_spec(t()) :: nil
   def to_tool_spec(%__MODULE__{}), do: nil
 
-  defp build_branch_directive(
-         fan_out_id,
-         branch_name,
-         branch_node,
+  defp prepare_branch_params(
+         %Jido.Composer.Node.AgentNode{},
          flat_context,
-         structured_context,
-         timeout
+         structured_context
        ) do
-    alias Jido.Composer.Directive.FanOutBranch
-
-    case branch_node do
-      %Jido.Composer.Node.ActionNode{action_module: action_module} ->
-        %FanOutBranch{
-          fan_out_id: fan_out_id,
-          branch_name: branch_name,
-          instruction: %Jido.Instruction{
-            action: action_module,
-            params: flat_context
-          },
-          result_action: :fan_out_branch_result,
-          timeout: timeout
-        }
-
-      %Jido.Composer.Node.AgentNode{agent_module: agent_module, opts: opts} ->
-        child_flat =
-          if structured_context do
-            structured_context
-            |> Jido.Composer.Context.fork_for_child()
-            |> Jido.Composer.Context.to_flat_map()
-          else
-            flat_context
-          end
-
-        %FanOutBranch{
-          fan_out_id: fan_out_id,
-          branch_name: branch_name,
-          spawn_agent: %{
-            agent: agent_module,
-            opts: Map.new(opts) |> Map.put(:context, child_flat)
-          },
-          result_action: :fan_out_branch_result,
-          timeout: timeout
-        }
-
-      fun when is_function(fun, 1) ->
-        %FanOutBranch{
-          fan_out_id: fan_out_id,
-          branch_name: branch_name,
-          instruction: {:function, fun, flat_context},
-          result_action: :fan_out_branch_result,
-          timeout: timeout
-        }
+    if structured_context do
+      structured_context
+      |> Jido.Composer.Context.fork_for_child()
+      |> Jido.Composer.Context.to_flat_map()
+    else
+      flat_context
     end
   end
 
-  defp execute_branch(branch, context) when is_function(branch, 1) do
-    branch.(context)
+  defp prepare_branch_params(_branch_node, flat_context, _structured_context) do
+    flat_context
   end
 
-  defp execute_branch(%mod{} = node, context) do
-    mod.run(node, context)
+  defp build_branch_directive(fan_out_id, branch_name, child_node, params, timeout) do
+    %Jido.Composer.Directive.FanOutBranch{
+      fan_out_id: fan_out_id,
+      branch_name: branch_name,
+      child_node: child_node,
+      params: params,
+      result_action: :fan_out_branch_result,
+      timeout: timeout
+    }
+  end
+
+  defp all_node_structs?(branches) do
+    Enum.all?(branches, fn {_name, branch} -> is_struct(branch) end)
   end
 
   defp process_results(results, :fail_fast) do

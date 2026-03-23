@@ -3,6 +3,8 @@ defmodule Jido.Composer.Node.MapNodeTest do
 
   alias Jido.Composer.Directive.FanOutBranch
   alias Jido.Composer.FanOut.State, as: FanOutState
+  alias Jido.Composer.Node.ActionNode
+  alias Jido.Composer.Node.FanOutNode
   alias Jido.Composer.Node.MapNode
 
   # -- Test Actions --
@@ -47,60 +49,138 @@ defmodule Jido.Composer.Node.MapNodeTest do
     end
   end
 
+  defmodule AddTenAction do
+    @moduledoc false
+    use Jido.Action,
+      name: "add_ten",
+      description: "Adds ten to a value",
+      schema: [value: [type: :float, required: true]]
+
+    def run(%{value: value}, _context) do
+      {:ok, %{result: value + 10}}
+    end
+  end
+
   # -- new/1 --
 
-  describe "new/1" do
-    test "creates MapNode with valid opts" do
+  describe "new/1 — :node option" do
+    test "accepts bare action module (auto-wraps in ActionNode)" do
+      assert {:ok, node} =
+               MapNode.new(name: :process, over: :items, node: DoubleValueAction)
+
+      assert %ActionNode{action_module: DoubleValueAction} = node.node
+    end
+
+    test "accepts ActionNode struct directly" do
+      {:ok, action_node} = ActionNode.new(DoubleValueAction)
+
+      assert {:ok, node} =
+               MapNode.new(name: :process, over: :items, node: action_node)
+
+      assert %ActionNode{action_module: DoubleValueAction} = node.node
+    end
+
+    test "accepts FanOutNode struct" do
+      {:ok, add_node} = ActionNode.new(DoubleValueAction)
+      {:ok, add_ten_node} = ActionNode.new(AddTenAction)
+
+      {:ok, fan_out} =
+        FanOutNode.new(name: "inner", branches: [double: add_node, add_ten: add_ten_node])
+
+      assert {:ok, node} = MapNode.new(name: :process, over: :items, node: fan_out)
+      assert %FanOutNode{} = node.node
+    end
+
+    test "accepts AgentNode struct" do
+      agent_node = %Jido.Composer.Node.AgentNode{
+        agent_module: Jido.Composer.TestAgents.TestWorkflowAgent,
+        opts: []
+      }
+
+      assert {:ok, node} = MapNode.new(name: :process, over: :items, node: agent_node)
+      assert %Jido.Composer.Node.AgentNode{} = node.node
+    end
+
+    test "accepts HumanNode struct" do
+      {:ok, human_node} =
+        Jido.Composer.Node.HumanNode.new(
+          name: "approve",
+          description: "Approve item",
+          prompt: "Do you approve?"
+        )
+
+      assert {:ok, node} = MapNode.new(name: :process, over: :items, node: human_node)
+      assert %Jido.Composer.Node.HumanNode{} = node.node
+    end
+
+    test "rejects invalid values" do
+      assert {:error, _} = MapNode.new(name: :process, over: :items, node: "not_a_module")
+      assert {:error, _} = MapNode.new(name: :process, over: :items, node: Enum)
+    end
+
+    test "requires name" do
+      assert {:error, _} = MapNode.new(over: :items, node: DoubleValueAction)
+    end
+
+    test "requires over" do
+      assert {:error, _} = MapNode.new(name: :process, node: DoubleValueAction)
+    end
+
+    test "requires node (or action)" do
+      assert {:error, _} = MapNode.new(name: :process, over: :items)
+    end
+  end
+
+  describe "new/1 — backward compat :action option" do
+    test ":action is accepted and auto-wraps in ActionNode" do
+      assert {:ok, node} =
+               MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+
+      assert %ActionNode{action_module: DoubleValueAction} = node.node
+    end
+
+    test ":node takes precedence over :action" do
+      {:ok, add_ten_node} = ActionNode.new(AddTenAction)
+
       assert {:ok, node} =
                MapNode.new(
                  name: :process,
                  over: :items,
+                 node: add_ten_node,
                  action: DoubleValueAction
                )
 
-      assert node.name == :process
-      assert node.over == :items
-      assert node.action == DoubleValueAction
-    end
-
-    test "requires name" do
-      assert {:error, _} = MapNode.new(over: :items, action: DoubleValueAction)
-    end
-
-    test "requires over" do
-      assert {:error, _} = MapNode.new(name: :process, action: DoubleValueAction)
-    end
-
-    test "requires action" do
-      assert {:error, _} = MapNode.new(name: :process, over: :items)
+      assert %ActionNode{action_module: AddTenAction} = node.node
     end
 
     test "rejects invalid action module" do
       assert {:error, _} = MapNode.new(name: :process, over: :items, action: NotAModule)
     end
+  end
 
+  describe "new/1 — options" do
     test "rejects invalid on_error value" do
       assert {:error, "on_error must be :fail_fast or :collect_partial"} =
                MapNode.new(
                  name: :process,
                  over: :items,
-                 action: DoubleValueAction,
+                 node: DoubleValueAction,
                  on_error: :bogus
                )
     end
 
     test "defaults timeout to 30_000" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       assert node.timeout == 30_000
     end
 
     test "defaults on_error to :fail_fast" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       assert node.on_error == :fail_fast
     end
 
     test "defaults max_concurrency to nil" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       assert node.max_concurrency == nil
     end
 
@@ -109,7 +189,7 @@ defmodule Jido.Composer.Node.MapNodeTest do
         MapNode.new(
           name: :process,
           over: :items,
-          action: DoubleValueAction,
+          node: DoubleValueAction,
           max_concurrency: 2,
           timeout: 60_000
         )
@@ -123,7 +203,7 @@ defmodule Jido.Composer.Node.MapNodeTest do
         MapNode.new(
           name: :process,
           over: [:generate, :items],
-          action: DoubleValueAction
+          node: DoubleValueAction
         )
 
       assert node.over == [:generate, :items]
@@ -132,9 +212,9 @@ defmodule Jido.Composer.Node.MapNodeTest do
 
   # -- run/3 --
 
-  describe "run/3" do
+  describe "run/3 with ActionNode child" do
     test "runs action on each map element, returns ordered results" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       context = %{items: [%{value: 1.0}, %{value: 2.0}, %{value: 3.0}]}
 
       assert {:ok, %{results: results}} = MapNode.run(node, context)
@@ -142,7 +222,7 @@ defmodule Jido.Composer.Node.MapNodeTest do
     end
 
     test "wraps non-map elements as %{item: element}" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: ProcessItemAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: ProcessItemAction)
       context = %{items: ["hello", "world"]}
 
       assert {:ok, %{results: results}} = MapNode.run(node, context)
@@ -150,21 +230,21 @@ defmodule Jido.Composer.Node.MapNodeTest do
     end
 
     test "empty list returns {:ok, %{results: []}}" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       context = %{items: []}
 
       assert {:ok, %{results: []}} = MapNode.run(node, context)
     end
 
     test "missing context key returns {:ok, %{results: []}}" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       context = %{other: "data"}
 
       assert {:ok, %{results: []}} = MapNode.run(node, context)
     end
 
     test "preserves input order" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       items = Enum.map(1..10, &%{value: &1 * 1.0})
       context = %{items: items}
 
@@ -178,7 +258,7 @@ defmodule Jido.Composer.Node.MapNodeTest do
         MapNode.new(
           name: :process,
           over: :items,
-          action: DoubleValueAction,
+          node: DoubleValueAction,
           max_concurrency: 1
         )
 
@@ -189,7 +269,7 @@ defmodule Jido.Composer.Node.MapNodeTest do
     end
 
     test "fail-fast on element error" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: FailingAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: FailingAction)
       context = %{items: [%{}, %{}]}
 
       assert {:error, _} = MapNode.run(node, context)
@@ -197,7 +277,7 @@ defmodule Jido.Composer.Node.MapNodeTest do
 
     test "supports over as list path" do
       {:ok, node} =
-        MapNode.new(name: :process, over: [:generate, :items], action: DoubleValueAction)
+        MapNode.new(name: :process, over: [:generate, :items], node: DoubleValueAction)
 
       context = %{generate: %{items: [%{value: 5.0}]}}
 
@@ -205,11 +285,37 @@ defmodule Jido.Composer.Node.MapNodeTest do
     end
   end
 
+  describe "run/3 with FanOutNode child" do
+    test "maps fan-out over collection" do
+      {:ok, double_node} = ActionNode.new(DoubleValueAction)
+      {:ok, add_ten_node} = ActionNode.new(AddTenAction)
+
+      {:ok, fan_out} =
+        FanOutNode.new(name: "inner", branches: [double: double_node, add_ten: add_ten_node])
+
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: fan_out)
+      context = %{items: [%{value: 5.0}]}
+
+      assert {:ok, %{results: [result]}} = MapNode.run(node, context)
+      assert result.double.doubled == 10.0
+      assert result.add_ten.result == 15.0
+    end
+
+    test "empty collection with FanOutNode child returns %{results: []}" do
+      {:ok, double_node} = ActionNode.new(DoubleValueAction)
+      {:ok, fan_out} = FanOutNode.new(name: "inner", branches: [double: double_node])
+
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: fan_out)
+
+      assert {:ok, %{results: []}} = MapNode.run(node, %{items: []})
+    end
+  end
+
   # -- to_directive/3 --
 
   describe "to_directive/3" do
-    test "generates FanOutBranch per element with item_N names" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+    test "generates FanOutBranch per element with child_node and item_N names" do
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       context = %{items: [%{value: 1.0}, %{value: 2.0}, %{value: 3.0}]}
 
       assert {:ok, directives, fan_out: %FanOutState{}} =
@@ -220,10 +326,33 @@ defmodule Jido.Composer.Node.MapNodeTest do
 
       names = Enum.map(directives, & &1.branch_name)
       assert names == [:item_0, :item_1, :item_2]
+
+      # Each directive carries the ActionNode as child_node
+      Enum.each(directives, fn d ->
+        assert %ActionNode{action_module: DoubleValueAction} = d.child_node
+        assert is_map(d.params)
+      end)
+    end
+
+    test "FanOutNode child produces FanOutBranch with FanOutNode child_node" do
+      {:ok, double_node} = ActionNode.new(DoubleValueAction)
+      {:ok, fan_out} = FanOutNode.new(name: "inner", branches: [double: double_node])
+
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: fan_out)
+      context = %{items: [%{value: 1.0}, %{value: 2.0}]}
+
+      assert {:ok, directives, fan_out: _state} =
+               MapNode.to_directive(node, context, fan_out_id: "test-id")
+
+      assert length(directives) == 2
+
+      Enum.each(directives, fn d ->
+        assert %FanOutNode{} = d.child_node
+      end)
     end
 
     test "returns fan_out side effect with FanOut.State" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       context = %{items: [%{value: 1.0}]}
 
       assert {:ok, _directives, fan_out: state} =
@@ -235,7 +364,7 @@ defmodule Jido.Composer.Node.MapNodeTest do
     end
 
     test "empty list returns single RunInstruction, no fan_out side effect" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       context = %{items: []}
 
       assert {:ok, [directive]} = MapNode.to_directive(node, context, fan_out_id: "test-id")
@@ -248,7 +377,7 @@ defmodule Jido.Composer.Node.MapNodeTest do
         MapNode.new(
           name: :process,
           over: :items,
-          action: DoubleValueAction,
+          node: DoubleValueAction,
           max_concurrency: 2
         )
 
@@ -266,18 +395,27 @@ defmodule Jido.Composer.Node.MapNodeTest do
 
   describe "metadata" do
     test "name/1 returns configured name" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       assert MapNode.name(node) == "process"
     end
 
-    test "description/1 describes action and over key" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+    test "description/1 uses child node dispatch_name" do
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
+      desc = MapNode.description(node)
+      assert desc =~ "items"
+    end
+
+    test "description/1 with FanOutNode child" do
+      {:ok, double_node} = ActionNode.new(DoubleValueAction)
+      {:ok, fan_out} = FanOutNode.new(name: "inner_fo", branches: [double: double_node])
+
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: fan_out)
       desc = MapNode.description(node)
       assert desc =~ "items"
     end
 
     test "to_tool_spec/1 returns nil" do
-      {:ok, node} = MapNode.new(name: :process, over: :items, action: DoubleValueAction)
+      {:ok, node} = MapNode.new(name: :process, over: :items, node: DoubleValueAction)
       assert MapNode.to_tool_spec(node) == nil
     end
   end

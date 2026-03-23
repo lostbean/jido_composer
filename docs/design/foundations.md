@@ -135,6 +135,11 @@ is the categorical `traverse` operation: given a morphism `A -> F B` and a
 structure `T A`, produce `F (T B)`. In jido_composer,
 [MapNode](nodes/README.md#mapnode) provides this as a first-class Node type.
 
+The mapped node `f` can be any Node — an action, an agent, a fan-out, or a
+human gate. This makes traverse a proper composition constructor that
+participates fully in the Node algebra. You can traverse a sub-workflow over a
+collection, or traverse a fan-out to run parallel sub-operations per element.
+
 Traverse is distinct from fan-out. Fan-out runs a fixed set of **different**
 nodes in parallel — the branch count and identity are known at definition time.
 Traverse runs the **same** node over a variable-length collection — the count

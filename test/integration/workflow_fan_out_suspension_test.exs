@@ -41,8 +41,8 @@ defmodule Jido.Composer.Integration.WorkflowFanOutSuspensionTest do
 
   # -- Helpers --
 
-  defp execute_fan_out_branch(%FanOutBranch{instruction: %Jido.Instruction{} = instr}) do
-    case Jido.Exec.run(instr.action, instr.params) do
+  defp execute_fan_out_branch(%FanOutBranch{child_node: child_node, params: params}) do
+    case child_node.__struct__.run(child_node, params || %{}, []) do
       {:ok, result} ->
         if Map.has_key?(result, :__suspension__) do
           suspension = result.__suspension__

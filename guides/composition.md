@@ -224,7 +224,7 @@ alias Jido.Composer.Node.MapNode
 {:ok, process_node} = MapNode.new(
   name: :process,
   over: [:extract, :items],
-  action: ProcessItemAction
+  node: ProcessItemAction          # bare action module, auto-wrapped in ActionNode
 )
 
 defmodule ExtractMapAggregate do
@@ -247,6 +247,10 @@ end
 # After extract: ctx[:extract][:items] => [%{id: 1}, %{id: 2}, %{id: 3}]
 # After process: ctx[:process][:results] => [result_1, result_2, result_3]
 ```
+
+The `node` field accepts any Node struct — not just actions. For example, you
+can map a FanOutNode (per-element parallel sub-operations) or an AgentNode
+(per-element sub-workflow) over a collection.
 
 ### MapNode vs FanOutNode
 

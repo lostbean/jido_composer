@@ -184,9 +184,10 @@ applies a configurable rejection policy:
 
 ## FanOut Partial Completion
 
-When a [FanOutNode](../nodes/README.md#fanoutnode) branch suspends (e.g., a
-branch is a HumanNode, or a nested agent hits a rate limit), the strategy tracks
-the suspended branch separately from completed and pending branches.
+When a [FanOutNode](../nodes/README.md#fanoutnode) or
+[MapNode](../nodes/README.md#mapnode) branch suspends (e.g., a branch is a
+HumanNode, or a nested agent hits a rate limit), the strategy tracks the
+suspended branch separately from completed and pending branches.
 
 ```mermaid
 stateDiagram-v2

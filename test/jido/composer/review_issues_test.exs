@@ -349,48 +349,16 @@ defmodule Jido.Composer.ReviewIssuesTest do
     end
   end
 
-  # ── Issue #14: execute_fan_out_branch third clause guard ──
+  # ── Issue #14: FanOutBranch now uses child_node (enforce_key) ──
 
-  describe "issue #14: FanOutBranch dispatch with nil spawn_agent guarded" do
-    defmodule Issue14Workflow do
-      use Jido.Composer.Workflow,
-        name: "issue14_workflow",
-        nodes: %{
-          step: Jido.Composer.TestActions.NoopAction
-        },
-        transitions: %{
-          {:step, :ok} => :done,
-          {:_, :error} => :failed
-        },
-        initial: :step
-    end
-
-    @tag :capture_log
-    test "branch with nil spawn_agent produces branch_crashed error, not BadMapError" do
-      import ExUnit.CaptureLog
-
-      Process.flag(:trap_exit, true)
-
-      branch = %Jido.Composer.Directive.FanOutBranch{
-        fan_out_id: "test",
-        branch_name: :broken,
-        instruction: nil,
-        spawn_agent: nil
-      }
-
-      agent = Issue14Workflow.new()
-
-      # Before fix: BadMapError from accessing nil.agent
-      # After fix: FunctionClauseError — explicit guard rejects nil spawn_agent
-      log =
-        capture_log(fn ->
-          _result =
-            Jido.Composer.Workflow.DSL.__run_sync_loop__(Issue14Workflow, agent, [branch])
-        end)
-
-      # The error logged must be FunctionClauseError (from guard), not BadMapError
-      assert log =~ "FunctionClauseError"
-      refute log =~ "BadMapError"
+  describe "issue #14: FanOutBranch child_node is enforce_key — nil is impossible" do
+    test "FanOutBranch requires child_node at construction time" do
+      assert_raise ArgumentError, fn ->
+        struct!(Jido.Composer.Directive.FanOutBranch, %{
+          fan_out_id: "test",
+          branch_name: :broken
+        })
+      end
     end
   end
 

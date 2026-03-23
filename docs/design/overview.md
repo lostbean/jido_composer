@@ -106,7 +106,7 @@ All user-facing modules live under this namespace:
 | `Jido.Composer.Node.AgentNode`         | [Agent adapter](nodes/README.md#agentnode) — [dual-path execution](nodes/README.md#dual-path-execution) |
 | `Jido.Composer.Node.HumanNode`         | [Human decision gate](hitl/human-node.md)                                                               |
 | `Jido.Composer.Node.FanOutNode`        | [Parallel branch execution](nodes/README.md#fanoutnode) — directive-based                               |
-| `Jido.Composer.Node.MapNode`           | [Traverse constructor](composition-constructors.md#traverse) — maps action over runtime collection      |
+| `Jido.Composer.Node.MapNode`           | [Traverse constructor](composition-constructors.md#traverse) — maps any node over runtime collection    |
 | `Jido.Composer.NodeIO`                 | [Typed output envelope](nodes/typed-io.md) preserving monoidal structure                                |
 | `Jido.Composer.Context`                | [Layered context](nodes/context-flow.md#context-layers) (ambient, working, fork)                        |
 | `Jido.Composer.Suspension`             | [Generalized suspension metadata](hitl/README.md#generalized-suspension)                                |
@@ -193,18 +193,18 @@ See [Workflow Strategy](workflow/strategy.md) and
 Strategies communicate with the runtime exclusively through directives. The
 directives most relevant to Composer are:
 
-| Directive         | Purpose                                                                                                              | Used By      |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------- | ------------ |
-| RunInstruction    | Execute an action and route result back to cmd/3                                                                     | Both         |
-| SpawnAgent        | Spawn a child agent with parent-child tracking                                                                       | Both         |
-| StopChild         | Stop a tracked child agent                                                                                           | Both         |
-| Emit              | Dispatch a signal via configured adapters                                                                            | Both         |
-| Schedule          | Schedule a delayed message                                                                                           | Orchestrator |
-| Suspend           | Pause flow for any reason, deliver [Suspension](hitl/README.md#generalized-suspension) metadata                      | Both         |
-| SuspendForHuman   | Convenience wrapper — builds a Suspend with `reason: :human_input` and [ApprovalRequest](hitl/approval-lifecycle.md) | Both         |
-| FanOutBranch      | Execute a single [FanOutNode](nodes/README.md#fanoutnode) branch (contains RunInstruction or SpawnAgent)             | Workflow     |
-| CheckpointAndStop | Checkpoint agent state to storage and stop the process; emits `composer.child.hibernated` to parent                  | Both         |
-| Error             | Signal an error condition                                                                                            | Both         |
+| Directive         | Purpose                                                                                                                                     | Used By      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| RunInstruction    | Execute an action and route result back to cmd/3                                                                                            | Both         |
+| SpawnAgent        | Spawn a child agent with parent-child tracking                                                                                              | Both         |
+| StopChild         | Stop a tracked child agent                                                                                                                  | Both         |
+| Emit              | Dispatch a signal via configured adapters                                                                                                   | Both         |
+| Schedule          | Schedule a delayed message                                                                                                                  | Orchestrator |
+| Suspend           | Pause flow for any reason, deliver [Suspension](hitl/README.md#generalized-suspension) metadata                                             | Both         |
+| SuspendForHuman   | Convenience wrapper — builds a Suspend with `reason: :human_input` and [ApprovalRequest](hitl/approval-lifecycle.md)                        | Both         |
+| FanOutBranch      | Execute a single [FanOutNode](nodes/README.md#fanoutnode) or [MapNode](nodes/README.md#mapnode) branch (carries child Node struct + params) | Workflow     |
+| CheckpointAndStop | Checkpoint agent state to storage and stop the process; emits `composer.child.hibernated` to parent                                         | Both         |
+| Error             | Signal an error condition                                                                                                                   | Both         |
 
 Suspend, SuspendForHuman, FanOutBranch, and CheckpointAndStop are custom
 directives introduced by Composer. The AgentServer's directive execution is

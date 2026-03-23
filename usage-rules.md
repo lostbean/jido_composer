@@ -47,17 +47,20 @@ with any other at any depth.
   Transition map must cover all possible outcomes.
 - FanOutNode: `fork_fns` returns list of `{branch_key, fun}` pairs. Results
   merge under each branch key.
-- MapNode: applies the same action to each element of a list from context.
-  `MapNode.new(name: :process, over: [:generate, :items], action: MyAction)`.
+- MapNode: applies the same node to each element of a list from context.
+  `MapNode.new(name: :process, over: [:generate, :items], node: MyAction)`.
+  The `node` field accepts any Node struct (ActionNode, AgentNode, FanOutNode,
+  HumanNode, etc.) or a bare action module (auto-wrapped in ActionNode).
   `over` can be an atom (top-level key) or a list of atoms (nested path).
   Results are collected as `%{results: [r0, r1, ...]}`. Uses FanOutBranch
   directives and FanOut.State internally. Empty lists produce `%{results: []}`.
-  - Input preparation: map elements are merged into action params; non-map
+  - Input preparation: map elements are merged into node params; non-map
     elements are wrapped as `%{item: element}`.
   - Missing context key or non-list value → treated as empty list.
   - Use MapNode when the collection size is unknown at definition time and every
-    element gets the same action. Use FanOutNode when branches are heterogeneous
-    and fixed at definition time.
+    element gets the same processing. Use FanOutNode when branches are
+    heterogeneous and fixed at definition time.
+  - `:action` is accepted as a deprecated alias for `:node`.
 - HumanNode: always returns `:suspend` outcome. Pair with `SuspendForHuman`
   directive for approval gates.
 - Terminal states: `:done` and `:failed` are convention defaults (with `:done`
@@ -68,14 +71,14 @@ with any other at any depth.
 
 Five constructors plus one escape hatch cover the full range of workflow shapes:
 
-| Constructor | What It Does                       | Graph Defined At | DSL Expression                    |
-| ----------- | ---------------------------------- | ---------------- | --------------------------------- |
-| Sequence    | Do A, then B                       | Compile time     | `transitions` map                 |
-| Parallel    | Do A and B simultaneously          | Compile time     | `FanOutNode` with `branches:`     |
-| Choice      | Do A or B based on outcome         | Compile time     | Custom outcomes + transitions     |
-| Traverse    | Apply A to each item in a list     | Compile time     | `MapNode` with `over:`, `action:` |
-| Identity    | Pass through unchanged             | Compile time     | No-op action                      |
-| Bind        | Compute which workflow to run next | Runtime          | Orchestrator DSL                  |
+| Constructor | What It Does                       | Graph Defined At | DSL Expression                  |
+| ----------- | ---------------------------------- | ---------------- | ------------------------------- |
+| Sequence    | Do A, then B                       | Compile time     | `transitions` map               |
+| Parallel    | Do A and B simultaneously          | Compile time     | `FanOutNode` with `branches:`   |
+| Choice      | Do A or B based on outcome         | Compile time     | Custom outcomes + transitions   |
+| Traverse    | Apply A to each item in a list     | Compile time     | `MapNode` with `over:`, `node:` |
+| Identity    | Pass through unchanged             | Compile time     | No-op action                    |
+| Bind        | Compute which workflow to run next | Runtime          | Orchestrator DSL                |
 
 - Constructors 1–5 → Workflow. Static graph defined at `defmodule` time. Data
   flows through at runtime (outcomes drive choice, collection sizes drive
