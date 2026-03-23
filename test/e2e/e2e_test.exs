@@ -1352,7 +1352,7 @@ defmodule Jido.Composer.E2E.E2ETest do
            },
            plug
          ) do
-      context = params || %{}
+      context = params
 
       cond do
         function_exported?(agent_module, :query_sync, 3) ->
@@ -1371,7 +1371,7 @@ defmodule Jido.Composer.E2E.E2ETest do
            %Jido.Composer.Directive.FanOutBranch{child_node: child_node, params: params},
            _plug
          ) do
-      child_node.__struct__.run(child_node, params || %{}, [])
+      child_node.__struct__.run(child_node, params, [])
     end
 
     defp run_child_orchestrator_with_cassette_fanout(child_module, context, plug) do

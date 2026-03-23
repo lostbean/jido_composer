@@ -222,7 +222,10 @@ defmodule Jido.Composer.Node.MapNode do
 
       dispatched_names = Enum.map(to_dispatch, fn {name, _} -> name end) |> MapSet.new()
 
-      fan_out_state = FanOutState.new(fan_out_id, map_node, dispatched_names, to_queue)
+      fan_out_state =
+        FanOutState.new(fan_out_id, map_node, dispatched_names, to_queue,
+          total_branches: length(all_branches)
+        )
 
       directives = Enum.map(to_dispatch, fn {_name, directive} -> directive end)
       {:ok, directives, fan_out: fan_out_state}
@@ -253,7 +256,14 @@ defmodule Jido.Composer.Node.MapNode do
     end
   end
 
-  defp wrap_node(node) when is_struct(node), do: {:ok, node}
+  defp wrap_node(node) when is_struct(node) do
+    if function_exported?(node.__struct__, :run, 3) do
+      {:ok, node}
+    else
+      {:error,
+       "#{inspect(node.__struct__)} does not implement the Node behaviour (missing run/3)"}
+    end
+  end
 
   defp wrap_node(module) when is_atom(module) do
     wrap_action_module(module)

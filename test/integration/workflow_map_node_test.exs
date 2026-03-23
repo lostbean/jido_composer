@@ -197,7 +197,7 @@ defmodule Jido.Composer.Integration.WorkflowMapNodeTest do
   end
 
   defp execute_fan_out_branch(%FanOutBranch{child_node: child_node, params: params}) do
-    child_node.__struct__.run(child_node, params || %{}, [])
+    child_node.__struct__.run(child_node, params, [])
   end
 
   defp execute_instruction(%Jido.Instruction{action: action_module, params: params}) do

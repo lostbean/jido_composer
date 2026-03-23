@@ -18,8 +18,6 @@ defmodule Jido.Composer.Node.FanOutNode do
   - `:collect_partial` — collects all results, including `{:error, reason}` entries
   """
 
-  alias Jido.Composer.NodeIO
-
   @behaviour Jido.Composer.Node
 
   @default_timeout 30_000
@@ -175,7 +173,9 @@ defmodule Jido.Composer.Node.FanOutNode do
   end
 
   defp all_node_structs?(branches) do
-    Enum.all?(branches, fn {_name, branch} -> is_struct(branch) end)
+    Enum.all?(branches, fn {_name, branch} ->
+      is_struct(branch) && function_exported?(branch.__struct__, :run, 3)
+    end)
   end
 
   defp process_results(results, :fail_fast) do
@@ -214,28 +214,11 @@ defmodule Jido.Composer.Node.FanOutNode do
   @doc """
   Merges branch results using the specified merge strategy.
 
-  When called from the strategy with a completed_results map, converts to
-  the keyword-list format expected by the merge logic.
+  Delegates to `FanOut.State.do_merge/2` — the single source of truth for
+  all merge strategies (`:deep_merge`, `:ordered_list`, custom functions).
   """
   @spec merge_results(%{atom() => term()} | [{atom(), term()}], merge()) :: map()
-  def merge_results(branch_results, merge) when is_map(branch_results) do
-    merge_results(Enum.to_list(branch_results), merge)
-  end
-
-  def merge_results(branch_results, :deep_merge) do
-    Enum.reduce(branch_results, %{}, fn
-      {name, %NodeIO{} = io}, acc ->
-        DeepMerge.deep_merge(acc, %{name => NodeIO.to_map(io)})
-
-      {name, result}, acc when is_map(result) ->
-        DeepMerge.deep_merge(acc, %{name => result})
-
-      {name, result}, acc ->
-        Map.put(acc, name, result)
-    end)
-  end
-
-  def merge_results(branch_results, merge_fn) when is_function(merge_fn, 1) do
-    merge_fn.(branch_results)
+  def merge_results(branch_results, merge) do
+    Jido.Composer.FanOut.State.do_merge(branch_results, merge)
   end
 end

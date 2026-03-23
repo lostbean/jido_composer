@@ -64,7 +64,7 @@ defmodule Jido.Composer.Directive.FanOutBranchTest do
       refute Map.has_key?(branch, :spawn_agent)
     end
 
-    test "params defaults to nil" do
+    test "params defaults to empty map" do
       {:ok, action_node} = ActionNode.new(AddAction)
 
       branch = %FanOutBranch{
@@ -73,7 +73,7 @@ defmodule Jido.Composer.Directive.FanOutBranchTest do
         child_node: action_node
       }
 
-      assert branch.params == nil
+      assert branch.params == %{}
     end
 
     test "timeout defaults to nil" do
