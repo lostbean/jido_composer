@@ -113,6 +113,17 @@ defmodule Jido.Composer.Node.MapNodeTest do
       assert %Jido.Composer.Node.HumanNode{} = node.node
     end
 
+    test "rejects AgentNode with non-sync mode" do
+      {:ok, async_node} =
+        Jido.Composer.Node.AgentNode.new(
+          Jido.Composer.TestAgents.TestWorkflowAgent,
+          mode: :async
+        )
+
+      assert {:error, msg} = MapNode.new(name: :process, over: :items, node: async_node)
+      assert msg =~ "MapNode requires :sync mode"
+    end
+
     test "rejects invalid values" do
       assert {:error, _} = MapNode.new(name: :process, over: :items, node: "not_a_module")
       assert {:error, _} = MapNode.new(name: :process, over: :items, node: Enum)

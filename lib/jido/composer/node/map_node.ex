@@ -244,6 +244,13 @@ defmodule Jido.Composer.Node.MapNode do
     end
   end
 
+  defp wrap_node(%Jido.Composer.Node.AgentNode{mode: mode})
+       when mode != :sync do
+    {:error,
+     "AgentNode mode #{inspect(mode)} is not directly runnable — " <>
+       "MapNode requires :sync mode"}
+  end
+
   defp wrap_node(node) when is_struct(node) do
     if function_exported?(node.__struct__, :run, 3) do
       {:ok, node}
