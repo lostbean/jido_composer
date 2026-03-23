@@ -36,12 +36,14 @@ defmodule Jido.Composer.FanOut.State do
         }
 
   @doc "Creates a new FanOut.State from dispatched and queued branches."
-  @spec new(String.t(), struct(), MapSet.t(), [{atom(), term()}]) :: t()
-  def new(id, node, dispatched_names, queued_branches) do
+  @spec new(String.t(), struct(), MapSet.t(), [{atom(), term()}], keyword()) :: t()
+  def new(id, node, dispatched_names, queued_branches, opts \\ []) do
+    total = Keyword.get(opts, :total_branches) || compute_total_branches(node)
+
     %__MODULE__{
       id: id,
       node: node,
-      total_branches: compute_total_branches(node),
+      total_branches: total,
       pending_branches: dispatched_names,
       completed_results: %{},
       suspended_branches: %{},
@@ -51,6 +53,7 @@ defmodule Jido.Composer.FanOut.State do
     }
   end
 
+  # FanOutNode has a static `branches` list; MapNode passes total_branches via opts.
   defp compute_total_branches(%{branches: branches}) when is_list(branches), do: length(branches)
   defp compute_total_branches(_), do: nil
 
@@ -135,10 +138,19 @@ defmodule Jido.Composer.FanOut.State do
     do_merge(state.completed_results, state.merge)
   end
 
-  defp do_merge(completed_results, :deep_merge) do
-    completed_results
-    |> Enum.to_list()
-    |> Enum.reduce(%{}, fn
+  @doc """
+  Merges branch results using the specified merge strategy.
+
+  Accepts either a map (from strategy tracking) or a keyword list
+  (from inline `FanOutNode.run/3`).
+  """
+  @spec do_merge(%{atom() => term()} | [{atom(), term()}], atom() | function()) :: map()
+  def do_merge(results, merge) when is_map(results) do
+    do_merge(Enum.to_list(results), merge)
+  end
+
+  def do_merge(results, :deep_merge) do
+    Enum.reduce(results, %{}, fn
       {name, %Jido.Composer.NodeIO{} = io}, acc ->
         DeepMerge.deep_merge(acc, %{name => Jido.Composer.NodeIO.to_map(io)})
 
@@ -151,9 +163,8 @@ defmodule Jido.Composer.FanOut.State do
   end
 
   # Used by MapNode — branch names follow the `item_N` convention.
-  defp do_merge(completed_results, :ordered_list) do
-    completed_results
-    |> Enum.to_list()
+  def do_merge(results, :ordered_list) do
+    results
     |> Enum.sort_by(fn {name, _} ->
       case name |> Atom.to_string() |> String.split("item_", parts: 2) do
         [_, index_str] -> String.to_integer(index_str)
@@ -164,8 +175,8 @@ defmodule Jido.Composer.FanOut.State do
     |> then(&%{results: &1})
   end
 
-  defp do_merge(completed_results, merge_fn) when is_function(merge_fn, 1) do
-    completed_results |> Enum.to_list() |> merge_fn.()
+  def do_merge(results, merge_fn) when is_function(merge_fn, 1) do
+    merge_fn.(results)
   end
 
   @doc "Check if a suspended branch matches the given suspension_id."

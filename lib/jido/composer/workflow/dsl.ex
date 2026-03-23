@@ -247,7 +247,7 @@ defmodule Jido.Composer.Workflow.DSL do
          child_node: child_node,
          params: params
        }) do
-    child_node.__struct__.run(child_node, params || %{}, [])
+    child_node.__struct__.run(child_node, params, [])
   end
 
   defp execute_sync(%Jido.Instruction{action: action_module, params: params}) do
