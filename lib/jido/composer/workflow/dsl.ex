@@ -118,8 +118,11 @@ defmodule Jido.Composer.Workflow.DSL do
         strategy: {Jido.Composer.Workflow.Strategy, @__wf_strategy_opts__},
         signal_routes: unquote(Macro.escape(workflow_routes))
 
+      # Note: @spec annotations are intentionally omitted from these generated
+      # functions. Adding @spec inside a quote block causes dialyzer
+      # `contract_supertype` and `missing_range` warnings in consumer modules,
+      # because dialyzer infers a more specific return type than the spec declares.
       @doc "Starts the workflow with the given context."
-      @spec run(Jido.Agent.t(), map()) :: Jido.Agent.cmd_result()
       def run(%Jido.Agent{} = agent, context \\ %{}) when is_map(context) do
         __MODULE__.cmd(agent, {:workflow_start, context})
       end
@@ -135,7 +138,6 @@ defmodule Jido.Composer.Workflow.DSL do
       If the workflow suspends (e.g., at a HumanNode), returns
       `{:error, {:suspended, suspension}}`.
       """
-      @spec run_sync(Jido.Agent.t(), map()) :: {:ok, map()} | {:error, term()}
       def run_sync(%Jido.Agent{} = agent, context \\ %{}) when is_map(context) do
         {agent, directives} = run(agent, context)
         Jido.Composer.Workflow.DSL.__run_sync_loop__(__MODULE__, agent, directives)
