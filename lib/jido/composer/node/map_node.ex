@@ -329,6 +329,6 @@ defmodule Jido.Composer.Node.MapNode do
   defp item_branch_name(index), do: :"item_#{index}"
 
   defp action_module?(module) do
-    Code.ensure_loaded?(module) && function_exported?(module, :run, 2)
+    match?({:module, _}, Code.ensure_compiled(module)) && function_exported?(module, :run, 2)
   end
 end

@@ -50,7 +50,7 @@ defmodule Jido.Composer.Node do
   @doc "Returns `true` if `module` declares the `Jido.Composer.Node` behaviour."
   @spec node?(module()) :: boolean()
   def node?(module) do
-    Code.ensure_loaded?(module) &&
+    match?({:module, _}, Code.ensure_compiled(module)) &&
       function_exported?(module, :__info__, 1) &&
       __MODULE__ in (module.__info__(:attributes)
                      |> Keyword.get_values(:behaviour)
@@ -78,7 +78,8 @@ defmodule Jido.Composer.Node do
   @doc "Returns `true` if `module` is a compiled `Jido.Agent` module."
   @spec agent_module?(module()) :: boolean()
   def agent_module?(module) do
-    Code.ensure_loaded?(module) && function_exported?(module, :__agent_metadata__, 0)
+    match?({:module, _}, Code.ensure_compiled(module)) &&
+      function_exported?(module, :__agent_metadata__, 0)
   end
 
   @doc """

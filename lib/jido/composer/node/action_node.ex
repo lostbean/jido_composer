@@ -82,6 +82,6 @@ defmodule Jido.Composer.Node.ActionNode do
   end
 
   defp action_module?(module) do
-    Code.ensure_loaded?(module) && function_exported?(module, :run, 2)
+    match?({:module, _}, Code.ensure_compiled(module)) && function_exported?(module, :run, 2)
   end
 end
