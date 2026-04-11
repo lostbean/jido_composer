@@ -34,6 +34,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   alias Jido.Composer.Node.AgentNode
   alias Jido.Composer.NodeIO
   alias Jido.Composer.Orchestrator.AgentTool
+  alias Jido.Composer.Orchestrator.Internal
   alias Jido.Composer.Orchestrator.Obs
   alias Jido.Composer.Orchestrator.StatusComputer
   alias Jido.Composer.OtelCtx
@@ -55,13 +56,13 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
   defp restore_runtime_fields(agent, existing, opts) do
     node_modules = opts[:nodes] || []
-    nodes = build_nodes(node_modules)
+    nodes = Internal.build_nodes(node_modules)
     tools = Enum.map(nodes, fn {_name, node} -> AgentTool.to_tool(node) end)
     # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
     name_atoms = Map.new(nodes, fn {name, _node} -> {name, String.to_atom(name)} end)
 
     {tools, name_atoms, term_name, term_mod} =
-      build_termination_tool(opts[:termination_tool], tools, name_atoms)
+      Internal.build_termination_tool(opts[:termination_tool], tools, name_atoms)
 
     # Restore max_concurrency into the ToolConcurrency struct
     tc = Map.get(existing, :tool_concurrency, ToolConcurrency.new())
@@ -82,7 +83,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
       |> Map.put(:nodes, nodes)
       |> Map.put(:tools, tools)
       |> Map.put(:name_atoms, name_atoms)
-      |> Map.put(:schema_keys, extract_all_schema_keys(nodes))
+      |> Map.put(:schema_keys, Internal.extract_all_schema_keys(nodes))
       |> Map.put(:approval_gate, ag)
       |> Map.put(:req_options, opts[:req_options] || existing[:req_options] || [])
       |> Map.put(:tool_concurrency, tc)
@@ -95,7 +96,7 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
   defp fresh_init(agent, opts) do
     node_modules = opts[:nodes] || []
-    nodes = build_nodes(node_modules)
+    nodes = Internal.build_nodes(node_modules)
     tools = Enum.map(nodes, fn {_name, node} -> AgentTool.to_tool(node) end)
     # Pre-create atoms for tool name scoping. This is safe because the set of
     # node names is bounded and determined at compile time by the DSL.
@@ -105,10 +106,10 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     ambient_keys = opts[:ambient] || []
     fork_fns = opts[:fork_fns] || %{}
 
-    schema_keys = extract_all_schema_keys(nodes)
+    schema_keys = Internal.extract_all_schema_keys(nodes)
 
     {tools, name_atoms, term_name, term_mod} =
-      build_termination_tool(opts[:termination_tool], tools, name_atoms)
+      Internal.build_termination_tool(opts[:termination_tool], tools, name_atoms)
 
     agent =
       StratState.put(agent, %{
@@ -1370,37 +1371,6 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     end)
   end
 
-  defp build_nodes(modules) when is_list(modules) do
-    Map.new(modules, fn
-      {mod, opts} when is_atom(mod) and is_list(opts) ->
-        if Jido.Composer.Node.agent_module?(mod) do
-          {:ok, node} = AgentNode.new(mod, opts)
-          {AgentNode.name(node), node}
-        else
-          {:ok, node} = ActionNode.new(mod, opts)
-          {ActionNode.name(node), node}
-        end
-
-      mod when is_atom(mod) ->
-        if Jido.Composer.Node.agent_module?(mod) do
-          {:ok, node} = AgentNode.new(mod)
-          {AgentNode.name(node), node}
-        else
-          {:ok, node} = ActionNode.new(mod)
-          {ActionNode.name(node), node}
-        end
-
-      %ActionNode{} = node ->
-        {ActionNode.name(node), node}
-
-      %AgentNode{} = node ->
-        {AgentNode.name(node), node}
-
-      %_mod{} = node ->
-        {Jido.Composer.Node.dispatch_name(node), node}
-    end)
-  end
-
   defp build_start_context(%Context{} = current_ctx, params, strat) do
     ambient_keys = Map.get(strat, :ambient_keys, [])
 
@@ -1427,24 +1397,6 @@ defmodule Jido.Composer.Orchestrator.Strategy do
   end
 
   # -- Termination tool helpers --
-
-  defp build_termination_tool(nil, tools, name_atoms), do: {tools, name_atoms, nil, nil}
-
-  defp build_termination_tool(mod, tools, name_atoms) when is_atom(mod) do
-    tool = AgentTool.to_tool(mod)
-    name = mod.name()
-    # credo:disable-for-next-line Credo.Check.Warning.UnsafeToAtom
-    updated_atoms = Map.put(name_atoms, name, String.to_atom(name))
-
-    tools =
-      if Enum.any?(tools, fn t -> t.name == tool.name end) do
-        tools
-      else
-        tools ++ [tool]
-      end
-
-    {tools, updated_atoms, name, mod}
-  end
 
   defp find_termination_call(_calls, nil), do: :not_terminated
 
@@ -1484,26 +1436,5 @@ defmodule Jido.Composer.Orchestrator.Strategy do
 
         emit_llm_call(agent)
     end
-  end
-
-  defp extract_all_schema_keys(nodes) do
-    Map.new(nodes, fn {name, node} ->
-      schema = node.__struct__.schema(node)
-
-      keys =
-        case schema do
-          list when is_list(list) ->
-            Enum.map(list, fn
-              {key, _opts} when is_atom(key) -> key
-              key when is_atom(key) -> key
-            end)
-            |> MapSet.new()
-
-          _ ->
-            MapSet.new()
-        end
-
-      {name, keys}
-    end)
   end
 end
