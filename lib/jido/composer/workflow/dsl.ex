@@ -227,11 +227,16 @@ defmodule Jido.Composer.Workflow.DSL do
         _ -> 30_000
       end
 
+    # Capture OTel context so child tasks produce spans under the same trace.
+    parent_ctx = Jido.Composer.OtelCtx.get_current()
+
     fan_out_directives
     |> Task.async_stream(
       fn %Jido.Composer.Directive.FanOutBranch{} = branch ->
-        result = execute_fan_out_branch(branch)
-        {branch.branch_name, result}
+        Jido.Composer.OtelCtx.with_parent_context(parent_ctx, fn ->
+          result = execute_fan_out_branch(branch)
+          {branch.branch_name, result}
+        end)
       end,
       timeout: timeout,
       on_timeout: :kill_task,
@@ -247,9 +252,27 @@ defmodule Jido.Composer.Workflow.DSL do
 
   defp execute_fan_out_branch(%Jido.Composer.Directive.FanOutBranch{
          child_node: child_node,
+         branch_name: branch_name,
          params: params
        }) do
-    child_node.__struct__.run(child_node, params, [])
+    node_name = child_node.__struct__.name(child_node)
+
+    span_ctx =
+      Jido.Observe.start_span([:jido, :composer, :tool], %{
+        tool_name: node_name,
+        name: "#{node_name}[#{branch_name}]"
+      })
+
+    result = child_node.__struct__.run(child_node, params, [])
+
+    measurements =
+      case result do
+        {:ok, output} -> %{result: output}
+        {:error, reason} -> %{error: reason}
+      end
+
+    Jido.Observe.finish_span(span_ctx, measurements)
+    result
   end
 
   defp execute_sync(%Jido.Instruction{action: action_module, params: params}) do
