@@ -1,0 +1,9 @@
+_build/
+deps/
+data/*.parquet
+data/*.csv
+data/*.jsonl
+results/*/
+!data/.gitkeep
+!results/.gitkeep
+*.beam
