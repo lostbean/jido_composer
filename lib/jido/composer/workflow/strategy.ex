@@ -811,6 +811,10 @@ defmodule Jido.Composer.Workflow.Strategy do
 
         agent = StratState.update(agent, fn s -> %{s | fan_out: nil} end)
 
+        # Finish the node span for the fan-out node before transitioning,
+        # otherwise it stays open and subsequent node spans nest under it.
+        agent = update_obs(agent, &Obs.finish_node_span(&1, %{result: merged}))
+
         case Machine.transition(machine, :ok) do
           {:ok, machine} ->
             agent = put_machine(agent, machine)
