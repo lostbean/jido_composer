@@ -2,8 +2,7 @@ defmodule TravelPlanner.Evaluator.HardTest do
   use ExUnit.Case, async: true
 
   alias TravelPlanner.Evaluator.Hard
-  alias TravelPlanner.ReferenceDB
-  alias TravelPlanner.ReferenceDB.{Accommodation, Restaurant}
+  alias TravelPlanner.Test.DFHelper
 
   # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -27,15 +26,7 @@ defmodule TravelPlanner.Evaluator.HardTest do
   end
 
   defp make_db(overrides \\ %{}) do
-    defaults = %{
-      flights: %{},
-      ground_transport: %{},
-      accommodations: %{},
-      attractions: %{},
-      restaurants: %{}
-    }
-
-    struct!(ReferenceDB, Map.merge(defaults, overrides))
+    DFHelper.make_db(overrides)
   end
 
   defp sample_plan do
@@ -75,25 +66,28 @@ defmodule TravelPlanner.Evaluator.HardTest do
 
   defp sample_db do
     make_db(%{
-      restaurants: %{
-        "Myrtle Beach" => [
-          %Restaurant{name: "Crab Shack", city: "Myrtle Beach", cuisines: ["Seafood"], average_cost: 30, aggregate_rating: 4.0},
-          %Restaurant{name: "Pier Restaurant", city: "Myrtle Beach", cuisines: ["American"], average_cost: 25, aggregate_rating: 3.5},
-          %Restaurant{name: "Morning Cafe", city: "Myrtle Beach", cuisines: ["Indian", "Cafe"], average_cost: 15, aggregate_rating: 4.2},
-          %Restaurant{name: "Sushi Place", city: "Myrtle Beach", cuisines: ["Japanese"], average_cost: 35, aggregate_rating: 4.5},
-          %Restaurant{name: "Steak House", city: "Myrtle Beach", cuisines: ["American"], average_cost: 40, aggregate_rating: 4.0},
-          %Restaurant{name: "Bagel Shop", city: "Myrtle Beach", cuisines: ["Bakery"], average_cost: 10, aggregate_rating: 3.8}
-        ]
-      },
-      accommodations: %{
-        "Myrtle Beach" => [
-          %Accommodation{
-            name: "Beach Hotel", city: "Myrtle Beach", price: 120,
-            room_type: "Private room", minimum_nights: 1, maximum_occupancy: 2,
-            review_rate: 4.5, house_rules: ["No smoking", "No parties"]
-          }
-        ]
-      }
+      restaurants:
+        DFHelper.restaurants_df([
+          [name: "Crab Shack", city: "Myrtle Beach", cuisines: "Seafood", average_cost: 30.0, aggregate_rating: 4.0],
+          [name: "Pier Restaurant", city: "Myrtle Beach", cuisines: "American", average_cost: 25.0, aggregate_rating: 3.5],
+          [name: "Morning Cafe", city: "Myrtle Beach", cuisines: "Indian|Cafe", average_cost: 15.0, aggregate_rating: 4.2],
+          [name: "Sushi Place", city: "Myrtle Beach", cuisines: "Japanese", average_cost: 35.0, aggregate_rating: 4.5],
+          [name: "Steak House", city: "Myrtle Beach", cuisines: "American", average_cost: 40.0, aggregate_rating: 4.0],
+          [name: "Bagel Shop", city: "Myrtle Beach", cuisines: "Bakery", average_cost: 10.0, aggregate_rating: 3.8]
+        ]),
+      accommodations:
+        DFHelper.accommodations_df([
+          [
+            name: "Beach Hotel",
+            city: "Myrtle Beach",
+            price: 120.0,
+            room_type: "Private room",
+            minimum_nights: 1.0,
+            maximum_occupancy: 2,
+            review_rate: 4.5,
+            house_rules: "No smoking|No parties"
+          ]
+        ])
     })
   end
 
@@ -127,6 +121,69 @@ defmodule TravelPlanner.Evaluator.HardTest do
       })
 
       assert :ok == Hard.is_valid_cuisine(sample_plan(), task, sample_db())
+    end
+
+    test "passes when multiple required cuisines are all satisfied" do
+      # Plan has Indian (Morning Cafe) and Seafood (Crab Shack)
+      task = make_task(%{
+        local_constraint: "{'house rule': None, 'cuisine': ['Indian', 'Seafood'], 'room type': None, 'transportation': None}"
+      })
+
+      assert :ok == Hard.is_valid_cuisine(sample_plan(), task, sample_db())
+    end
+
+    test "fails when one of multiple required cuisines is not satisfied" do
+      # Plan has Indian but not Mexican
+      task = make_task(%{
+        local_constraint: "{'house rule': None, 'cuisine': ['Indian', 'Mexican'], 'room type': None, 'transportation': None}"
+      })
+
+      assert {:fail, reason} = Hard.is_valid_cuisine(sample_plan(), task, sample_db())
+      assert reason =~ "Mexican"
+    end
+
+    test "skips restaurants in origin city" do
+      # Add a restaurant in Washington (origin) that serves Mexican
+      db = make_db(%{
+        restaurants:
+          DFHelper.restaurants_df([
+            [name: "Crab Shack", city: "Myrtle Beach", cuisines: "Seafood", average_cost: 30.0, aggregate_rating: 4.0],
+            [name: "Morning Cafe", city: "Myrtle Beach", cuisines: "Indian", average_cost: 15.0, aggregate_rating: 4.2],
+            [name: "DC Tacos", city: "Washington", cuisines: "Mexican", average_cost: 20.0, aggregate_rating: 4.0]
+          ])
+      })
+
+      # Plan references DC Tacos in origin city — should NOT count toward Mexican cuisine
+      plan = [
+        %{
+          "days" => 1,
+          "current_city" => "Washington to Myrtle Beach",
+          "transportation" => "Flight F001, $89 (11:00-13:00)",
+          "breakfast" => "DC Tacos, Washington",
+          "attraction" => "Beach",
+          "lunch" => "Crab Shack, Myrtle Beach",
+          "dinner" => "Morning Cafe, Myrtle Beach",
+          "accommodation" => "Hotel, Myrtle Beach"
+        },
+        %{
+          "days" => 2,
+          "current_city" => "Myrtle Beach to Washington",
+          "transportation" => "Flight F002, $87 (11:00-13:00)",
+          "breakfast" => "-",
+          "attraction" => "-",
+          "lunch" => "-",
+          "dinner" => "-",
+          "accommodation" => "-"
+        }
+      ]
+
+      task = make_task(%{
+        days: 2,
+        local_constraint: "{'house rule': None, 'cuisine': ['Mexican'], 'room type': None, 'transportation': None}"
+      })
+
+      assert {:fail, reason} = Hard.is_valid_cuisine(plan, task, db)
+      assert reason =~ "Mexican"
     end
   end
 
@@ -190,15 +247,19 @@ defmodule TravelPlanner.Evaluator.HardTest do
 
     test "negated constraint fails when room type matches the excluded type" do
       db = make_db(%{
-        accommodations: %{
-          "Myrtle Beach" => [
-            %Accommodation{
-              name: "Beach Hotel", city: "Myrtle Beach", price: 120,
-              room_type: "Shared room", minimum_nights: 1, maximum_occupancy: 4,
-              review_rate: 3.0, house_rules: []
-            }
-          ]
-        }
+        accommodations:
+          DFHelper.accommodations_df([
+            [
+              name: "Beach Hotel",
+              city: "Myrtle Beach",
+              price: 120.0,
+              room_type: "Shared room",
+              minimum_nights: 1.0,
+              maximum_occupancy: 4,
+              review_rate: 3.0,
+              house_rules: ""
+            ]
+          ])
       })
 
       task = make_task(%{
@@ -255,10 +316,10 @@ defmodule TravelPlanner.Evaluator.HardTest do
   # ── is_valid_cost ──────────────────────────────────────────────────────
 
   describe "is_valid_cost/3" do
-    test "passes when total cost within budget" do
-      # Flights: 89 + 87 = 176
-      # Accommodation: 120 * 2 nights = 240
-      # Restaurants: 30 + 25 + 15 + 35 + 40 + 10 = 155
+    test "passes when total cost within budget (1 person)" do
+      # Flights: 89 + 87 = 176 (* 1 person = 176)
+      # Accommodation: 120 * 2 nights * ceil(1/2) = 120 * 2 * 1 = 240
+      # Restaurants: (30 + 25 + 15 + 35 + 40 + 10) * 1 = 155
       # Total: 176 + 240 + 155 = 571, budget = 1400
       assert :ok == Hard.is_valid_cost(sample_plan(), make_task(), sample_db())
     end
@@ -273,6 +334,89 @@ defmodule TravelPlanner.Evaluator.HardTest do
       # With 10 people, restaurants: 155 * 10 = 1550, already over 1400 budget
       task = make_task(%{people_number: 10, budget: 1400})
       assert {:fail, _reason} = Hard.is_valid_cost(sample_plan(), task, sample_db())
+    end
+
+    test "multiplies flight costs by people_number" do
+      # Flight costs: (89 + 87) * 3 people = 528
+      # Accommodation: 120 * 2 nights * ceil(3/2) = 120 * 2 * 2 = 480
+      # Restaurants: 155 * 3 = 465
+      # Total: 528 + 480 + 465 = 1473
+      task = make_task(%{people_number: 3, budget: 1472})
+      assert {:fail, _reason} = Hard.is_valid_cost(sample_plan(), task, sample_db())
+
+      task_ok = make_task(%{people_number: 3, budget: 1473})
+      assert :ok == Hard.is_valid_cost(sample_plan(), task_ok, sample_db())
+    end
+
+    test "scales self-driving cost by ceil(people/5)" do
+      plan = [
+        %{
+          "days" => 1,
+          "current_city" => "A to B",
+          "transportation" => "Self-driving, from A to B, duration: 5h, distance: 300 km, cost: $100",
+          "breakfast" => "-",
+          "lunch" => "-",
+          "dinner" => "-",
+          "attraction" => "-",
+          "accommodation" => "-"
+        }
+      ]
+
+      # 6 people: ceil(6/5) = 2 cars, cost = 100 * 2 = 200
+      task = make_task(%{days: 1, people_number: 6, budget: 199})
+      assert {:fail, _} = Hard.is_valid_cost(plan, task, make_db())
+
+      task_ok = make_task(%{days: 1, people_number: 6, budget: 200})
+      assert :ok == Hard.is_valid_cost(plan, task_ok, make_db())
+    end
+
+    test "scales taxi cost by ceil(people/4)" do
+      plan = [
+        %{
+          "days" => 1,
+          "current_city" => "A to B",
+          "transportation" => "Taxi, from A to B, duration: 5h, distance: 300 km, cost: $100",
+          "breakfast" => "-",
+          "lunch" => "-",
+          "dinner" => "-",
+          "attraction" => "-",
+          "accommodation" => "-"
+        }
+      ]
+
+      # 5 people: ceil(5/4) = 2 taxis, cost = 100 * 2 = 200
+      task = make_task(%{days: 1, people_number: 5, budget: 199})
+      assert {:fail, _} = Hard.is_valid_cost(plan, task, make_db())
+
+      task_ok = make_task(%{days: 1, people_number: 5, budget: 200})
+      assert :ok == Hard.is_valid_cost(plan, task_ok, make_db())
+    end
+
+    test "scales accommodation by ceil(people/max_occupancy)" do
+      # max_occupancy=2, 3 people → ceil(3/2) = 2 rooms, price = 120 * 2 = 240 per night
+      # 2 nights → 480
+      task = make_task(%{people_number: 3, budget: 480})
+
+      plan = [
+        %{
+          "days" => 1, "current_city" => "Myrtle Beach",
+          "transportation" => "-", "breakfast" => "-", "lunch" => "-",
+          "dinner" => "-", "attraction" => "-",
+          "accommodation" => "Beach Hotel, Myrtle Beach"
+        },
+        %{
+          "days" => 2, "current_city" => "Myrtle Beach",
+          "transportation" => "-", "breakfast" => "-", "lunch" => "-",
+          "dinner" => "-", "attraction" => "-",
+          "accommodation" => "Beach Hotel, Myrtle Beach"
+        }
+      ]
+
+      # Cost = 120 * ceil(3/2) * 2 nights = 120 * 2 * 2 = 480
+      assert :ok == Hard.is_valid_cost(plan, task, sample_db())
+
+      task_tight = make_task(%{people_number: 3, budget: 479})
+      assert {:fail, _} = Hard.is_valid_cost(plan, task_tight, sample_db())
     end
 
     test "passes when no budget set" do

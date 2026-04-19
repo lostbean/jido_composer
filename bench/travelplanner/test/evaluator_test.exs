@@ -3,8 +3,7 @@ defmodule TravelPlanner.EvaluatorTest do
 
   alias TravelPlanner.Evaluator
   alias TravelPlanner.Evaluator.Parse
-  alias TravelPlanner.ReferenceDB
-  alias TravelPlanner.ReferenceDB.{Accommodation, Attraction, Flight, Restaurant}
+  alias TravelPlanner.Test.DFHelper
 
   # ── Parse module tests ─────────────────────────────────────────────────
 
@@ -21,7 +20,7 @@ defmodule TravelPlanner.EvaluatorTest do
 
       assert %{
                house_rule: "No smoking",
-               cuisine: "Indian",
+               cuisine: ["Indian"],
                room_type: "not shared room",
                transportation: "no flight"
              } == Parse.parse_local_constraint(input)
@@ -42,6 +41,20 @@ defmodule TravelPlanner.EvaluatorTest do
 
       assert %{house_rule: "No parties", cuisine: nil, room_type: "Private room", transportation: nil} ==
                Parse.parse_local_constraint(input)
+    end
+
+    test "parses cuisine as list (Python list format)" do
+      input = "{'house rule': None, 'cuisine': ['Chinese', 'Mexican'], 'room type': None, 'transportation': None}"
+
+      result = Parse.parse_local_constraint(input)
+      assert result.cuisine == ["Chinese", "Mexican"]
+    end
+
+    test "parses single cuisine string as list" do
+      input = "{'house rule': None, 'cuisine': 'Indian', 'room type': None, 'transportation': None}"
+
+      result = Parse.parse_local_constraint(input)
+      assert result.cuisine == ["Indian"]
     end
   end
 
@@ -85,6 +98,48 @@ defmodule TravelPlanner.EvaluatorTest do
 
     test "returns nil for absent" do
       assert nil == Parse.parse_restaurant_name("-")
+    end
+  end
+
+  describe "Parse.parse_restaurant_city/1 parenthetical stripping" do
+    test "strips parenthetical state suffix" do
+      assert "Dallas" == Parse.parse_restaurant_city("Joe's Diner, Dallas(Texas)")
+    end
+
+    test "leaves plain city names untouched" do
+      assert "Myrtle Beach" == Parse.parse_restaurant_city("Catfish Charlie's, Myrtle Beach")
+    end
+
+    test "handles multi-word state in parentheses" do
+      assert "Austin" == Parse.parse_restaurant_city("Test, Austin(New Mexico)")
+    end
+  end
+
+  describe "Parse.parse_accommodation_city/1 parenthetical stripping" do
+    test "strips parenthetical state suffix" do
+      assert "Dallas" == Parse.parse_accommodation_city("Cozy Home, Dallas(Texas)")
+    end
+
+    test "leaves plain city names untouched" do
+      assert "Myrtle Beach" == Parse.parse_accommodation_city("Beachside, Myrtle Beach")
+    end
+  end
+
+  describe "Parse.strip_parenthetical/1" do
+    test "strips parenthetical suffix" do
+      assert "Dallas" == Parse.strip_parenthetical("Dallas(Texas)")
+    end
+
+    test "leaves string with no parenthesis untouched" do
+      assert "Myrtle Beach" == Parse.strip_parenthetical("Myrtle Beach")
+    end
+
+    test "strips and trims" do
+      assert "Austin" == Parse.strip_parenthetical("Austin (New Mexico)")
+    end
+
+    test "handles nil" do
+      assert nil == Parse.strip_parenthetical(nil)
     end
   end
 
@@ -247,52 +302,61 @@ defmodule TravelPlanner.EvaluatorTest do
   end
 
   defp m6_db do
-    %ReferenceDB{
-      flights: %{
-        {"Washington", "Myrtle Beach", "2022-03-13"} => [
-          %Flight{
-            flight_number: "F3927581", origin: "Washington", destination: "Myrtle Beach",
-            date: "2022-03-13", dep_time: "11:03", arr_time: "13:31",
-            duration: "148 min", price: 89, distance: 487
-          }
-        ],
-        {"Myrtle Beach", "Washington", "2022-03-15"} => [
-          %Flight{
-            flight_number: "F3791200", origin: "Myrtle Beach", destination: "Washington",
-            date: "2022-03-15", dep_time: "11:36", arr_time: "13:06",
-            duration: "90 min", price: 87, distance: 487
-          }
-        ]
-      },
-      ground_transport: %{},
-      restaurants: %{
-        "Myrtle Beach" => [
-          %Restaurant{name: "Catfish Charlie's", city: "Myrtle Beach", cuisines: ["Seafood"], average_cost: 20, aggregate_rating: 3.5},
-          %Restaurant{name: "First Eat", city: "Myrtle Beach", cuisines: ["Indian"], average_cost: 15, aggregate_rating: 4.0},
-          %Restaurant{name: "La Pino'z Pizza", city: "Myrtle Beach", cuisines: ["Italian", "Pizza"], average_cost: 20, aggregate_rating: 4.0},
-          %Restaurant{name: "Nagai", city: "Myrtle Beach", cuisines: ["Japanese"], average_cost: 25, aggregate_rating: 4.5},
-          %Restaurant{name: "Twigly", city: "Myrtle Beach", cuisines: ["Indian"], average_cost: 15, aggregate_rating: 3.5},
-          %Restaurant{name: "d' Curry House", city: "Myrtle Beach", cuisines: ["Indian"], average_cost: 10, aggregate_rating: 3.0}
-        ]
-      },
-      attractions: %{
-        "Myrtle Beach" => [
-          %Attraction{name: "SkyWheel Myrtle Beach", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil},
-          %Attraction{name: "Ripley's Aquarium of Myrtle Beach", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil},
-          %Attraction{name: "Broadway at the Beach", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil},
-          %Attraction{name: "Myrtle Beach Boardwalk and Promenade", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil}
-        ]
-      },
-      accommodations: %{
-        "Myrtle Beach" => [
-          %Accommodation{
+    DFHelper.make_db(%{
+      flights:
+        DFHelper.flights_df([
+          [
+            flight_number: "F3927581",
+            origin: "Washington",
+            destination: "Myrtle Beach",
+            date: "2022-03-13",
+            dep_time: "11:03",
+            arr_time: "13:31",
+            duration: "148 min",
+            price: 89.0,
+            distance: 487.0
+          ],
+          [
+            flight_number: "F3791200",
+            origin: "Myrtle Beach",
+            destination: "Washington",
+            date: "2022-03-15",
+            dep_time: "11:36",
+            arr_time: "13:06",
+            duration: "90 min",
+            price: 87.0,
+            distance: 487.0
+          ]
+        ]),
+      restaurants:
+        DFHelper.restaurants_df([
+          [name: "Catfish Charlie's", city: "Myrtle Beach", cuisines: "Seafood", average_cost: 20.0, aggregate_rating: 3.5],
+          [name: "First Eat", city: "Myrtle Beach", cuisines: "Indian", average_cost: 15.0, aggregate_rating: 4.0],
+          [name: "La Pino'z Pizza", city: "Myrtle Beach", cuisines: "Italian|Pizza", average_cost: 20.0, aggregate_rating: 4.0],
+          [name: "Nagai", city: "Myrtle Beach", cuisines: "Japanese", average_cost: 25.0, aggregate_rating: 4.5],
+          [name: "Twigly", city: "Myrtle Beach", cuisines: "Indian", average_cost: 15.0, aggregate_rating: 3.5],
+          [name: "d' Curry House", city: "Myrtle Beach", cuisines: "Indian", average_cost: 10.0, aggregate_rating: 3.0]
+        ]),
+      attractions:
+        DFHelper.attractions_df([
+          [name: "SkyWheel Myrtle Beach", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil],
+          [name: "Ripley's Aquarium of Myrtle Beach", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil],
+          [name: "Broadway at the Beach", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil],
+          [name: "Myrtle Beach Boardwalk and Promenade", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil]
+        ]),
+      accommodations:
+        DFHelper.accommodations_df([
+          [
             name: "A WONDERFUL Place is Waiting 4U in Brooklyn!!!",
-            city: "Myrtle Beach", price: 73, room_type: "Private room",
-            minimum_nights: 1, maximum_occupancy: 2, review_rate: 4.5,
-            house_rules: ["No smoking"]
-          }
-        ]
-      }
-    }
+            city: "Myrtle Beach",
+            price: 73.0,
+            room_type: "Private room",
+            minimum_nights: 1.0,
+            maximum_occupancy: 2,
+            review_rate: 4.5,
+            house_rules: "No smoking"
+          ]
+        ])
+    })
   end
 end

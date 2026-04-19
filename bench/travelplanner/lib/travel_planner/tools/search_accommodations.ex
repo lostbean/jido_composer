@@ -19,7 +19,6 @@ defmodule TravelPlanner.Tools.SearchAccommodations do
       db
       |> ReferenceDB.accommodations_in(city)
       |> Enum.take(10)
-      |> Enum.map(&accommodation_to_map/1)
 
     {:ok, %{accommodations: accommodations}}
   end
@@ -31,18 +30,5 @@ defmodule TravelPlanner.Tools.SearchAccommodations do
       %ReferenceDB{} = db -> db
       _ -> raise "missing reference_db in ambient context"
     end
-  end
-
-  defp accommodation_to_map(%ReferenceDB.Accommodation{} = a) do
-    %{
-      name: a.name,
-      city: a.city,
-      price: a.price,
-      room_type: a.room_type,
-      minimum_nights: a.minimum_nights,
-      maximum_occupancy: a.maximum_occupancy,
-      review_rate: a.review_rate,
-      house_rules: a.house_rules
-    }
   end
 end

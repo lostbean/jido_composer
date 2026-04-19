@@ -60,17 +60,14 @@ defmodule TravelPlanner.Tools.GetDistanceTest do
     end
   end
 
-  defp pick_populated_ground_key!(%ReferenceDB{ground_transport: ground}) do
-    {{origin, destination}, _modes} =
-      ground
-      |> Enum.find(fn {_key, modes} ->
-        modes.self_driving != nil or modes.taxi != nil
-      end)
-      |> case do
-        nil -> raise "no populated ground transport keys in reference DB for task 0"
-        other -> other
-      end
+  defp pick_populated_ground_key!(%ReferenceDB{ground_transport: df}) do
+    alias Explorer.DataFrame, as: DF
 
-    {origin, destination}
+    rows = DF.to_rows(df, atom_keys: true)
+
+    case Enum.find(rows, fn row -> row.mode in ["self_driving", "taxi"] end) do
+      nil -> raise "no populated ground transport keys in reference DB for task 0"
+      row -> {row.origin, row.destination}
+    end
   end
 end

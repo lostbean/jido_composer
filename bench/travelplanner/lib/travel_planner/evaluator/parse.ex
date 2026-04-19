@@ -23,7 +23,7 @@ defmodule TravelPlanner.Evaluator.Parse do
   def parse_local_constraint(str) when is_binary(str) do
     %{
       house_rule: extract_constraint_value(str, "house rule"),
-      cuisine: extract_constraint_value(str, "cuisine"),
+      cuisine: extract_cuisine_value(str),
       room_type: extract_constraint_value(str, "room type"),
       transportation: extract_constraint_value(str, "transportation")
     }
@@ -37,6 +37,28 @@ defmodule TravelPlanner.Evaluator.Parse do
       [_, value] when value != "" -> value
       [_, "", value] when value != "" -> value
       _ -> nil
+    end
+  end
+
+  # Cuisine can be a Python list ['Chinese', 'Mexican'] or a single string 'Indian' or None.
+  # Always returns [String.t()] | nil to normalize the interface.
+  defp extract_cuisine_value(str) do
+    # Try Python list format first: 'cuisine': ['X', 'Y']
+    list_pattern = ~r/'cuisine'\s*:\s*\[([^\]]*)\]/
+
+    case Regex.run(list_pattern, str) do
+      [_, items_str] ->
+        items_str
+        |> String.split(~r/,\s*/)
+        |> Enum.map(fn item -> String.trim(item, "'") |> String.trim("\"") end)
+        |> Enum.reject(&(&1 == ""))
+
+      _ ->
+        # Fall back to single value
+        case extract_constraint_value(str, "cuisine") do
+          nil -> nil
+          value -> [value]
+        end
     end
   end
 
@@ -93,6 +115,9 @@ defmodule TravelPlanner.Evaluator.Parse do
   @doc """
   Extract the restaurant city from a meal entry like `"Restaurant Name, City"`.
 
+  Strips parenthetical state suffixes (e.g., `"Dallas(Texas)"` → `"Dallas"`) to
+  match the Python reference evaluator's `get_valid_name_city` behavior.
+
   Returns nil for `"-"`.
   """
   @spec parse_restaurant_city(String.t()) :: String.t() | nil
@@ -101,7 +126,7 @@ defmodule TravelPlanner.Evaluator.Parse do
   def parse_restaurant_city(str) when is_binary(str) do
     case String.split(str, ", ") do
       [_single] -> nil
-      parts -> List.last(parts) |> String.trim()
+      parts -> parts |> List.last() |> String.trim() |> strip_parenthetical()
     end
   end
 
@@ -123,6 +148,9 @@ defmodule TravelPlanner.Evaluator.Parse do
   @doc """
   Extract the accommodation city from an entry like `"Hotel Name, City"`.
 
+  Strips parenthetical state suffixes (e.g., `"Dallas(Texas)"` → `"Dallas"`) to
+  match the Python reference evaluator's `get_valid_name_city` behavior.
+
   Returns nil for `"-"`.
   """
   @spec parse_accommodation_city(String.t()) :: String.t() | nil
@@ -131,7 +159,25 @@ defmodule TravelPlanner.Evaluator.Parse do
   def parse_accommodation_city(str) when is_binary(str) do
     case String.split(str, ", ") do
       [_single] -> nil
-      parts -> List.last(parts) |> String.trim()
+      parts -> parts |> List.last() |> String.trim() |> strip_parenthetical()
+    end
+  end
+
+  @doc """
+  Strip a parenthetical suffix from a string. Matches the Python reference
+  evaluator's `extract_before_parenthesis` behavior.
+
+  `"Dallas(Texas)"` → `"Dallas"`
+  `"Austin (New Mexico)"` → `"Austin"`
+  `"Myrtle Beach"` → `"Myrtle Beach"`
+  """
+  @spec strip_parenthetical(String.t() | nil) :: String.t() | nil
+  def strip_parenthetical(nil), do: nil
+
+  def strip_parenthetical(str) when is_binary(str) do
+    case Regex.run(~r/^(.*?)\s*\([^)]*\)/, str) do
+      [_, before] -> String.trim(before)
+      _ -> str
     end
   end
 

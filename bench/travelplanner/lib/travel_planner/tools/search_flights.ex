@@ -22,7 +22,6 @@ defmodule TravelPlanner.Tools.SearchFlights do
       db
       |> ReferenceDB.flights_for(origin, destination, date)
       |> Enum.take(10)
-      |> Enum.map(&flight_to_map/1)
 
     {:ok, %{flights: flights}}
   end
@@ -34,19 +33,5 @@ defmodule TravelPlanner.Tools.SearchFlights do
       %ReferenceDB{} = db -> db
       _ -> raise "missing reference_db in ambient context"
     end
-  end
-
-  defp flight_to_map(%ReferenceDB.Flight{} = f) do
-    %{
-      flight_number: f.flight_number,
-      origin: f.origin,
-      destination: f.destination,
-      date: f.date,
-      dep_time: f.dep_time,
-      arr_time: f.arr_time,
-      duration: f.duration,
-      price: f.price,
-      distance: f.distance
-    }
   end
 end

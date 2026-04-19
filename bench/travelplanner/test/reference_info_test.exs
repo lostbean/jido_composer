@@ -3,9 +3,9 @@ defmodule TravelPlanner.ReferenceInfoTest do
 
   @moduletag :dataset
 
+  alias Explorer.DataFrame, as: DF
   alias TravelPlanner.Dataset
   alias TravelPlanner.ReferenceDB
-  alias TravelPlanner.ReferenceDB.{Accommodation, Flight, GroundTransport, Restaurant}
   alias TravelPlanner.ReferenceInfo
 
   setup_all do
@@ -18,21 +18,28 @@ defmodule TravelPlanner.ReferenceInfoTest do
   end
 
   describe "parse/1" do
-    test "returns a ReferenceDB with populated lookups for idx 0", %{task0: task, db0: db} do
+    test "returns a ReferenceDB with populated DataFrames for idx 0", %{task0: task, db0: db} do
       assert %ReferenceDB{} = db
-      assert map_size(db.flights) > 0
-      assert map_size(db.accommodations) > 0
-      assert map_size(db.attractions) > 0
-      assert map_size(db.restaurants) > 0
-      assert map_size(db.ground_transport) > 0
+      assert DF.n_rows(db.flights) > 0
+      assert DF.n_rows(db.accommodations) > 0
+      assert DF.n_rows(db.attractions) > 0
+      assert DF.n_rows(db.restaurants) > 0
+      assert DF.n_rows(db.ground_transport) > 0
 
-      # Every flight key we see should correspond to a "Flight from ..." key in raw.
+      # Every flight key we see should correspond to rows in the flights DataFrame.
       raw_flight_keys =
         task.reference_information
         |> Map.keys()
         |> Enum.filter(&String.starts_with?(&1, "Flight from "))
 
-      assert length(raw_flight_keys) == map_size(db.flights)
+      # Each raw key maps to a unique origin/destination/date triple;
+      # the DataFrame should have at least that many distinct triples.
+      distinct_triples =
+        db.flights
+        |> DF.distinct([:origin, :destination, :date])
+        |> DF.n_rows()
+
+      assert length(raw_flight_keys) == distinct_triples
     end
   end
 
@@ -57,7 +64,7 @@ defmodule TravelPlanner.ReferenceInfoTest do
       [first_raw | _] = raw_records
       [first_flight | _] = flights
 
-      assert %Flight{} = first_flight
+      assert is_map(first_flight)
       assert first_flight.flight_number == first_raw["Flight Number"]
       assert first_flight.dep_time == first_raw["DepTime"]
       assert first_flight.arr_time == first_raw["ArrTime"]
@@ -86,8 +93,7 @@ defmodule TravelPlanner.ReferenceInfoTest do
       [_, origin, destination, date] =
         Regex.run(~r/^Flight from (.+) to (.+) on (\d{4}-\d{2}-\d{2})$/, key)
 
-      # The key must still exist in the DB, but return an empty list.
-      assert Map.has_key?(db.flights, {origin, destination, date})
+      # "No flight" entries should return an empty list from the query.
       assert ReferenceDB.flights_for(db, origin, destination, date) == []
     end
   end
@@ -99,7 +105,7 @@ defmodule TravelPlanner.ReferenceInfoTest do
       refute accommodations == []
 
       Enum.each(accommodations, fn acc ->
-        assert %Accommodation{} = acc
+        assert is_map(acc)
         assert is_list(acc.house_rules)
         assert Enum.all?(acc.house_rules, &is_binary/1)
       end)
@@ -131,7 +137,7 @@ defmodule TravelPlanner.ReferenceInfoTest do
       refute restaurants == []
 
       Enum.each(restaurants, fn r ->
-        assert %Restaurant{} = r
+        assert is_map(r)
         assert is_list(r.cuisines)
         assert Enum.all?(r.cuisines, &is_binary/1)
         # No leading/trailing whitespace.
@@ -156,8 +162,8 @@ defmodule TravelPlanner.ReferenceInfoTest do
          %{task0: task, db0: db} do
       ground = ReferenceDB.ground_transport_for(db, task.org, task.dest)
 
-      assert %GroundTransport{mode: :self_driving} = ground.self_driving
-      assert %GroundTransport{mode: :taxi} = ground.taxi
+      assert %{mode: "self_driving"} = ground.self_driving
+      assert %{mode: "taxi"} = ground.taxi
 
       assert is_integer(ground.self_driving.distance_km)
       assert ground.self_driving.distance_km > 0
@@ -178,7 +184,7 @@ defmodule TravelPlanner.ReferenceInfoTest do
     test "parses distances with thousand-separators for idx 179", %{db179: db} do
       # The raw value is "2,145 km" — make sure we strip the comma.
       ground = ReferenceDB.ground_transport_for(db, "Lubbock", "Reno")
-      assert %GroundTransport{} = ground.self_driving
+      assert %{mode: "self_driving"} = ground.self_driving
       assert ground.self_driving.distance_km == 2145
     end
 

@@ -44,6 +44,9 @@ defmodule TravelPlanner.Evaluator do
   @doc """
   Score a plan and return a detailed report with all constraint results,
   not stopping at the first failure.
+
+  Always runs all constraints (commonsense + hard) regardless of failures,
+  so the full picture is available for parity testing and analysis.
   """
   @spec score_plan_detailed([map()], TravelPlanner.Task.t(), ReferenceDB.t()) :: %{
           passed: boolean(),
@@ -51,34 +54,110 @@ defmodule TravelPlanner.Evaluator do
           hard: [{atom(), :ok | {:fail, String.t()}}],
           commonsense_pass_rate: float(),
           hard_pass_rate: float(),
-          total_pass_rate: float()
+          total_pass_rate: float(),
+          total_cost: number() | nil
         }
   def score_plan_detailed(plan, task, db) do
     commonsense_results = run_all_commonsense(plan, task, db)
-    all_cs_pass = Enum.all?(commonsense_results, fn {_, r} -> r == :ok end)
-
-    hard_results =
-      if all_cs_pass do
-        run_all_hard(plan, task, db)
-      else
-        hard_constraint_names()
-        |> Enum.map(fn name -> {name, {:fail, "skipped (commonsense failed)"}} end)
-      end
+    hard_results = run_all_hard(plan, task, db)
 
     cs_passed = Enum.count(commonsense_results, fn {_, r} -> r == :ok end)
-    hard_passed = if all_cs_pass, do: Enum.count(hard_results, fn {_, r} -> r == :ok end), else: 0
+    hard_passed = Enum.count(hard_results, fn {_, r} -> r == :ok end)
     total = length(commonsense_results) + length(hard_results)
     total_passed = cs_passed + hard_passed
 
+    total_cost = compute_total_cost(plan, task, db)
+
     %{
-      passed: all_cs_pass and Enum.all?(hard_results, fn {_, r} -> r == :ok end),
+      passed: cs_passed == length(commonsense_results) and hard_passed == length(hard_results),
       commonsense: commonsense_results,
       hard: hard_results,
       commonsense_pass_rate: cs_passed / length(commonsense_results),
-      hard_pass_rate: if(all_cs_pass, do: hard_passed / length(hard_results), else: 0.0),
-      total_pass_rate: total_passed / total
+      hard_pass_rate: hard_passed / length(hard_results),
+      total_pass_rate: total_passed / total,
+      total_cost: total_cost
     }
   end
+
+  defp compute_total_cost(plan, task, db) do
+    people = task.people_number || 1
+
+    transport_cost =
+      plan
+      |> Enum.map(fn day ->
+        entry = Map.get(day, "transportation", "-")
+        unit_cost = TravelPlanner.Evaluator.Parse.parse_transport_cost(entry)
+
+        if unit_cost do
+          mode = TravelPlanner.Evaluator.Parse.detect_transport_mode(entry)
+
+          case mode do
+            :flight -> unit_cost * people
+            :self_driving -> unit_cost * ceil_div(people, 5)
+            :taxi -> unit_cost * ceil_div(people, 4)
+            _ -> unit_cost * people
+          end
+        else
+          0
+        end
+      end)
+      |> Enum.sum()
+
+    accommodation_cost =
+      plan
+      |> Enum.map(fn day ->
+        entry = Map.get(day, "accommodation", "-")
+
+        if entry == "-" do
+          0
+        else
+          name = TravelPlanner.Evaluator.Parse.parse_accommodation_name(entry)
+          city = TravelPlanner.Evaluator.Parse.parse_accommodation_city(entry)
+
+          if city do
+            accommodations = ReferenceDB.accommodations_in(db, city)
+
+            case Enum.find(accommodations, &(&1.name == name)) do
+              nil -> 0
+              acc ->
+                price = acc.price || 0
+                max_occ = acc.maximum_occupancy || 1
+                price * ceil_div(people, max_occ)
+            end
+          else
+            0
+          end
+        end
+      end)
+      |> Enum.sum()
+
+    restaurant_cost =
+      plan
+      |> Enum.flat_map(fn day ->
+        Enum.map(["breakfast", "lunch", "dinner"], &Map.get(day, &1, "-"))
+      end)
+      |> Enum.reject(&(&1 == "-"))
+      |> Enum.map(fn entry ->
+        name = TravelPlanner.Evaluator.Parse.parse_restaurant_name(entry)
+        city = TravelPlanner.Evaluator.Parse.parse_restaurant_city(entry)
+
+        if city do
+          restaurants = ReferenceDB.restaurants_in(db, city)
+
+          case Enum.find(restaurants, &(&1.name == name)) do
+            nil -> 0
+            r -> r.average_cost || 0
+          end
+        else
+          0
+        end
+      end)
+      |> Enum.sum()
+
+    transport_cost + accommodation_cost + restaurant_cost * people
+  end
+
+  defp ceil_div(a, b), do: div(a + b - 1, b)
 
   defp commonsense_constraint_names do
     [

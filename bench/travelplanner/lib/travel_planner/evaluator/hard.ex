@@ -32,8 +32,9 @@ defmodule TravelPlanner.Evaluator.Hard do
   end
 
   @doc """
-  If `local_constraint` specifies a cuisine, at least one meal in the plan must
-  serve that cuisine (checked against the restaurant's cuisines in the reference DB).
+  If `local_constraint` specifies cuisines, at least one meal in the plan must
+  serve each required cuisine (checked against the restaurant's cuisines in the
+  reference DB). Restaurants in the origin city are excluded per Python reference.
   """
   @spec is_valid_cuisine([map()], TravelPlanner.Task.t(), ReferenceDB.t()) :: result()
   def is_valid_cuisine(plan, task, db) do
@@ -43,20 +44,28 @@ defmodule TravelPlanner.Evaluator.Hard do
       nil ->
         :ok
 
-      required_cuisine ->
-        all_restaurants = collect_plan_restaurants(plan, db)
+      required_cuisines ->
+        all_restaurants = collect_plan_restaurants(plan, db, task.org)
 
-        has_cuisine =
-          Enum.any?(all_restaurants, fn restaurant ->
-            Enum.any?(restaurant.cuisines, fn c ->
-              String.downcase(c) == String.downcase(required_cuisine)
+        satisfied =
+          required_cuisines
+          |> Enum.filter(fn required ->
+            req_down = String.downcase(required)
+
+            Enum.any?(all_restaurants, fn restaurant ->
+              Enum.any?(restaurant.cuisines, fn c ->
+                String.downcase(c) == req_down
+              end)
             end)
           end)
+          |> MapSet.new(&String.downcase/1)
 
-        if has_cuisine do
+        missing = Enum.reject(required_cuisines, fn c -> String.downcase(c) in satisfied end)
+
+        if missing == [] do
           :ok
         else
-          {:fail, "no restaurant serves required cuisine: #{required_cuisine}"}
+          {:fail, "missing required cuisines: #{Enum.join(missing, ", ")}"}
         end
     end
   end
@@ -209,8 +218,12 @@ defmodule TravelPlanner.Evaluator.Hard do
   @doc """
   Total plan cost must not exceed `task.budget`.
 
-  Sums: transport costs + accommodation nightly prices + restaurant average costs.
-  Attractions are free. Cost is per-person multiplied by `task.people_number`.
+  Per-person scaling (matches Python reference):
+  - Flights: price * people_number
+  - Self-driving: cost * ceil(people_number / 5)
+  - Taxi: cost * ceil(people_number / 4)
+  - Accommodation: price * ceil(people_number / max_occupancy)
+  - Meals: average_cost * people_number
   """
   @spec is_valid_cost([map()], TravelPlanner.Task.t(), ReferenceDB.t()) :: result()
   def is_valid_cost(plan, task, db) do
@@ -220,8 +233,8 @@ defmodule TravelPlanner.Evaluator.Hard do
       :ok
     else
       people = task.people_number || 1
-      transport_cost = sum_transport_costs(plan, db)
-      accommodation_cost = sum_accommodation_costs(plan, db)
+      transport_cost = sum_transport_costs(plan, people)
+      accommodation_cost = sum_accommodation_costs(plan, db, people)
       restaurant_cost = sum_restaurant_costs(plan, db) * people
       total = transport_cost + accommodation_cost + restaurant_cost
 
@@ -235,15 +248,30 @@ defmodule TravelPlanner.Evaluator.Hard do
     end
   end
 
-  defp sum_transport_costs(plan, _db) do
+  defp sum_transport_costs(plan, people) do
     plan
-    |> Enum.map(&Map.get(&1, "transportation", "-"))
-    |> Enum.map(&Parse.parse_transport_cost/1)
-    |> Enum.reject(&is_nil/1)
+    |> Enum.map(fn day ->
+      entry = Map.get(day, "transportation", "-")
+      unit_cost = Parse.parse_transport_cost(entry)
+
+      if unit_cost do
+        mode = Parse.detect_transport_mode(entry)
+        scale_transport_cost(unit_cost, mode, people)
+      else
+        0
+      end
+    end)
     |> Enum.sum()
   end
 
-  defp sum_accommodation_costs(plan, db) do
+  defp scale_transport_cost(cost, :flight, people), do: cost * people
+  defp scale_transport_cost(cost, :self_driving, people), do: cost * ceil_div(people, 5)
+  defp scale_transport_cost(cost, :taxi, people), do: cost * ceil_div(people, 4)
+  defp scale_transport_cost(cost, _other, people), do: cost * people
+
+  defp ceil_div(a, b), do: div(a + b - 1, b)
+
+  defp sum_accommodation_costs(plan, db, people) do
     plan
     |> Enum.map(fn day ->
       entry = Map.get(day, "accommodation", "-")
@@ -259,7 +287,10 @@ defmodule TravelPlanner.Evaluator.Hard do
 
           case Enum.find(accommodations, &(&1.name == name)) do
             nil -> 0
-            acc -> acc.price || 0
+            acc ->
+              price = acc.price || 0
+              max_occ = acc.maximum_occupancy || 1
+              price * ceil_div(people, max_occ)
           end
         else
           0
@@ -295,8 +326,10 @@ defmodule TravelPlanner.Evaluator.Hard do
     |> Enum.sum()
   end
 
-  # Collect all restaurant structs from the plan that exist in the DB
-  defp collect_plan_restaurants(plan, db) do
+  # Collect all restaurants from the plan that exist in the DB.
+  # When origin_city is provided, restaurants in that city are excluded
+  # (matches Python reference behavior for cuisine constraint).
+  defp collect_plan_restaurants(plan, db, origin_city) do
     meal_keys = ["breakfast", "lunch", "dinner"]
 
     plan
@@ -308,11 +341,12 @@ defmodule TravelPlanner.Evaluator.Hard do
       name = Parse.parse_restaurant_name(entry)
       city = Parse.parse_restaurant_city(entry)
 
-      if city do
-        restaurants = ReferenceDB.restaurants_in(db, city)
-        Enum.filter(restaurants, &(&1.name == name))
-      else
-        []
+      cond do
+        city == nil -> []
+        origin_city != nil and city == origin_city -> []
+        true ->
+          restaurants = ReferenceDB.restaurants_in(db, city)
+          Enum.filter(restaurants, &(&1.name == name))
       end
     end)
   end

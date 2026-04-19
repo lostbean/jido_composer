@@ -174,12 +174,7 @@ defmodule TravelPlanner.Evaluator.Commonsense do
     flight_number = Parse.extract_flight_number(entry)
 
     if flight_number do
-      all_flights =
-        db.flights
-        |> Map.values()
-        |> List.flatten()
-
-      if Enum.any?(all_flights, &(&1.flight_number == flight_number)) do
+      if ReferenceDB.has_flight_number?(db, flight_number) do
         :ok
       else
         {:fail, "flight #{flight_number} not found in reference DB"}
@@ -398,19 +393,55 @@ defmodule TravelPlanner.Evaluator.Commonsense do
   end
 
   @doc """
-  At least 50% of content slots should not be absent ("-").
+  Validates plan completeness per Python reference:
 
-  Content fields: breakfast, lunch, dinner, attraction, transportation, accommodation.
+  1. Travel day ("from"/"to" in current_city) must have transportation
+  2. Non-travel day must have at least one attraction
+  3. Non-last day must have accommodation
+  4. Overall: at least 50% of content slots should not be absent ("-")
   """
   @spec is_not_absent([map()], TravelPlanner.Task.t(), ReferenceDB.t()) :: result()
   def is_not_absent(plan, _task, _db) do
+    with :ok <- check_structural_completeness(plan),
+         :ok <- check_density(plan) do
+      :ok
+    end
+  end
+
+  defp check_structural_completeness(plan) do
+    last_idx = length(plan) - 1
+
+    Enum.reduce_while(Enum.with_index(plan), :ok, fn {day, idx}, :ok ->
+      current_city = Map.get(day, "current_city", "")
+      is_travel_day = String.contains?(current_city, " to ") or String.contains?(current_city, "from ")
+      transport = Map.get(day, "transportation", "-")
+      attraction = Map.get(day, "attraction", "-")
+      accommodation = Map.get(day, "accommodation", "-")
+
+      cond do
+        is_travel_day and transport in ["", "-"] ->
+          {:halt, {:fail, "day #{idx + 1}: travel day must have transportation"}}
+
+        not is_travel_day and attraction in ["", "-"] ->
+          {:halt, {:fail, "day #{idx + 1}: non-travel day must have attraction"}}
+
+        idx != last_idx and accommodation in ["", "-"] ->
+          {:halt, {:fail, "day #{idx + 1}: non-last day must have accommodation"}}
+
+        true ->
+          {:cont, :ok}
+      end
+    end)
+  end
+
+  defp check_density(plan) do
     content_keys = ["breakfast", "lunch", "dinner", "attraction", "transportation", "accommodation"]
 
     {total, absent} =
       Enum.reduce(plan, {0, 0}, fn day, {total_acc, absent_acc} ->
         Enum.reduce(content_keys, {total_acc, absent_acc}, fn key, {t, a} ->
           val = Map.get(day, key, "-")
-          {t + 1, if(val == "-", do: a + 1, else: a)}
+          {t + 1, if(val in ["", "-"], do: a + 1, else: a)}
         end)
       end)
 

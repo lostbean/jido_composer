@@ -39,11 +39,11 @@ defmodule TravelPlanner.Tools.GetDistance do
 
   defp to_map(nil), do: nil
 
-  defp to_map(%ReferenceDB.GroundTransport{} = g) do
+  defp to_map(%{distance_km: distance_km, duration: duration, cost: cost}) do
     %{
-      distance_km: g.distance_km,
-      duration: g.duration,
-      cost: g.cost
+      distance_km: distance_km,
+      duration: duration,
+      cost: cost
     }
   end
 end

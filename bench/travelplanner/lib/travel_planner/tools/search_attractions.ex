@@ -19,7 +19,6 @@ defmodule TravelPlanner.Tools.SearchAttractions do
       db
       |> ReferenceDB.attractions_in(city)
       |> Enum.take(10)
-      |> Enum.map(&attraction_to_map/1)
 
     {:ok, %{attractions: attractions}}
   end
@@ -31,17 +30,5 @@ defmodule TravelPlanner.Tools.SearchAttractions do
       %ReferenceDB{} = db -> db
       _ -> raise "missing reference_db in ambient context"
     end
-  end
-
-  defp attraction_to_map(%ReferenceDB.Attraction{} = a) do
-    %{
-      name: a.name,
-      city: a.city,
-      address: a.address,
-      latitude: a.latitude,
-      longitude: a.longitude,
-      phone: a.phone,
-      website: a.website
-    }
   end
 end

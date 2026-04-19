@@ -3,6 +3,7 @@ defmodule TravelPlanner.ReferenceDBTest do
 
   @moduletag :network
 
+  alias Explorer.DataFrame, as: DF
   alias TravelPlanner.Dataset
   alias TravelPlanner.ReferenceDB
   alias TravelPlanner.ReferenceInfo
@@ -22,7 +23,7 @@ defmodule TravelPlanner.ReferenceDBTest do
       assert is_list(flights)
       assert length(flights) > 0
       first = hd(flights)
-      assert %ReferenceDB.Flight{} = first
+      assert is_map(first)
       assert first.origin == origin
       assert first.destination == destination
     end
@@ -45,11 +46,11 @@ defmodule TravelPlanner.ReferenceDBTest do
       assert result.self_driving != nil or result.taxi != nil
 
       if result.self_driving do
-        assert %ReferenceDB.GroundTransport{mode: :self_driving} = result.self_driving
+        assert %{mode: "self_driving"} = result.self_driving
       end
 
       if result.taxi do
-        assert %ReferenceDB.GroundTransport{mode: :taxi} = result.taxi
+        assert %{mode: "taxi"} = result.taxi
       end
     end
 
@@ -65,7 +66,7 @@ defmodule TravelPlanner.ReferenceDBTest do
       assert is_list(restaurants)
       assert length(restaurants) > 0
       first = hd(restaurants)
-      assert %ReferenceDB.Restaurant{} = first
+      assert is_map(first)
       assert first.city == "Myrtle Beach"
       assert is_list(first.cuisines)
     end
@@ -76,12 +77,12 @@ defmodule TravelPlanner.ReferenceDBTest do
   end
 
   describe "accommodations_in/2" do
-    test "returns list with correct struct fields", %{db: db} do
+    test "returns list with correct map fields", %{db: db} do
       accommodations = ReferenceDB.accommodations_in(db, "Myrtle Beach")
       assert is_list(accommodations)
       assert length(accommodations) > 0
       first = hd(accommodations)
-      assert %ReferenceDB.Accommodation{} = first
+      assert is_map(first)
       assert first.city == "Myrtle Beach"
       assert is_list(first.house_rules)
     end
@@ -97,7 +98,7 @@ defmodule TravelPlanner.ReferenceDBTest do
       assert is_list(attractions)
       assert length(attractions) > 0
       first = hd(attractions)
-      assert %ReferenceDB.Attraction{} = first
+      assert is_map(first)
       assert first.city == "Myrtle Beach"
     end
 
@@ -121,29 +122,30 @@ defmodule TravelPlanner.ReferenceDBTest do
 
   # ── helpers ──────────────────────────────────────────────────────────────
 
-  defp pick_populated_flight_key!(%ReferenceDB{flights: flights}) do
-    {{origin, destination, date}, _list} =
-      flights
-      |> Enum.find(fn {_key, list} -> is_list(list) and list != [] end)
+  defp pick_populated_flight_key!(%ReferenceDB{flights: flights_df}) do
+    # Pick the first row's origin/destination/date as a key with data
+    row =
+      flights_df
+      |> DF.head(1)
+      |> DF.to_rows(atom_keys: true)
       |> case do
-        nil -> raise "no populated flight keys in reference DB for task 0"
-        other -> other
+        [first | _] -> first
+        [] -> raise "no populated flight keys in reference DB for task 0"
       end
 
-    {origin, destination, date}
+    {row.origin, row.destination, row.date}
   end
 
-  defp pick_populated_ground_key!(%ReferenceDB{ground_transport: ground}) do
-    {{origin, destination}, _modes} =
-      ground
-      |> Enum.find(fn {_key, modes} ->
-        modes.self_driving != nil or modes.taxi != nil
-      end)
+  defp pick_populated_ground_key!(%ReferenceDB{ground_transport: gt_df}) do
+    row =
+      gt_df
+      |> DF.head(1)
+      |> DF.to_rows(atom_keys: true)
       |> case do
-        nil -> raise "no populated ground transport keys in reference DB for task 0"
-        other -> other
+        [first | _] -> first
+        [] -> raise "no populated ground transport keys in reference DB for task 0"
       end
 
-    {origin, destination}
+    {row.origin, row.destination}
   end
 end

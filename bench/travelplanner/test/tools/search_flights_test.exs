@@ -67,15 +67,12 @@ defmodule TravelPlanner.Tools.SearchFlightsTest do
   end
 
   # Find a flight key in the parsed DB that has at least one populated list.
-  defp pick_populated_flight_key!(%ReferenceDB{flights: flights}) do
-    {{origin, destination, date}, _list} =
-      flights
-      |> Enum.find(fn {_key, list} -> is_list(list) and list != [] end)
-      |> case do
-        nil -> raise "no populated flight keys in reference DB for task 0"
-        other -> other
-      end
+  defp pick_populated_flight_key!(%ReferenceDB{flights: df}) do
+    alias Explorer.DataFrame, as: DF
 
-    {origin, destination, date}
+    case DF.to_rows(df, atom_keys: true) do
+      [] -> raise "no populated flight keys in reference DB for task 0"
+      [row | _] -> {row.origin, row.destination, row.date}
+    end
   end
 end

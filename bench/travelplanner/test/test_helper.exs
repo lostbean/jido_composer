@@ -1,1 +1,1 @@
-ExUnit.start(exclude: [:network])
+ExUnit.start(exclude: [:network, :python_parity])

@@ -19,7 +19,6 @@ defmodule TravelPlanner.Tools.SearchRestaurants do
       db
       |> ReferenceDB.restaurants_in(city)
       |> Enum.take(10)
-      |> Enum.map(&restaurant_to_map/1)
 
     {:ok, %{restaurants: restaurants}}
   end
@@ -31,15 +30,5 @@ defmodule TravelPlanner.Tools.SearchRestaurants do
       %ReferenceDB{} = db -> db
       _ -> raise "missing reference_db in ambient context"
     end
-  end
-
-  defp restaurant_to_map(%ReferenceDB.Restaurant{} = r) do
-    %{
-      name: r.name,
-      city: r.city,
-      cuisines: r.cuisines,
-      average_cost: r.average_cost,
-      aggregate_rating: r.aggregate_rating
-    }
   end
 end

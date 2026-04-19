@@ -2,92 +2,66 @@ defmodule TravelPlanner.PostProcessTest do
   use ExUnit.Case, async: true
 
   alias TravelPlanner.PostProcess
-  alias TravelPlanner.ReferenceDB
-  alias TravelPlanner.ReferenceDB.{Accommodation, Attraction, Restaurant}
+  alias TravelPlanner.Test.DFHelper
 
-  @task %TravelPlanner.Task{
-    idx: 1,
-    split: :validation,
-    org: "New York",
-    dest: "Chicago",
-    days: 3,
-    date: ["2024-01-10", "2024-01-11", "2024-01-12"],
-    level: "easy",
-    query: "test query",
-    reference_information: "{}",
-    people_number: 1,
-    budget: 2000,
-    local_constraint: nil
-  }
-
-  @db %ReferenceDB{
-    flights: %{},
-    ground_transport: %{},
-    restaurants: %{
-      "Chicago" => [
-        %Restaurant{name: "Lou Malnati's Pizzeria", city: "Chicago", cuisines: ["Italian"], average_cost: 30, aggregate_rating: 4.5},
-        %Restaurant{name: "Portillo's Hot Dogs", city: "Chicago", cuisines: ["American"], average_cost: 15, aggregate_rating: 4.0},
-        %Restaurant{name: "Girl & The Goat", city: "Chicago", cuisines: ["American"], average_cost: 50, aggregate_rating: 4.7},
-        %Restaurant{name: "Al's Italian Beef", city: "Chicago", cuisines: ["Italian"], average_cost: 12, aggregate_rating: 4.2},
-        %Restaurant{name: "Smoque BBQ", city: "Chicago", cuisines: ["BBQ"], average_cost: 25, aggregate_rating: 4.6}
-      ]
-    },
-    accommodations: %{
-      "Chicago" => [
-        %Accommodation{
-          name: "A WONDERFUL Place is Waiting 4U in Brooklyn!!!",
-          city: "Chicago",
-          price: 200,
-          room_type: "Entire home/apt",
-          minimum_nights: 1,
-          maximum_occupancy: 4,
-          review_rate: 4.5,
-          house_rules: ["No smoking"]
-        },
-        %Accommodation{
-          name: "Budget Inn Chicago",
-          city: "Chicago",
-          price: 80,
-          room_type: "Private room",
-          minimum_nights: 1,
-          maximum_occupancy: 2,
-          review_rate: 3.5,
-          house_rules: ["No smoking"]
-        }
-      ]
-    },
-    attractions: %{
-      "Chicago" => [
-        %Attraction{
-          name: "Millennium Park",
-          city: "Chicago",
-          address: "201 E Randolph St",
-          latitude: 41.8826,
-          longitude: -87.6226,
-          phone: nil,
-          website: nil
-        },
-        %Attraction{
-          name: "The Art Institute of Chicago",
-          city: "Chicago",
-          address: "111 S Michigan Ave",
-          latitude: 41.8796,
-          longitude: -87.6237,
-          phone: nil,
-          website: nil
-        },
-        %Attraction{
-          name: "Navy Pier",
-          city: "Chicago",
-          address: "600 E Grand Ave",
-          latitude: 41.8917,
-          longitude: -87.6086,
-          phone: nil,
-          website: nil
-        }
-      ]
+  defp default_task do
+    %TravelPlanner.Task{
+      idx: 1,
+      split: :validation,
+      org: "New York",
+      dest: "Chicago",
+      days: 3,
+      date: ["2024-01-10", "2024-01-11", "2024-01-12"],
+      level: "easy",
+      query: "test query",
+      reference_information: "{}",
+      people_number: 1,
+      budget: 2000,
+      local_constraint: nil
     }
-  }
+  end
+
+  defp default_db do
+    DFHelper.make_db(%{
+      restaurants:
+        DFHelper.restaurants_df([
+          [name: "Lou Malnati's Pizzeria", city: "Chicago", cuisines: "Italian", average_cost: 30.0, aggregate_rating: 4.5],
+          [name: "Portillo's Hot Dogs", city: "Chicago", cuisines: "American", average_cost: 15.0, aggregate_rating: 4.0],
+          [name: "Girl & The Goat", city: "Chicago", cuisines: "American", average_cost: 50.0, aggregate_rating: 4.7],
+          [name: "Al's Italian Beef", city: "Chicago", cuisines: "Italian", average_cost: 12.0, aggregate_rating: 4.2],
+          [name: "Smoque BBQ", city: "Chicago", cuisines: "BBQ", average_cost: 25.0, aggregate_rating: 4.6]
+        ]),
+      accommodations:
+        DFHelper.accommodations_df([
+          [
+            name: "A WONDERFUL Place is Waiting 4U in Brooklyn!!!",
+            city: "Chicago",
+            price: 200.0,
+            room_type: "Entire home/apt",
+            minimum_nights: 1.0,
+            maximum_occupancy: 4,
+            review_rate: 4.5,
+            house_rules: "No smoking"
+          ],
+          [
+            name: "Budget Inn Chicago",
+            city: "Chicago",
+            price: 80.0,
+            room_type: "Private room",
+            minimum_nights: 1.0,
+            maximum_occupancy: 2,
+            review_rate: 3.5,
+            house_rules: "No smoking"
+          ]
+        ]),
+      attractions:
+        DFHelper.attractions_df([
+          [name: "Millennium Park", city: "Chicago", address: "201 E Randolph St", latitude: 41.8826, longitude: -87.6226, phone: nil, website: nil],
+          [name: "The Art Institute of Chicago", city: "Chicago", address: "111 S Michigan Ave", latitude: 41.8796, longitude: -87.6237, phone: nil, website: nil],
+          [name: "Navy Pier", city: "Chicago", address: "600 E Grand Ave", latitude: 41.8917, longitude: -87.6086, phone: nil, website: nil]
+        ])
+    })
+  end
 
   describe "fix/3 entity name normalization" do
     test "normalizes a slightly wrong restaurant name" do
@@ -124,7 +98,7 @@ defmodule TravelPlanner.PostProcessTest do
         }
       ]
 
-      fixed = PostProcess.fix(plan, @task, @db)
+      fixed = PostProcess.fix(plan, default_task(), default_db())
 
       # "Lou Malnatis Pizzeria" (missing apostrophe) should be normalized
       assert Map.get(Enum.at(fixed, 0), "lunch") == "Lou Malnati's Pizzeria, Chicago"
@@ -164,7 +138,7 @@ defmodule TravelPlanner.PostProcessTest do
         }
       ]
 
-      fixed = PostProcess.fix(plan, @task, @db)
+      fixed = PostProcess.fix(plan, default_task(), default_db())
 
       # Truncated name should match via substring
       assert Map.get(Enum.at(fixed, 0), "accommodation") ==
@@ -195,7 +169,7 @@ defmodule TravelPlanner.PostProcessTest do
         }
       ]
 
-      fixed = PostProcess.fix(plan, @task, @db)
+      fixed = PostProcess.fix(plan, default_task(), default_db())
 
       # "Art Institute of Chicago" should match "The Art Institute of Chicago" via fuzzy
       assert Map.get(Enum.at(fixed, 0), "attraction") == "The Art Institute of Chicago"
@@ -237,7 +211,7 @@ defmodule TravelPlanner.PostProcessTest do
         }
       ]
 
-      fixed = PostProcess.fix(plan, @task, @db)
+      fixed = PostProcess.fix(plan, default_task(), default_db())
 
       # Day 1 keeps "Lou Malnati's Pizzeria"
       assert Map.get(Enum.at(fixed, 0), "lunch") == "Lou Malnati's Pizzeria, Chicago"
@@ -286,7 +260,7 @@ defmodule TravelPlanner.PostProcessTest do
         }
       ]
 
-      fixed = PostProcess.fix(plan, @task, @db)
+      fixed = PostProcess.fix(plan, default_task(), default_db())
 
       # Day 1 keeps Millennium Park
       day1_attractions = Map.get(Enum.at(fixed, 0), "attraction")
@@ -301,7 +275,7 @@ defmodule TravelPlanner.PostProcessTest do
 
   describe "fix/3 budget enforcement" do
     test "downgrades accommodation when over budget" do
-      task = %{@task | budget: 300, people_number: 1}
+      task = %{default_task() | budget: 300, people_number: 1}
 
       plan = [
         %{
@@ -341,7 +315,7 @@ defmodule TravelPlanner.PostProcessTest do
       # Cost before fix: accommodation 200*2 = 400, meals = 30+15+50+12+25 = 132
       # Total = 532, budget = 300
 
-      fixed = PostProcess.fix(plan, task, @db)
+      fixed = PostProcess.fix(plan, task, default_db())
 
       # After downgrade: accommodation should be Budget Inn Chicago (80*2 = 160)
       day1_acc = Map.get(Enum.at(fixed, 0), "accommodation")
@@ -352,7 +326,7 @@ defmodule TravelPlanner.PostProcessTest do
     end
 
     test "drops expensive meals when accommodation downgrade is insufficient" do
-      task = %{@task | budget: 150, people_number: 1}
+      task = %{default_task() | budget: 150, people_number: 1}
 
       plan = [
         %{
@@ -379,7 +353,7 @@ defmodule TravelPlanner.PostProcessTest do
 
       # Cost: accommodation 80, meals 30+50 = 80, total = 160, budget = 150
 
-      fixed = PostProcess.fix(plan, task, @db)
+      fixed = PostProcess.fix(plan, task, default_db())
 
       # Should drop the most expensive meal first (Girl & The Goat at 50)
       day1 = Enum.at(fixed, 0)
@@ -415,7 +389,7 @@ defmodule TravelPlanner.PostProcessTest do
         }
       ]
 
-      fixed = PostProcess.fix(plan, @task, @db)
+      fixed = PostProcess.fix(plan, default_task(), default_db())
 
       # Last day should end at New York
       last_day = List.last(fixed)
@@ -446,7 +420,7 @@ defmodule TravelPlanner.PostProcessTest do
         }
       ]
 
-      fixed = PostProcess.fix(plan, @task, @db)
+      fixed = PostProcess.fix(plan, default_task(), default_db())
 
       assert Map.get(Enum.at(fixed, 1), "current_city") == "Chicago to New York"
     end

@@ -2,8 +2,7 @@ defmodule TravelPlanner.Evaluator.CommonsenseTest do
   use ExUnit.Case, async: true
 
   alias TravelPlanner.Evaluator.Commonsense
-  alias TravelPlanner.ReferenceDB
-  alias TravelPlanner.ReferenceDB.{Accommodation, Attraction, Flight, Restaurant}
+  alias TravelPlanner.Test.DFHelper
 
   # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -24,15 +23,7 @@ defmodule TravelPlanner.Evaluator.CommonsenseTest do
   end
 
   defp make_db(overrides \\ %{}) do
-    defaults = %{
-      flights: %{},
-      ground_transport: %{},
-      accommodations: %{},
-      attractions: %{},
-      restaurants: %{}
-    }
-
-    struct!(ReferenceDB, Map.merge(defaults, overrides))
+    DFHelper.make_db(overrides)
   end
 
   defp sample_plan do
@@ -72,49 +63,60 @@ defmodule TravelPlanner.Evaluator.CommonsenseTest do
 
   defp sample_db do
     make_db(%{
-      flights: %{
-        {"Washington", "Myrtle Beach", "2022-03-13"} => [
-          %Flight{
-            flight_number: "F001", origin: "Washington", destination: "Myrtle Beach",
-            date: "2022-03-13", dep_time: "11:00", arr_time: "13:00",
-            duration: "2h", price: 89, distance: 500
-          }
-        ],
-        {"Myrtle Beach", "Washington", "2022-03-15"} => [
-          %Flight{
-            flight_number: "F002", origin: "Myrtle Beach", destination: "Washington",
-            date: "2022-03-15", dep_time: "11:00", arr_time: "13:00",
-            duration: "2h", price: 87, distance: 500
-          }
-        ]
-      },
-      restaurants: %{
-        "Myrtle Beach" => [
-          %Restaurant{name: "Crab Shack", city: "Myrtle Beach", cuisines: ["Seafood"], average_cost: 30, aggregate_rating: 4.0},
-          %Restaurant{name: "Pier Restaurant", city: "Myrtle Beach", cuisines: ["American"], average_cost: 25, aggregate_rating: 3.5},
-          %Restaurant{name: "Morning Cafe", city: "Myrtle Beach", cuisines: ["Cafe"], average_cost: 15, aggregate_rating: 4.2},
-          %Restaurant{name: "Sushi Place", city: "Myrtle Beach", cuisines: ["Japanese"], average_cost: 35, aggregate_rating: 4.5},
-          %Restaurant{name: "Steak House", city: "Myrtle Beach", cuisines: ["American"], average_cost: 40, aggregate_rating: 4.0},
-          %Restaurant{name: "Bagel Shop", city: "Myrtle Beach", cuisines: ["Bakery"], average_cost: 10, aggregate_rating: 3.8}
-        ]
-      },
-      attractions: %{
-        "Myrtle Beach" => [
-          %Attraction{name: "SkyWheel", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil},
-          %Attraction{name: "Aquarium", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil},
-          %Attraction{name: "Boardwalk", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil},
-          %Attraction{name: "Beach Park", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil}
-        ]
-      },
-      accommodations: %{
-        "Myrtle Beach" => [
-          %Accommodation{
-            name: "Beach Hotel", city: "Myrtle Beach", price: 120,
-            room_type: "Private room", minimum_nights: 1, maximum_occupancy: 2,
-            review_rate: 4.5, house_rules: ["No smoking"]
-          }
-        ]
-      }
+      flights:
+        DFHelper.flights_df([
+          [
+            flight_number: "F001",
+            origin: "Washington",
+            destination: "Myrtle Beach",
+            date: "2022-03-13",
+            dep_time: "11:00",
+            arr_time: "13:00",
+            duration: "2h",
+            price: 89.0,
+            distance: 500.0
+          ],
+          [
+            flight_number: "F002",
+            origin: "Myrtle Beach",
+            destination: "Washington",
+            date: "2022-03-15",
+            dep_time: "11:00",
+            arr_time: "13:00",
+            duration: "2h",
+            price: 87.0,
+            distance: 500.0
+          ]
+        ]),
+      restaurants:
+        DFHelper.restaurants_df([
+          [name: "Crab Shack", city: "Myrtle Beach", cuisines: "Seafood", average_cost: 30.0, aggregate_rating: 4.0],
+          [name: "Pier Restaurant", city: "Myrtle Beach", cuisines: "American", average_cost: 25.0, aggregate_rating: 3.5],
+          [name: "Morning Cafe", city: "Myrtle Beach", cuisines: "Cafe", average_cost: 15.0, aggregate_rating: 4.2],
+          [name: "Sushi Place", city: "Myrtle Beach", cuisines: "Japanese", average_cost: 35.0, aggregate_rating: 4.5],
+          [name: "Steak House", city: "Myrtle Beach", cuisines: "American", average_cost: 40.0, aggregate_rating: 4.0],
+          [name: "Bagel Shop", city: "Myrtle Beach", cuisines: "Bakery", average_cost: 10.0, aggregate_rating: 3.8]
+        ]),
+      attractions:
+        DFHelper.attractions_df([
+          [name: "SkyWheel", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil],
+          [name: "Aquarium", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil],
+          [name: "Boardwalk", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil],
+          [name: "Beach Park", city: "Myrtle Beach", address: nil, latitude: nil, longitude: nil, phone: nil, website: nil]
+        ]),
+      accommodations:
+        DFHelper.accommodations_df([
+          [
+            name: "Beach Hotel",
+            city: "Myrtle Beach",
+            price: 120.0,
+            room_type: "Private room",
+            minimum_nights: 1.0,
+            maximum_occupancy: 2,
+            review_rate: 4.5,
+            house_rules: "No smoking"
+          ]
+        ])
     })
   end
 
@@ -205,12 +207,9 @@ defmodule TravelPlanner.Evaluator.CommonsenseTest do
         sample_plan()
         |> List.update_at(1, &Map.put(&1, "transportation", "Taxi, from Myrtle Beach to Myrtle Beach, duration: 0h, distance: 5 km, cost: $15"))
 
-      db = Map.update!(sample_db(), :ground_transport, fn gt ->
-        Map.put(gt, {"Myrtle Beach", "Myrtle Beach"}, %{self_driving: nil, taxi: %ReferenceDB.GroundTransport{
-          mode: :taxi, origin: "Myrtle Beach", destination: "Myrtle Beach",
-          duration: "0h", distance_km: 5, cost: 15
-        }})
-      end)
+      db = %{sample_db() | ground_transport: DFHelper.ground_transport_df([
+        [mode: "taxi", origin: "Myrtle Beach", destination: "Myrtle Beach", duration: "0h", distance_km: 5, cost: 15]
+      ])}
 
       assert :ok == Commonsense.is_valid_transportation(plan, make_task(), db)
     end
@@ -338,19 +337,23 @@ defmodule TravelPlanner.Evaluator.CommonsenseTest do
 
     test "fails when minimum_nights not met" do
       db = make_db(%{
-        accommodations: %{
-          "Myrtle Beach" => [
-            %Accommodation{
-              name: "Beach Hotel", city: "Myrtle Beach", price: 120,
-              room_type: "Private room", minimum_nights: 3, maximum_occupancy: 2,
-              review_rate: 4.5, house_rules: []
-            }
-          ]
-        }
+        accommodations:
+          DFHelper.accommodations_df([
+            [
+              name: "Beach Hotel",
+              city: "Myrtle Beach",
+              price: 120.0,
+              room_type: "Private room",
+              minimum_nights: 3.0,
+              maximum_occupancy: 2,
+              review_rate: 4.5,
+              house_rules: ""
+            ]
+          ])
       })
 
       assert {:fail, reason} = Commonsense.is_valid_accommodation(sample_plan(), make_task(), db)
-      assert reason =~ "minimum 3 nights"
+      assert reason =~ "minimum 3"
     end
   end
 
@@ -361,27 +364,96 @@ defmodule TravelPlanner.Evaluator.CommonsenseTest do
       assert :ok == Commonsense.is_not_absent(sample_plan(), make_task(), make_db())
     end
 
-    test "fails when more than half are absent" do
+    test "fails when more than half are absent (density check)" do
+      # Non-travel days to avoid structural checks, but mostly empty
       plan = [
-        %{"days" => 1, "breakfast" => "-", "lunch" => "-", "dinner" => "-",
-          "attraction" => "-", "transportation" => "-", "accommodation" => "-"},
-        %{"days" => 2, "breakfast" => "-", "lunch" => "-", "dinner" => "-",
-          "attraction" => "-", "transportation" => "-", "accommodation" => "-"}
+        %{"days" => 1, "current_city" => "Myrtle Beach",
+          "breakfast" => "-", "lunch" => "-", "dinner" => "-",
+          "attraction" => "X", "transportation" => "-", "accommodation" => "H, City"},
+        %{"days" => 2, "current_city" => "Myrtle Beach",
+          "breakfast" => "-", "lunch" => "-", "dinner" => "-",
+          "attraction" => "Y", "transportation" => "-", "accommodation" => "-"}
       ]
 
+      # 4 filled out of 12 = 67% absent, but structural checks pass:
+      # - non-travel days have attractions
+      # - day 1 (non-last) has accommodation
+      # - day 2 is last (no accommodation required)
+      # Density: 8/12 = 67% absent > 50% → fail
       assert {:fail, reason} = Commonsense.is_not_absent(plan, make_task(%{days: 2}), make_db())
-      assert reason =~ "too many absent"
+      assert reason =~ "absent"
+    end
+
+    test "fails when travel day has no transport" do
+      plan = [
+        %{"days" => 1, "current_city" => "Washington to Myrtle Beach",
+          "transportation" => "-",
+          "breakfast" => "-", "lunch" => "X, Myrtle Beach",
+          "dinner" => "Y, Myrtle Beach", "attraction" => "Z",
+          "accommodation" => "H, Myrtle Beach"}
+      ]
+
+      task = make_task(%{days: 1})
+      assert {:fail, reason} = Commonsense.is_not_absent(plan, task, make_db())
+      assert reason =~ "transportation"
+    end
+
+    test "fails when non-travel day has no attraction" do
+      plan = [
+        %{"days" => 1, "current_city" => "Washington to Myrtle Beach",
+          "transportation" => "Flight F1, $89 (11:00-13:00)",
+          "breakfast" => "-", "lunch" => "X, Myrtle Beach",
+          "dinner" => "Y, Myrtle Beach", "attraction" => "Z",
+          "accommodation" => "H, Myrtle Beach"},
+        %{"days" => 2, "current_city" => "Myrtle Beach",
+          "transportation" => "-",
+          "breakfast" => "A, Myrtle Beach", "lunch" => "B, Myrtle Beach",
+          "dinner" => "C, Myrtle Beach",
+          "attraction" => "-",
+          "accommodation" => "H, Myrtle Beach"},
+        %{"days" => 3, "current_city" => "Myrtle Beach to Washington",
+          "transportation" => "Flight F2, $87 (11:00-13:00)",
+          "breakfast" => "D, Myrtle Beach", "lunch" => "-",
+          "dinner" => "-", "attraction" => "W",
+          "accommodation" => "-"}
+      ]
+
+      task = make_task(%{days: 3})
+      assert {:fail, reason} = Commonsense.is_not_absent(plan, task, make_db())
+      assert reason =~ "attraction"
+    end
+
+    test "fails when non-last day has no accommodation" do
+      plan = [
+        %{"days" => 1, "current_city" => "Washington to Myrtle Beach",
+          "transportation" => "Flight F1, $89 (11:00-13:00)",
+          "breakfast" => "-", "lunch" => "X, Myrtle Beach",
+          "dinner" => "Y, Myrtle Beach", "attraction" => "Z",
+          "accommodation" => "-"},
+        %{"days" => 2, "current_city" => "Myrtle Beach to Washington",
+          "transportation" => "Flight F2, $87 (11:00-13:00)",
+          "breakfast" => "A, Myrtle Beach", "lunch" => "-",
+          "dinner" => "-", "attraction" => "W",
+          "accommodation" => "-"}
+      ]
+
+      task = make_task(%{days: 2})
+      assert {:fail, reason} = Commonsense.is_not_absent(plan, task, make_db())
+      assert reason =~ "accommodation"
     end
 
     test "passes at exactly 50% absent" do
       plan = [
-        %{"days" => 1, "breakfast" => "A, City", "lunch" => "B, City", "dinner" => "C, City",
-          "attraction" => "-", "transportation" => "-", "accommodation" => "-"},
-        %{"days" => 2, "breakfast" => "-", "lunch" => "-", "dinner" => "-",
-          "attraction" => "X", "transportation" => "Flight F1, $10 (1:00-2:00)", "accommodation" => "H, City"}
+        %{"days" => 1, "current_city" => "A to B",
+          "breakfast" => "-", "lunch" => "-", "dinner" => "-",
+          "attraction" => "X", "transportation" => "Flight F1, $10 (1:00-2:00)", "accommodation" => "H, City"},
+        %{"days" => 2, "current_city" => "B to A",
+          "breakfast" => "A, City", "lunch" => "B, City", "dinner" => "C, City",
+          "attraction" => "-", "transportation" => "Flight F2, $10 (1:00-2:00)", "accommodation" => "-"}
       ]
 
-      # 6 filled, 6 absent = 50% absent, should pass (<= 0.5)
+      # 6 filled out of 12 = 50% absent, should pass (<= 0.5)
+      # Travel days with transport are OK, last day without accommodation is OK
       assert :ok == Commonsense.is_not_absent(plan, make_task(%{days: 2}), make_db())
     end
   end
