@@ -367,6 +367,34 @@ defmodule Jido.Composer.TestActions do
     end
   end
 
+  defmodule ReadFileAction do
+    @moduledoc false
+    use Jido.Action,
+      name: "read_file",
+      description: "Reads a file and returns its content as multimodal ContentParts",
+      schema: [
+        file_id: [type: :integer, required: true, doc: "The file ID to read"]
+      ]
+
+    alias ReqLLM.Message.ContentPart
+    alias ReqLLM.ToolResult
+
+    def run(%{file_id: file_id}, _context) do
+      # Simulate returning multimodal content: a text description + an image.
+      # Uses ReqLLM.ToolResult so the orchestrator can pass content parts
+      # directly to the LLM conversation (images, files, etc.).
+      image_data = <<137, 80, 78, 71, 13, 10, 26, 10>>
+
+      {:ok,
+       %ToolResult{
+         content: [
+           ContentPart.text("Here is the file you requested (ID: #{file_id}):"),
+           ContentPart.image(image_data, "image/png")
+         ]
+       }}
+    end
+  end
+
   defmodule SaveResultAction do
     @moduledoc false
     use Jido.Action,
