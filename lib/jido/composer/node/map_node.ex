@@ -144,13 +144,18 @@ defmodule Jido.Composer.Node.MapNode do
       concurrency = map_node.max_concurrency || length(items)
       child_node = map_node.node
 
+      # Capture OTel context so child tasks produce spans under the same trace.
+      parent_ctx = Jido.Composer.OtelCtx.get_current()
+
       results =
         items
         |> Enum.with_index()
         |> Task.async_stream(
           fn {element, _index} ->
-            element_params = prepare_element_params(element)
-            child_node.__struct__.run(child_node, element_params)
+            Jido.Composer.OtelCtx.with_parent_context(parent_ctx, fn ->
+              element_params = prepare_element_params(element)
+              child_node.__struct__.run(child_node, element_params)
+            end)
           end,
           timeout: map_node.timeout,
           on_timeout: :kill_task,

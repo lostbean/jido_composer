@@ -811,7 +811,13 @@ defmodule Jido.Composer.Orchestrator.Strategy do
     # recent tool results (they only enter the conversation inside LLMAction).
     input_messages =
       Enum.reduce(state.tool_concurrency.completed, input_messages, fn tr, acc ->
-        acc ++ [%{role: "tool", content: Jason.encode!(tr.result)}]
+        content =
+          case Jason.encode(tr.result) do
+            {:ok, encoded} -> encoded
+            {:error, _} -> inspect(tr.result)
+          end
+
+        acc ++ [%{role: "tool", content: content}]
       end)
 
     agent =

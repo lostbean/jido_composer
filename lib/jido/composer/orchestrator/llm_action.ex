@@ -74,8 +74,7 @@ defmodule Jido.Composer.Orchestrator.LLMAction do
     context
     |> then(fn ctx ->
       Enum.reduce(tool_results, ctx, fn tr, c ->
-        content = Jason.encode!(tr.result)
-        ReqLLM.Context.append(c, ReqLLM.Context.tool_result(tr.id, tr.name, content))
+        ReqLLM.Context.append(c, ReqLLM.Context.tool_result(tr.id, tr.name, tr.result))
       end)
     end)
     |> strip_orphaned_tool_calls()
