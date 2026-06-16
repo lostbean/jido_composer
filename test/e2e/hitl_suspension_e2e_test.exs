@@ -81,7 +81,11 @@ defmodule Jido.Composer.E2E.HITLSuspensionE2ETest do
   end
 
   defp assert_no_synthetics(strat) do
-    serialized = Jason.encode!(strat.conversation)
+    # Scan the full conversation for synthetic markers. Use inspect/2 rather than
+    # Jason.encode!/1 because the conversation embeds structs (e.g. ReqLLM.Tool)
+    # that don't implement Jason.Encoder; inspect serializes any term to a string,
+    # which is all this substring scan needs.
+    serialized = inspect(strat.conversation, limit: :infinity, printable_limit: :infinity)
 
     refute String.contains?(serialized, "not_executed"),
            "Found 'not_executed' synthetic in conversation"

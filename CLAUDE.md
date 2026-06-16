@@ -9,7 +9,7 @@
 
 ## Core Tech Stack
 
-- **Runtime**: Elixir 1.19, Erlang/OTP 28
+- **Runtime**: Elixir 1.20, Erlang/OTP 28
 - **Dependencies**: jason, nimble_options, telemetry (jido deps added later)
 - **Dev Tooling**: Credo, ExDoc, Nix flake, treefmt, lefthook
 

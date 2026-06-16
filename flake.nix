@@ -41,7 +41,7 @@
 
         # Single source of truth for Elixir/Erlang packages
         beamPackages = pkgs.unstable.beamMinimal28Packages;
-        elixir = beamPackages.elixir_1_19;
+        elixir = beamPackages.elixir_1_20;
 
         # Code formatting via treefmt (Nix, shell, Markdown, JSON, YAML)
         # Note: Elixir is handled by `mix format` directly to avoid race conditions

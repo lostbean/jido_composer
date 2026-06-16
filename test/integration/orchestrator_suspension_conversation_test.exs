@@ -346,8 +346,12 @@ defmodule Jido.Composer.Integration.OrchestratorSuspensionConversationTest do
       assert count_tool_results(strat.conversation, "call_suspend_1") == 1
       assert count_tool_results(strat.conversation, "call_add_1") == 0
 
-      # Conversation can be serialized/deserialized without synthetics
-      serialized = Jason.encode!(strat.conversation)
+      # Conversation messages can be serialized/deserialized without synthetics.
+      # Encode the message history (the persisted conversation), not the full
+      # ReqLLM.Context — the context's :tools field holds runtime tool definitions
+      # (ReqLLM.Tool structs, reattached on resume) that are not JSON-encodable and
+      # are never persisted as JSON by consumers.
+      serialized = Jason.encode!(strat.conversation.messages)
       refute String.contains?(serialized, "not_executed")
       assert {:ok, _} = Jason.decode(serialized)
     end
