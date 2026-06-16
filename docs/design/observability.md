@@ -45,18 +45,30 @@ graph TD
 graph TD
     A["AGENT span<br/>(full workflow lifecycle)"]
     A --> N1["TOOL span<br/>(node: step1)"]
-    A --> N2["TOOL span<br/>(node: step2)"]
+    A --> N2["TOOL span<br/>(node: fan-out / map)"]
+    N2 --> B1["TOOL span<br/>(branch: child[0])"]
+    N2 --> B2["TOOL span<br/>(branch: child[1])"]
     A --> N3["TOOL span<br/>(node: step3)"]
 ```
 
-| Span  | Prefix                       | Opened                  | Closed                              |
-| ----- | ---------------------------- | ----------------------- | ----------------------------------- |
-| Agent | `[:jido, :composer, :agent]` | `workflow_start`        | Terminal state reached              |
-| Node  | `[:jido, :composer, :tool]`  | `dispatch_current_node` | When `workflow_node_result` arrives |
+| Span   | Prefix                       | Opened                                 | Closed                               |
+| ------ | ---------------------------- | -------------------------------------- | ------------------------------------ |
+| Agent  | `[:jido, :composer, :agent]` | `workflow_start`                       | Terminal state reached               |
+| Node   | `[:jido, :composer, :tool]`  | `dispatch_current_node`                | When `workflow_node_result` arrives  |
+| Branch | `[:jido, :composer, :tool]`  | Per branch in `execute_fan_out_branch` | When the branch's child node returns |
 
 Workflow node spans use the `[:jido, :composer, :tool]` prefix (not a separate
 `node` prefix) so that the external tracer maps them to the same OTel span type
 as orchestrator tool calls.
+
+[FanOutNode](nodes/README.md#fanoutnode) and [MapNode](nodes/README.md#mapnode)
+nodes fan out into concurrent branches. Each branch is wrapped in its own TOOL
+span named `child[branch]`, nested under the fan-out node's span. Because the
+branches run in `Task.async_stream` (a separate process per branch), the OTel
+context is captured before spawning and re-attached inside each task via
+[`OtelCtx.with_parent_context/2`](#nested-agent-span-propagation) — the same
+cross-process propagation pattern used for nested agents — so branch spans
+parent correctly instead of starting orphaned root traces.
 
 ## Nested Agent Span Propagation
 
