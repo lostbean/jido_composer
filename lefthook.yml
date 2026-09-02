@@ -2,6 +2,9 @@
 # https://github.com/evilmartians/lefthook
 pre-commit:
   commands:
+    design-gate:
+      run: nix run .#design-gate-check -- docs/design .
+      fail_text: "Commit aborted: design checks failed. Rebuild with `nix run .#design-gate-render -- docs/design docs/design/design-layer.pdf` after editing design sources."
     mix-fmt:
       run: mix fmt.check
       fail_text: "Commit aborted: files not formatted. Run `mix fmt`, stage, and commit again."

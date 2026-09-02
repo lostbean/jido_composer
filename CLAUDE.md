@@ -47,8 +47,6 @@ support arbitrary nesting.
 
 ## Development Conventions
 
-Use `npx openspec <args>` to use openspec.
-
 ### Keeping Usage Rules Current
 
 When changes affect the public API (new modules, new DSL options, new node types, changed contracts), update `usage-rules.md` to reflect them. This file is the authoritative reference for how the library is used.
@@ -125,3 +123,31 @@ Livebooks in `livebooks/` serve as runnable demos, ordered by complexity:
 - Never bypass Nix dev shell for builds (ensures correct BEAM versions)
 - Elixir formatting is separate from `nix fmt` (avoids BEAM process conflicts)
 - Run `mix precommit` not just `mix test` before committing
+
+<!-- agent-skills:begin -->
+<!-- framework-commit: 7aaecc7d4aa642d14d9de465d6437cf8e0e0d858 origin: git@github.com:lostbean/skills.git -->
+
+(machine-owned; do not edit inside this fence — re-run setup to refresh)
+
+## Agent skills
+
+- **Design layer** — `docs/CONTEXT-MAP.md` indexes the design documents. The root is `docs/design/design.typ`; terms are defined in each context's `CONTEXT.typ`; decisions are recorded in `docs/adr/`. Each design document is a chapter of `docs/design/design-layer.pdf`. The current layer is a migration draft, not a promoted or implementation-verified design.
+- **Tracker** — local Markdown under `issues/`. Feature documents use `issues/<feature-slug>/PRD.md`; work items use `issues/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`. Fetch reads the named file; publishing creates a file in that layout. Work items store `Status: <state-label>` and `Category: <category-label>`; comments append under `## Comments`.
+- **AI disclaimer** — AI-authored tracker comments start with `AI-authored:`.
+
+| Role            | Label           |
+| --------------- | --------------- |
+| needs-triage    | needs-triage    |
+| needs-info      | needs-info      |
+| ready-for-agent | ready-for-agent |
+| ready-for-human | ready-for-human |
+| in-progress     | in-progress     |
+| done            | done            |
+| wontfix         | wontfix         |
+| bug             | bug             |
+| enhancement     | enhancement     |
+
+- **Design gate** — `nix run .#design-gate-check -- docs/design .` checks render freshness, token coverage, and cross-link integrity across the repository (exit 0 clean, 1 violation, 2 error). The gate is a pinned Nix input, not copied check scripts. `nix run .#design-gate-render -- docs/design docs/design/design-layer.pdf` rebuilds the single rendered document; contexts emit no sibling PDF. A bare `typst compile` is not the gate and omits document-level contracts.
+- **Staleness** — many system commits since the design documents last changed indicate a need to reconcile design and code before relying on the layer.
+
+<!-- agent-skills:end -->

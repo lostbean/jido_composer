@@ -14,6 +14,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Check design layer
+        run: nix run .#design-gate-check -- docs/design .
       - name: Cache Elixir deps
         uses: actions/cache@v5
         with:

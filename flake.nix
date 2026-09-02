@@ -5,6 +5,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    design-layer.url = "github:lostbean/design-layer/3c121908af93d57bfc7f80da3f3aff63c5478c8b";
+    design-layer.inputs.nixpkgs.follows = "nixpkgs";
 
     # Code formatting
     treefmt-nix.url = "github:numtide/treefmt-nix";
@@ -17,6 +19,7 @@
       nixpkgs-unstable,
       flake-utils,
       treefmt-nix,
+      design-layer,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -100,6 +103,11 @@
 
       in
       {
+        apps.design-gate-check = design-layer.apps.${system}.check;
+        apps.design-gate-render = design-layer.apps.${system}.render;
+        apps.design-gate-project = design-layer.apps.${system}.project;
+        packages.design-gate-bundle = design-layer.packages.${system}.gate-bundle;
+
         devShells = {
           default = devShell;
           ci = ciShell;
