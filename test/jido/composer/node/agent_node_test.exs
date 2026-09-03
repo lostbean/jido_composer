@@ -316,6 +316,7 @@ defmodule Jido.Composer.Node.AgentNodeTest do
 
   describe "execute_child_sync with AI agents" do
     test "dispatches to ask_sync for AI agent modules" do
+      Code.ensure_loaded!(FakeAIAgent)
       result = Node.execute_child_sync(FakeAIAgent, %{context: %{query: "test query"}})
       assert {:ok, "AI response to: test query"} = result
     end
