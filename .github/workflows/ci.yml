@@ -33,20 +33,20 @@ jobs:
       - name: Run CI checks
         run: nix develop .#ci --command mix ci || (echo "::group::Formatter diff" && git diff && echo "::endgroup::" && exit 1)
   compatibility:
-    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} (${{ matrix.mode }})
+    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {elixir: "1_18", otp: "27", mode: prod}
-          - {elixir: "1_19", otp: "27", mode: prod}
-          - {elixir: "1_19", otp: "28", mode: prod}
-          - {elixir: "1_20", otp: "27", mode: test}
-          - {elixir: "1_20", otp: "28", mode: test}
-          - {elixir: "1_20", otp: "29", mode: test}
+          - {elixir: "1_18", otp: "27"}
+          - {elixir: "1_19", otp: "27"}
+          - {elixir: "1_19", otp: "28"}
+          - {elixir: "1_20", otp: "27"}
+          - {elixir: "1_20", otp: "28"}
+          - {elixir: "1_20", otp: "29"}
     env:
-      MIX_ENV: ${{ matrix.mode }}
+      MIX_ENV: test
       ANTHROPIC_API_KEY: test-cassette-key
       RECORD_CASSETTES: "false"
       BEAM_SHELL: ci-${{ matrix.elixir }}-${{ matrix.otp }}
@@ -60,7 +60,7 @@ jobs:
           path: |
             deps
             _build
-          key: compatibility-v1-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.mode }}-${{ hashFiles('flake.lock', 'mix.lock', 'mix.exs') }}
+          key: compatibility-v2-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-test-${{ hashFiles('flake.lock', 'mix.lock', 'mix.exs') }}
       - name: Show toolchain
         run: nix develop ".#$BEAM_SHELL" --command elixir --version
       - name: Fetch dependencies
@@ -70,8 +70,4 @@ jobs:
       - name: Compile project
         run: nix develop ".#$BEAM_SHELL" --command mix compile --warnings-as-errors
       - name: Test
-        if: matrix.mode == 'test'
         run: nix develop ".#$BEAM_SHELL" --command mix test
-      - name: Verify production startup
-        if: matrix.mode == 'prod'
-        run: nix develop ".#$BEAM_SHELL" --command mix run -e 'Application.ensure_all_started(:jido_composer) |> then(fn {:ok, _} -> :ok end)'

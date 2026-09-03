@@ -115,7 +115,7 @@
             ]
             ++ platformPackages;
             shellHook = ''
-              export MIX_BUILD_PATH="$PWD/_build/compat/elixir-${elixirVersion}-otp-${otpVersion}"
+              export MIX_BUILD_ROOT="$PWD/_build/compat/elixir-${elixirVersion}-otp-${otpVersion}"
               export MIX_DEPS_PATH="$PWD/_build/compat/elixir-${elixirVersion}-otp-${otpVersion}/deps"
             '';
           };

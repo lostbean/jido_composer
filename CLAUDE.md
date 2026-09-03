@@ -10,7 +10,7 @@
 ## Core Tech Stack
 
 - **Development runtime**: Elixir 1.20, Erlang/OTP 29
-- **Compatibility checks**: See `docs/RUNTIME-COMPATIBILITY.md` for the CI matrix and older-runtime test limits.
+- **Compatibility checks**: See `docs/RUNTIME-COMPATIBILITY.md` for the full-suite CI matrix.
 - **Dependencies**: jason, nimble_options, telemetry (jido deps added later)
 - **Dev Tooling**: Credo, ExDoc, Nix flake, treefmt, lefthook
 
