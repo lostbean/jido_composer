@@ -17,6 +17,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Prepare design authoring library
+        run: |
+          design_bundle=$(nix build .#design-gate-bundle --no-link --print-out-paths)
+          nix run .#design-gate-project -- "$design_bundle/schema/design-schema.json" docs/design/.render
       - name: Check design layer
         run: nix run .#design-gate-check -- docs/design .
       - name: Cache Elixir deps

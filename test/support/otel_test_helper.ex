@@ -17,7 +17,7 @@ defmodule Jido.Composer.OtelTestHelper do
   require Record
 
   # Define Elixir record accessors from the Erlang #span{} record
-  Record.defrecord(:span, Record.extract(:span, from: "deps/opentelemetry/include/otel_span.hrl"))
+  Record.defrecord(:span, Record.extract(:span, from_lib: "opentelemetry/include/otel_span.hrl"))
 
   @doc """
   Configure OTel to export spans to the test process via `otel_exporter_pid`.
