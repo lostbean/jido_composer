@@ -4,8 +4,8 @@ defmodule JidoComposer.MixProject do
   def project do
     [
       app: :jido_composer,
-      version: "0.6.1",
-      elixir: "~> 1.20",
+      version: "0.6.2",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       consolidate_protocols: Mix.env() != :dev,
@@ -36,28 +36,28 @@ defmodule JidoComposer.MixProject do
   defp deps do
     [
       # Jido ecosystem
-      {:jido, "~> 2.3"},
-      {:jido_action, "~> 2.3"},
+      {:jido, "~> 2.3 and >= 2.3.3"},
+      {:jido_action, "~> 2.3 and >= 2.3.2"},
       {:jido_signal, "~> 2.2"},
 
       # Runtime
-      {:zoi, "~> 0.18"},
-      {:splode, "~> 0.3.1"},
+      {:zoi, "~> 0.18 and >= 0.18.7"},
+      {:splode, "~> 0.3.2"},
       {:deep_merge, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.1"},
       {:telemetry, "~> 1.3"},
 
       # LLM
-      {:req_llm, "~> 1.16"},
+      {:req_llm, "~> 1.21 and >= 1.21.1"},
 
       # Dev/Test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false},
-      {:req_cassette, "~> 0.6.0", only: :test},
+      {:req_cassette, "~> 0.6.2", only: :test},
 
       # Observability (test only — livebooks install their own deps via Mix.install)
-      {:agent_obs, "~> 0.1.4", only: :test},
+      {:agent_obs, "~> 0.1.6", only: :test},
       {:opentelemetry, "~> 1.3", only: :test},
       {:opentelemetry_api, "~> 1.2", only: :test}
     ]

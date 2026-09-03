@@ -4,12 +4,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 jobs:
   ci:
     name: Quality Checks
     runs-on: ubuntu-latest
     env:
       MIX_ENV: test
+      ANTHROPIC_API_KEY: test-cassette-key
+      RECORD_CASSETTES: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
@@ -22,10 +25,53 @@ jobs:
           path: |
             deps
             _build
-          key: elixir-v1-${{ runner.os }}-${{ hashFiles('flake.lock', 'mix.lock') }}
+          key: quality-v2-${{ runner.os }}-${{ hashFiles('flake.lock', 'mix.lock', 'mix.exs') }}
       - name: Setup dependencies
         run: |
           nix develop .#ci --command mix deps.get
           nix develop .#ci --command mix deps.compile
       - name: Run CI checks
         run: nix develop .#ci --command mix ci || (echo "::group::Formatter diff" && git diff && echo "::endgroup::" && exit 1)
+  compatibility:
+    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {elixir: "1_18", otp: "27", mode: prod}
+          - {elixir: "1_19", otp: "27", mode: prod}
+          - {elixir: "1_19", otp: "28", mode: prod}
+          - {elixir: "1_20", otp: "27", mode: test}
+          - {elixir: "1_20", otp: "28", mode: test}
+          - {elixir: "1_20", otp: "29", mode: test}
+    env:
+      MIX_ENV: ${{ matrix.mode }}
+      ANTHROPIC_API_KEY: test-cassette-key
+      RECORD_CASSETTES: "false"
+      BEAM_SHELL: ci-${{ matrix.elixir }}-${{ matrix.otp }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Cache dependencies and compiled modules
+        uses: actions/cache@v5
+        with:
+          path: |
+            deps
+            _build
+          key: compatibility-v1-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.mode }}-${{ hashFiles('flake.lock', 'mix.lock', 'mix.exs') }}
+      - name: Show toolchain
+        run: nix develop ".#$BEAM_SHELL" --command elixir --version
+      - name: Fetch dependencies
+        run: nix develop ".#$BEAM_SHELL" --command mix deps.get --check-locked
+      - name: Compile dependencies
+        run: nix develop ".#$BEAM_SHELL" --command mix deps.compile
+      - name: Compile project
+        run: nix develop ".#$BEAM_SHELL" --command mix compile --warnings-as-errors
+      - name: Test
+        if: matrix.mode == 'test'
+        run: nix develop ".#$BEAM_SHELL" --command mix test
+      - name: Verify production startup
+        if: matrix.mode == 'prod'
+        run: nix develop ".#$BEAM_SHELL" --command mix run -e 'Application.ensure_all_started(:jido_composer) |> then(fn {:ok, _} -> :ok end)'

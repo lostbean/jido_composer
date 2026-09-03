@@ -43,7 +43,7 @@
         isDarwin = builtins.match ".*-darwin" pkgs.stdenv.hostPlatform.system != null;
 
         # Single source of truth for Elixir/Erlang packages
-        beamPackages = pkgs.unstable.beamMinimal28Packages;
+        beamPackages = pkgs.unstable.beamMinimal29Packages;
         elixir = beamPackages.elixir_1_20;
 
         # Code formatting via treefmt (Nix, shell, Markdown, JSON, YAML)
@@ -101,6 +101,25 @@
           '';
         };
 
+        # Each compatibility shell keeps compiled BEAM files separate locally.
+        compatibilityShell =
+          elixirVersion: otpVersion:
+          let
+            beam = pkgs.unstable.${"beamMinimal${otpVersion}Packages"};
+          in
+          pkgs.mkShell {
+            buildInputs = [
+              beam.${"elixir_${elixirVersion}"}
+              beam.erlang
+              beam.rebar3
+            ]
+            ++ platformPackages;
+            shellHook = ''
+              export MIX_BUILD_PATH="$PWD/_build/compat/elixir-${elixirVersion}-otp-${otpVersion}"
+              export MIX_DEPS_PATH="$PWD/_build/compat/elixir-${elixirVersion}-otp-${otpVersion}/deps"
+            '';
+          };
+
       in
       {
         apps.design-gate-check = design-layer.apps.${system}.check;
@@ -111,6 +130,12 @@
         devShells = {
           default = devShell;
           ci = ciShell;
+          ci-1_18-27 = compatibilityShell "1_18" "27";
+          ci-1_19-27 = compatibilityShell "1_19" "27";
+          ci-1_19-28 = compatibilityShell "1_19" "28";
+          ci-1_20-27 = compatibilityShell "1_20" "27";
+          ci-1_20-28 = compatibilityShell "1_20" "28";
+          ci-1_20-29 = compatibilityShell "1_20" "29";
         };
 
         # Unified formatter - enables `nix fmt`
