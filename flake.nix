@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    design-layer.url = "github:lostbean/design-layer/3c121908af93d57bfc7f80da3f3aff63c5478c8b";
+    design-layer.url = "github:lostbean/design-layer/96d41191d5ddb901a3de61397c83d725e9a6b100";
     design-layer.inputs.nixpkgs.follows = "nixpkgs";
 
     # Code formatting
