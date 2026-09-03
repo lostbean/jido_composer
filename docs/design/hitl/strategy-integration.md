@@ -56,8 +56,8 @@ stateDiagram-v2
     state "Waiting" as wait
 
     exec --> check
-    check --> trans : outcome is :ok, :error, or custom
-    check --> suspend : outcome is :suspend
+    check --> trans : outcome is #58;ok, #58;error, or custom
+    check --> suspend : outcome is #58;suspend
     suspend --> wait : emit Suspend directive
     wait --> trans : resume signal with outcome
 ```
@@ -196,7 +196,7 @@ stateDiagram-v2
     state "All Running Done,<br/>Suspensions Pending" as waiting
     state "All Resolved" as done
 
-    running --> partial : branch returns :suspend
+    running --> partial : branch returns #58;suspend
     running --> done : all branches complete
     partial --> waiting : all running branches finish
     waiting --> done : all suspensions resume

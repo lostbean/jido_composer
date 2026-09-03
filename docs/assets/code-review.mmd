@@ -1,0 +1,12 @@
+flowchart TD
+    subgraph CodeReviewPipeline [Workflow: Code Review]
+        direction TB
+        subgraph FanOut [FanOut: Parallel Review]
+            Lint[Lint Action]
+            Security[Orchestrator: Security Scanner]
+            Tests[Test Runner Action]
+        end
+        FanOut --> Approval[HumanNode: Approve Merge]
+        Approval -->|approved| Merge[Merge Action]
+        Approval -->|rejected| Failed[Failed]
+    end

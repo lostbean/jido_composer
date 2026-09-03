@@ -10,20 +10,7 @@ Human approval gates and durable persistence are built in, not bolted on.
 
 ## Example: Code Review pipeline
 
-```mermaid
-flowchart TD
-    subgraph CodeReviewPipeline [Workflow: Code Review]
-        direction TB
-        subgraph FanOut [FanOut: Parallel Review]
-            Lint[Lint Action]
-            Security[Orchestrator: Security Scanner]
-            Tests[Test Runner Action]
-        end
-        FanOut --> Approval[HumanNode: Approve Merge]
-        Approval -->|approved| Merge[Merge Action]
-        Approval -->|rejected| Failed[Failed]
-    end
-```
+![Code review workflow: parallel lint, security scan, and tests, followed by human approval to merge or reject.](https://raw.githubusercontent.com/lostbean/jido_composer/main/docs/assets/code-review.svg)
 
 ```elixir
 # An LLM-driven security scanner (orchestrator)
@@ -156,16 +143,7 @@ agent = ETLPipeline.new()
 # result[:load][:loaded] => 2
 ```
 
-```mermaid
-stateDiagram-v2
-    [*] --> extract
-    extract --> transform : ok
-    transform --> load : ok
-    load --> done : ok
-    extract --> failed : error
-    transform --> failed : error
-    load --> failed : error
-```
+![ETL workflow: extract, transform, and load lead to done; an error at any step leads to failed.](https://raw.githubusercontent.com/lostbean/jido_composer/main/docs/assets/etl-workflow.svg)
 
 See [Getting Started](guides/getting-started.md) for the full walkthrough with
 action definitions.

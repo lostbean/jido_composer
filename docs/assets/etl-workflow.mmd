@@ -1,0 +1,8 @@
+stateDiagram-v2
+    [*] --> extract
+    extract --> transform : ok
+    transform --> load : ok
+    load --> done : ok
+    extract --> failed : error
+    transform --> failed : error
+    load --> failed : error
